@@ -1,0 +1,1827 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
+import { GlassInput, GlassTitle } from './GlassInput';
+import {
+  Clock,
+  ArrowRightLeft,
+  Square,
+  X,
+  Hash,
+  Plus,
+  Printer,
+  RotateCcw,
+  PanelRightClose,
+  PanelRightOpen,
+  Circle,
+  Trophy,
+  CheckCircle2,
+  AlertCircle,
+  Lock,
+  History,
+  AlertTriangle,
+  Table2,
+  FileSpreadsheet,
+  FileDown,
+  Pencil,
+  LockOpen,
+  Trash2,
+  Minus,
+  Upload,
+  Share2,
+  Facebook,
+  Linkedin,
+  Copy
+} from 'lucide-react';
+
+// --- Types for State Management ---
+
+interface PlayerStats {
+  name: string;
+  gender: string;
+  number: string;
+  pos: string;
+  scores: string[][];
+  defError?: number;
+}
+
+interface RosterSlot {
+  starter: PlayerStats;
+  sub: PlayerStats;
+}
+
+interface TeamData {
+  slots: RosterSlot[];
+}
+
+interface PlayEvent {
+  id: number;
+  timestamp: string;
+  inning: number;
+  teamName: string;
+  playerNum: string;
+  playerName: string;
+  actionCode: string;
+  description: string;
+}
+
+interface ScoreCardState {
+  gameInfo: {
+    competition: string;
+    place: string;
+    date: string;
+    gameNum: string;
+    setNum: string;
+    visitor: string;
+    home: string;
+    officials: {
+      plate: string;
+      field1: string;
+      field2: string;
+      field3: string;
+      table: string;
+    };
+    times: {
+      start: string;
+      end: string;
+    };
+    visitorLogo?: string;
+    homeLogo?: string;
+  };
+  visitorTeam: TeamData;
+  localTeam: TeamData;
+  inningScores: {
+    visitor: string[];
+    local: string[];
+  };
+  totals: {
+    visitor: string;
+    local: string;
+  };
+  errors: {
+    visitor: string;
+    local: string;
+  };
+  timeouts: {
+    visitor: [boolean, boolean];
+    local: [boolean, boolean];
+  };
+  scoreAdjustments: {
+    visitor: number;
+    local: number;
+  };
+  winner: {
+    name: string;
+    score: string;
+    isVisitor: boolean;
+  } | null;
+  history: PlayEvent[];
+}
+
+// --- Initial State Helper ---
+
+const createEmptyPlayer = (): PlayerStats => ({
+  name: '', gender: '', number: '', pos: '', scores: [['']], defError: 0
+});
+
+const createEmptyTeam = (): TeamData => ({
+  slots: Array(5).fill(null).map(() => ({
+    starter: createEmptyPlayer(),
+    sub: createEmptyPlayer(),
+  }))
+});
+
+const initialState: ScoreCardState = {
+  gameInfo: {
+    competition: '', place: '', date: new Date().toISOString().split('T')[0], gameNum: '', setNum: '', visitor: '', home: '',
+    officials: { plate: '', field1: '', field2: '', field3: '', table: '' },
+    times: { start: '', end: '' }
+  },
+  visitorTeam: createEmptyTeam(),
+  localTeam: createEmptyTeam(),
+  inningScores: {
+    visitor: [''],
+    local: ['']
+  },
+  totals: { visitor: '', local: '' },
+  errors: { visitor: '', local: '' },
+  timeouts: {
+    visitor: [false, false],
+    local: [false, false]
+  },
+  scoreAdjustments: { visitor: 0, local: 0 },
+  winner: null,
+  history: []
+};
+
+// --- Components ---
+
+const ModalBackdrop: React.FC<{ children: React.ReactNode, zIndex?: string }> = ({ children, zIndex = 'z-[200]' }) => (
+  createPortal(
+    <div className={`fixed inset-0 ${zIndex} flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-300 p-4`}>
+      {children}
+    </div>,
+    document.body
+  )
+);
+
+const WinnerModal: React.FC<{
+  winner: { name: string; score: string; isVisitor: boolean } | null;
+  onClose: () => void;
+}> = ({ winner, onClose }) => {
+  if (!winner) return null;
+
+  const handleShare = (platform: 'whatsapp' | 'facebook') => {
+    const text = `⚾ ¡Juego Finalizado! ⚾\n\nGanador: ${winner.name}\nResultado Final: ${winner.score}\n\nLlevado con B5Tools - La Herramienta del momento`;
+
+    if (platform === 'whatsapp') {
+      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+    } else if (platform === 'facebook') {
+      window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(window.location.href)}&quote=${encodeURIComponent(text)}`, '_blank');
+    }
+  };
+
+  return (
+    <ModalBackdrop>
+      <div className="bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 border border-amber-500/50 p-8 rounded-3xl shadow-[0_0_50px_rgba(245,158,11,0.3)] max-w-md w-full text-center relative overflow-hidden no-print">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-amber-500/10 via-transparent to-transparent animate-pulse"></div>
+
+        <div className="relative z-10 flex flex-col items-center">
+          <Trophy size={64} className="text-amber-400 mb-4 drop-shadow-[0_0_15px_rgba(251,191,36,0.5)] animate-bounce-slow" />
+
+          <h1 className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-yellow-400 to-amber-600 mb-2 filter drop-shadow-lg">
+            {winner.name}
+          </h1>
+          <p className="text-white/60 text-lg font-mono mb-8">GANADOR</p>
+
+          <div className="bg-white/10 rounded-xl px-6 py-3 border border-white/10 mb-8">
+            <span className="text-2xl font-bold text-white">Resultado Final: {winner.score}</span>
+          </div>
+
+          <div className="flex gap-4 mb-8 justify-center">
+            <button onClick={() => handleShare('whatsapp')} className="p-3 rounded-full bg-green-600 hover:bg-green-500 text-white transition-colors" title="Compartir Resultado (WhatsApp)">
+              <Share2 size={24} />
+            </button>
+          </div>
+
+          <button
+            onClick={onClose}
+            className="px-8 py-3 bg-white text-purple-900 font-bold rounded-full hover:bg-gray-100 transition-colors shadow-lg cursor-pointer active:scale-95 transform"
+          >
+            Cerrar
+          </button>
+
+          <div className="mt-6 pt-4 border-t border-white/10 w-full text-center">
+            <p className="text-[10px] text-white/30 uppercase tracking-widest font-bold">Llevado con B5Tools - La Herramienta del momento</p>
+          </div>
+        </div>
+      </div>
+    </ModalBackdrop>
+  );
+};
+
+const ResetConfirmModal: React.FC<{
+  isOpen: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}> = ({ isOpen, onConfirm, onCancel }) => {
+  if (!isOpen) return null;
+
+  return (
+    <ModalBackdrop zIndex="z-[250]">
+      <div className="bg-slate-900 border border-red-500/30 p-6 rounded-2xl shadow-2xl max-w-sm w-full text-center relative no-print">
+        <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mb-4 mx-auto border border-red-500/20">
+          <AlertTriangle size={32} className="text-red-500" />
+        </div>
+
+        <h3 className="text-xl font-bold text-white mb-2">¿Reiniciar Partido?</h3>
+        <p className="text-white/60 mb-6 text-sm">
+          Se borrarán todos los datos del juego actual. Esta acción no se puede deshacer.
+          <br /><br />
+          <span className="text-amber-400 font-bold">¡Asegúrate de guardar los resultados antes!</span>
+        </p>
+
+        <div className="flex flex-col gap-3">
+          <button
+            onClick={() => window.print()}
+            className="w-full px-4 py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 rounded-lg border border-blue-500/30 font-semibold transition-colors flex items-center justify-center gap-2 mb-2"
+          >
+            <Printer size={16} /> Guardar PDF / Imprimir
+          </button>
+
+          <div className="flex gap-3 justify-center">
+            <button
+              onClick={onCancel}
+              className="flex-1 px-4 py-2 bg-white/5 hover:bg-white/10 text-white rounded-lg border border-white/10 font-semibold transition-colors text-sm"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={onConfirm}
+              className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg font-semibold transition-colors shadow-lg shadow-red-900/20 text-sm"
+            >
+              Sí, Reiniciar
+            </button>
+          </div>
+        </div>
+      </div>
+    </ModalBackdrop>
+  );
+};
+
+const ScoringModal: React.FC<{
+  isOpen: boolean;
+  onClose: () => void;
+  onSelect: (val: string, isManualReplace?: boolean, errorCulprit?: { team: 'visitor' | 'local', slotIdx: number, type: 'starter' | 'sub' }) => void;
+  currentValue: string;
+  position: { x: number, y: number } | null;
+  opposingTeam?: TeamData;
+}> = ({ isOpen, onClose, onSelect, currentValue, position, opposingTeam }) => {
+  const modalRef = useRef<HTMLDivElement>(null);
+  const [manualValue, setManualValue] = useState(currentValue);
+  const [view, setView] = useState<'main' | 'defensive_error'>('main');
+
+  // Sync state when prop changes or modal opens
+  useEffect(() => {
+    setManualValue(currentValue);
+    setView('main');
+  }, [currentValue, isOpen]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent | TouchEvent) => {
+      if (modalRef.current && !modalRef.current.contains(event.target as Node)) {
+        onClose();
+      }
+    };
+
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('touchstart', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
+  }, [isOpen, onClose]);
+
+  if (!isOpen || !position) return null;
+
+  const modalWidth = 280;
+  // Centering logic relative to the cell
+  let left = position.x - (modalWidth / 2);
+  let top = position.y + 10; // 10px below cell
+
+  // Boundary checks
+  if (left < 10) left = 10;
+  if (left + modalWidth > window.innerWidth) left = window.innerWidth - modalWidth - 10;
+
+  const modalHeight = 160;
+  if (top + modalHeight > window.innerHeight) {
+    top = position.y - modalHeight - 10; // Flip above if not enough space
+  }
+
+  const actions = [
+    { label: 'OUT', val: 'X', icon: <X size={18} />, color: 'bg-red-500/20 text-red-400 border-red-500/50 hover:bg-red-500/40' },
+    { label: 'HIT', val: 'H', icon: <CheckCircle2 size={18} />, color: 'bg-green-500/20 text-green-400 border-green-500/50 hover:bg-green-500/40' },
+    { label: 'SAFE/ERR', val: 'S', icon: <AlertCircle size={18} />, color: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/50 hover:bg-yellow-500/40' },
+    { label: 'CARRERA', val: '●', icon: <Circle size={18} fill="currentColor" />, color: 'bg-rose-600 text-white border-rose-400 hover:bg-rose-500 shadow-[0_0_10px_rgba(225,29,72,0.5)]' },
+    { label: 'SUB', val: '⇄', icon: <ArrowRightLeft size={18} />, color: 'bg-purple-500/20 text-purple-400 border-purple-500/50 hover:bg-purple-500/40' },
+    { label: 'FIN INN', val: '■', icon: <Square size={18} fill="currentColor" />, color: 'bg-amber-600/20 text-amber-500 border-amber-500/50 hover:bg-amber-500/40' },
+  ];
+
+  return createPortal(
+    <div
+      className="fixed z-[9999] animate-in fade-in zoom-in-95 duration-150 no-print"
+      style={{ top: top, left: left }}
+      ref={modalRef}
+    >
+      <div className="bg-slate-900/95 backdrop-blur-md border border-white/20 p-4 rounded-xl shadow-2xl w-[280px] ring-1 ring-black/50">
+        {view === 'main' && (
+          <div className="relative z-10">
+            <div className="grid grid-cols-3 gap-2 mb-4">
+              {actions.map((action) => (
+                <button
+                  key={action.label}
+                  onClick={() => {
+                    if (action.val === 'S' && opposingTeam) {
+                      setView('defensive_error');
+                    } else {
+                      onSelect(action.val);
+                      onClose();
+                    }
+                  }}
+                  className={`flex flex-col items-center justify-center gap-1 p-2 rounded-lg border transition-all active:scale-95 touch-manipulation ${action.color}`}
+                  title={action.label}
+                >
+                  {action.icon}
+                  <span className="text-[9px] font-black uppercase">{action.label}</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="border-t border-white/10 pt-3">
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { onSelect('', true); onClose(); }}
+                  className="px-2 py-1 bg-red-500/20 border border-red-500/30 rounded-md text-red-200 hover:bg-red-500/30 transition-colors"
+                  title="Borrar Contenido"
+                >
+                  <Trash2 size={16} />
+                </button>
+                <input
+                  autoFocus
+                  className="flex-1 bg-white/5 border border-white/10 rounded-md px-2 py-1 text-white text-xs focus:outline-none focus:border-purple-500 placeholder-white/20"
+                  placeholder="Manual..."
+                  value={manualValue}
+                  onChange={(e) => setManualValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      onSelect(manualValue, true); // True = replace completely
+                      onClose();
+                    }
+                  }}
+                />
+                <button
+                  onClick={() => { onSelect(manualValue, true); onClose(); }}
+                  className="px-3 py-1 bg-purple-500/20 border border-purple-500/30 rounded-md text-purple-200 font-bold text-xs hover:bg-purple-500/30"
+                >
+                  OK
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {view === 'defensive_error' && opposingTeam && (
+          <div className="relative z-10 animate-in slide-in-from-right duration-200">
+            <div className="flex items-center justify-between mb-2 pb-2 border-b border-white/10">
+              <span className="text-xs font-bold text-yellow-400 uppercase">¿Quién cometió el error?</span>
+              <button onClick={() => setView('main')} className="text-white/50 hover:text-white"><RotateCcw size={12} /></button>
+            </div>
+            <div className="max-h-[200px] overflow-y-auto space-y-1 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+              {opposingTeam.slots.map((slot, idx) => (
+                <React.Fragment key={idx}>
+                  <button
+                    onClick={() => { onSelect('S', false, { team: 'local', slotIdx: idx, type: 'starter' }); onClose(); }} // Team is placeholder, logic in parent handles it
+                    className="w-full text-left px-2 py-1.5 rounded hover:bg-white/10 flex items-center gap-2 text-xs"
+                  >
+                    <span className="font-mono text-white/50 w-6 text-right">{slot.starter.number || '-'}</span>
+                    <span className="font-bold text-white truncate">{slot.starter.name || `Jugador ${idx + 1}`}</span>
+                    <span className="text-[9px] bg-white/10 px-1 rounded text-white/40">{slot.starter.pos || 'POS'}</span>
+                  </button>
+                  {/* If Sub exists, show them too */}
+                  {(slot.sub.name || slot.sub.number) && (
+                    <button
+                      onClick={() => { onSelect('S', false, { team: 'local', slotIdx: idx, type: 'sub' }); onClose(); }}
+                      className="w-full text-left px-2 py-1.5 rounded hover:bg-white/10 flex items-center gap-2 text-xs pl-6"
+                    >
+                      <span className="font-mono text-white/50 w-6 text-right">{slot.sub.number || '-'}</span>
+                      <span className="font-bold text-white/70 truncate">{slot.sub.name || `Sustituto`}</span>
+                      <span className="text-[9px] bg-white/10 px-1 rounded text-white/40">SUB</span>
+                    </button>
+                  )}
+                </React.Fragment>
+              ))}
+            </div>
+          </div>
+        )}
+
+      </div>
+    </div>,
+    document.body
+  );
+};
+
+const ScoreCell: React.FC<{
+  value: string;
+  onChange: (val: string) => void;
+  isEx?: boolean;
+  onOpenModal: (e: React.MouseEvent | React.TouchEvent) => void;
+  disabled?: boolean;
+}> = ({ value, onChange, isEx, onOpenModal, disabled }) => {
+
+  const hasRun = value.includes('●');
+  const baseValue = value.replace(/●/g, '').trim();
+
+  const getStyle = (val: string) => {
+    const v = val.toUpperCase();
+    if (v.includes('X')) return 'text-red-500 font-bold bg-red-500/5';
+    if (v.includes('H')) return 'text-green-400 font-bold bg-green-500/5';
+    if (v.includes('S')) return 'text-yellow-400 font-bold bg-yellow-500/5';
+    if (v.includes('■')) return 'text-amber-500 flex items-center justify-center scale-150';
+    if (v.includes('⇄')) return 'text-purple-400 flex items-center justify-center';
+    return 'text-white';
+  };
+
+  const displayValue = baseValue.startsWith('S-') ? 'E' + baseValue.substring(1) : baseValue.replace('■', '');
+
+  return (
+    <div
+      onClick={!disabled ? (e) => onOpenModal(e) : undefined}
+      className={`w-full h-full min-w-[50px] min-h-[50px] border-r border-b border-white/10 relative group transition-colors touch-manipulation
+        ${isEx ? 'bg-white/5' : ''} 
+        ${disabled ? 'opacity-50 cursor-not-allowed bg-black/20' : 'cursor-pointer hover:bg-white/10'}`}
+    >
+      {disabled && (
+        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-10 z-0 pointer-events-none">
+          <Lock size={12} />
+        </div>
+      )}
+      <div className={`w-full h-full flex items-center justify-center text-xs font-mono select-none relative z-10 ${getStyle(baseValue)}`}>
+        <span className="z-10">{displayValue}</span>
+        {hasRun && (
+          <span className="absolute text-rose-500 text-[10px] bottom-0.5 right-0.5 flex items-center justify-center leading-none drop-shadow-[0_0_5px_rgba(225,29,72,0.8)] z-20">
+            <Circle size={10} fill="currentColor" />
+          </span>
+        )}
+        {value.includes('■') && (
+          <span className="absolute top-0.5 left-0.5 text-amber-500 z-20">
+            <Square size={8} fill="currentColor" />
+          </span>
+        )}
+        {value === '●' && (
+          <span className="text-rose-500 text-2xl flex items-center justify-center leading-none drop-shadow-[0_0_8px_rgba(225,29,72,0.8)]">●</span>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const LineupGrid: React.FC<{
+  title: string;
+  teamNameValue: string;
+  onTeamNameChange: (val: string) => void;
+  teamData: TeamData;
+  onUpdate: (slotIndex: number, type: 'starter' | 'sub', field: keyof PlayerStats | 'score', value: any, inningIndex?: number, atBatIndex?: number) => void;
+  onAddColumn: (inningIndex: number) => void;
+  theme: 'purple' | 'amber';
+
+  currentInningIdx: number;
+  nextBatterIdx: number;
+  opposingTeam: TeamData;
+}> = ({ title, teamNameValue, onTeamNameChange, teamData, onUpdate, onAddColumn, theme, currentInningIdx, nextBatterIdx, opposingTeam }) => {
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const [activeCell, setActiveCell] = useState<{
+    slotIdx: number;
+    type: 'starter' | 'sub';
+    inningIdx: number;
+    atBatIdx: number;
+    currentVal: string;
+    position: { x: number, y: number };
+  } | null>(null);
+
+  const [unlockedInnings, setUnlockedInnings] = useState<number[]>([]);
+
+  const toggleUnlock = (inningIdx: number) => {
+    setUnlockedInnings(prev =>
+      prev.includes(inningIdx)
+        ? prev.filter(i => i !== inningIdx)
+        : [...prev, inningIdx]
+    );
+  };
+
+  const handleCellClick = (e: React.MouseEvent | React.TouchEvent, slotIdx: number, type: 'starter' | 'sub', inningIdx: number, atBatIdx: number, currentVal: string) => {
+    const target = e.currentTarget as HTMLElement;
+    const rect = target.getBoundingClientRect();
+
+    // Robust coordinate calculation that works for both mouse and touch
+    // using the element's bounding box ensures the modal is always linked to the UI element
+    setActiveCell({
+      slotIdx, type, inningIdx, atBatIdx, currentVal,
+      position: { x: rect.left + (rect.width / 2), y: rect.bottom }
+    });
+    setModalOpen(true);
+  };
+
+  const handleModalSelect = (val: string, isManualReplace = false, errorCulprit?: { team: 'visitor' | 'local', slotIdx: number, type: 'starter' | 'sub' }) => {
+    if (activeCell) {
+      let newValue = val;
+
+      if (!isManualReplace) {
+        // Smart appending logic for buttons
+        if (val === '●') {
+          if (!activeCell.currentVal.includes('●')) {
+            newValue = activeCell.currentVal ? activeCell.currentVal + '●' : '●';
+          } else {
+            newValue = activeCell.currentVal;
+          }
+        } else {
+          const hasRun = activeCell.currentVal.includes('●');
+          const hasEnd = activeCell.currentVal.includes('■');
+          let suffix = '';
+          if (hasRun && val !== '●') suffix += '●';
+          if (hasEnd && val !== '■') suffix += '■';
+          newValue = val + suffix;
+        }
+      }
+      // Else: newValue is just val (for manual input/clear)
+
+      onUpdate(activeCell.slotIdx, activeCell.type, 'score', newValue, activeCell.inningIdx, activeCell.atBatIdx, errorCulprit);
+    }
+  };
+
+  const structure = teamData.slots[0].starter.scores;
+  const totalColumns = structure.reduce((acc, inning) => acc + inning.length, 0);
+
+  const COL_INDEX = 30;
+  const COL_NO = 40;
+  const COL_NAME = 160;
+  const COL_SEX = 50;
+  const COL_POS = 50;
+  const COL_SCORE = 50;
+  const LEFT_INDEX = 0;
+  const LEFT_NO = COL_INDEX;
+  const LEFT_NAME = COL_INDEX + COL_NO;
+  const LEFT_SEX = COL_INDEX + COL_NO + COL_NAME;
+  const LEFT_POS = COL_INDEX + COL_NO + COL_NAME + COL_SEX;
+
+  const themeColors = {
+    purple: {
+      headerBg: 'bg-purple-900/50',
+      headerText: 'text-purple-200',
+      stickyBg: 'bg-[#1e1b4b]',
+      subText: 'text-purple-200',
+      inputPlaceholder: 'placeholder-purple-300/30'
+    },
+    amber: {
+      headerBg: 'bg-orange-900/60',
+      headerText: 'text-orange-200',
+      stickyBg: 'bg-[#2a1205]',
+      subText: 'text-orange-200',
+      inputPlaceholder: 'placeholder-orange-300/30'
+    }
+  }[theme];
+
+  return (
+    <>
+      <ScoringModal
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onSelect={handleModalSelect}
+        currentValue={activeCell?.currentVal || ''}
+        position={activeCell?.position || null}
+        opposingTeam={opposingTeam}
+      />
+
+      <div className={`mb-8 border rounded-xl p-4 bg-white/5 ${theme === 'purple' ? 'border-purple-500/20 shadow-purple-900/20' : 'border-amber-500/20 shadow-orange-900/20'} shadow-lg transition-all print-panel`}>
+        <div className="flex flex-col md:flex-row items-start md:items-center gap-4 mb-4">
+          <span className={`text-xs font-bold uppercase tracking-widest px-2 py-1 rounded bg-white/5 border border-white/10 ${themeColors.headerText}`}>
+            {title}
+          </span>
+          <input
+            type="text"
+            value={teamNameValue}
+            onChange={(e) => onTeamNameChange(e.target.value)}
+            placeholder={`Nombre del Equipo ${theme === 'purple' ? 'Visitante' : 'Local'}`}
+            className={`bg-transparent text-xl md:text-2xl font-bold uppercase tracking-wide focus:outline-none border-b border-transparent focus:border-white/20 transition-all w-full md:w-auto ${theme === 'purple' ? 'text-white placeholder-purple-300/30' : 'text-white placeholder-orange-300/30'}`}
+          />
+        </div>
+
+        <div className={`overflow-x-auto rounded-lg border border-white/10 bg-black/20 shadow-inner scrollbar-thin ${theme === 'purple' ? 'scrollbar-thumb-purple-600/50' : 'scrollbar-thumb-orange-600/50'} scrollbar-track-transparent pb-2 print-overflow-visible`}>
+          <div
+            className="grid min-w-max"
+            style={{
+              gridTemplateColumns: `${COL_INDEX}px ${COL_NO}px ${COL_NAME}px ${COL_SEX}px ${COL_POS}px repeat(${totalColumns}, ${COL_SCORE}px)`
+            }}
+          >
+            {/* --- Header Row --- */}
+            <div className={`${themeColors.headerBg} p-2 text-center text-[10px] font-bold uppercase ${themeColors.headerText} border-b border-white/20 sticky z-20 left-sticky`} style={{ left: LEFT_INDEX, width: COL_INDEX }}>#</div>
+            <div className={`${themeColors.headerBg} p-2 text-center text-[10px] font-bold uppercase ${themeColors.headerText} border-b border-white/20 sticky z-20 left-sticky`} style={{ left: LEFT_NO, width: COL_NO }}>No.</div>
+            <div className={`${themeColors.headerBg} p-2 text-left text-[10px] font-bold uppercase ${themeColors.headerText} border-b border-white/20 sticky z-20 left-sticky`} style={{ left: LEFT_NAME, width: COL_NAME }}>Jugador</div>
+            <div className={`${themeColors.headerBg} p-2 text-center text-[10px] font-bold uppercase ${themeColors.headerText} border-b border-white/20 sticky z-20 left-sticky`} style={{ left: LEFT_SEX, width: COL_SEX }}>Sex</div>
+            <div className={`${themeColors.headerBg} p-2 text-center text-[10px] font-bold uppercase ${themeColors.headerText} border-b border-white/20 sticky z-20 left-sticky`} style={{ left: LEFT_POS, width: COL_POS }}>POS</div>
+
+            {structure.map((inningCols, iIdx) => {
+              const isExtra = iIdx >= 5;
+              const isLocked = iIdx < currentInningIdx;
+              const isUnlockedManually = unlockedInnings.includes(iIdx);
+              const effectiveLocked = isLocked && !isUnlockedManually;
+
+              return (
+                <div
+                  key={iIdx}
+                  className={`border-b border-l border-white/20 shadow-sm flex flex-col items-center justify-between py-1 px-1 
+                    ${isExtra ? 'bg-indigo-900/50 text-indigo-200' : themeColors.headerBg + ' ' + themeColors.headerText} 
+                    ${effectiveLocked ? 'opacity-50' : 'opacity-100'} 
+                    transition-all duration-300 relative`}
+                  style={{ gridColumn: `span ${inningCols.length}` }}
+                >
+                  {/* Visual Indicator for Unlocked Past Inning */}
+                  {isLocked && isUnlockedManually && (
+                    <div className="absolute inset-0 border-2 border-yellow-400/50 rounded pointer-events-none animate-pulse"></div>
+                  )}
+
+                  <div className="flex items-center justify-between w-full px-1">
+                    <span className="text-xs font-bold">{isExtra ? `${iIdx + 1} EX` : iIdx + 1}</span>
+
+                    {isLocked ? (
+                      <button
+                        onClick={() => toggleUnlock(iIdx)}
+                        className={`p-1 rounded-full transition-all duration-200 hover:scale-110
+                                ${isUnlockedManually
+                            ? 'bg-yellow-500 text-black shadow-[0_0_10px_rgba(234,179,8,0.5)]'
+                            : 'bg-white/10 text-white/40 hover:bg-white/20 hover:text-white'
+                          }`}
+                        title={isUnlockedManually ? "Bloquear Entrada" : "Editar Entrada"}
+                      >
+                        {isUnlockedManually ? <LockOpen size={10} strokeWidth={3} /> : <Pencil size={10} />}
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => onAddColumn(iIdx)}
+                        className={`p-0.5 rounded transition-colors no-print hover:bg-white/20 text-white/50 hover:text-white`}
+                      >
+                        <Plus size={8} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* --- Player Rows --- */}
+            {teamData.slots.map((slot, idx) => {
+              const playerNum = idx + 1;
+              const isNextBatter = idx === nextBatterIdx;
+
+              return (
+                <React.Fragment key={playerNum}>
+                  <div className={`${themeColors.stickyBg} flex items-center justify-center ${theme === 'amber' ? 'text-orange-400' : 'text-purple-400'} font-bold border-b border-white/10 text-lg sticky z-10 backdrop-blur-md left-sticky`} style={{ left: LEFT_INDEX }}>{playerNum}</div>
+
+                  <div className={`border-b border-r border-white/10 sticky z-10 ${themeColors.stickyBg} backdrop-blur-md left-sticky`} style={{ left: LEFT_NO }}>
+                    <input
+                      className="w-full h-full bg-transparent text-center text-xs text-white focus:outline-none font-bold"
+                      value={slot.starter.number}
+                      onChange={(e) => onUpdate(idx, 'starter', 'number', e.target.value)}
+                    />
+                  </div>
+
+                  <div className={`border-b border-r border-white/10 sticky z-10 ${themeColors.stickyBg} backdrop-blur-md left-sticky`} style={{ left: LEFT_NAME }}>
+                    <input
+                      className={`w-full h-full bg-transparent px-2 text-sm text-white focus:outline-none ${themeColors.inputPlaceholder}`}
+                      placeholder="Nombre Titular"
+                      value={slot.starter.name}
+                      onChange={(e) => onUpdate(idx, 'starter', 'name', e.target.value)}
+                    />
+                  </div>
+
+                  <div className={`border-b border-r border-white/10 sticky z-10 ${themeColors.stickyBg} left-sticky`} style={{ left: LEFT_SEX }}>
+                    <select
+                      className="w-full h-full bg-transparent text-center text-xs text-white focus:outline-none appearance-none [&>option]:bg-slate-900"
+                      value={slot.starter.gender}
+                      onChange={(e) => onUpdate(idx, 'starter', 'gender', e.target.value)}
+                    >
+                      <option value="">-</option>
+                      <option value="M">M</option>
+                      <option value="F">F</option>
+                    </select>
+                  </div>
+
+                  <div className={`border-b border-r border-white/10 sticky z-10 ${themeColors.stickyBg} left-sticky`} style={{ left: LEFT_POS }}>
+                    <select
+                      className="w-full h-full bg-transparent text-center text-xs text-white focus:outline-none appearance-none [&>option]:bg-slate-900"
+                      value={slot.starter.pos}
+                      onChange={(e) => onUpdate(idx, 'starter', 'pos', e.target.value)}
+                    >
+                      <option value="">-</option>
+                      <option value="1B">1B</option>
+                      <option value="2B">2B</option>
+                      <option value="3B">3B</option>
+                      <option value="SS">SS</option>
+                      <option value="C">C</option>
+                    </select>
+                  </div>
+
+                  {slot.starter.scores.map((inning, iIdx) =>
+                    inning.map((score, atBatIdx) => {
+                      const isCurrentInning = iIdx === currentInningIdx;
+                      const showHighlight = isNextBatter && isCurrentInning && score === '';
+
+                      return (
+                        <div key={`s-${iIdx}-${atBatIdx}`} className={`border-b border-r border-white/10 bg-white/5 relative ${showHighlight ? 'z-20' : ''}`}>
+                          {showHighlight && (
+                            <div className="absolute inset-0 pointer-events-none animate-pulse bg-yellow-400/10 ring-2 ring-yellow-400/50 z-20"></div>
+                          )}
+                          <ScoreCell
+                            value={score}
+                            onChange={(val) => onUpdate(idx, 'starter', 'score', val, iIdx, atBatIdx)}
+                            onOpenModal={(e) => handleCellClick(e, idx, 'starter', iIdx, atBatIdx, score)}
+                            isEx={iIdx >= 5}
+                            disabled={(iIdx < currentInningIdx) && !unlockedInnings.includes(iIdx)}
+                          />
+                        </div>
+                      )
+                    })
+                  )}
+
+                  {/* Sub Row */}
+                  <div className={`${themeColors.stickyBg} text-[10px] text-white/40 flex items-center justify-center border-b border-white/10 font-bold tracking-wider sticky z-10 backdrop-blur-md left-sticky`} style={{ left: LEFT_INDEX }}>SUB</div>
+                  <div className={`border-b border-r border-white/10 bg-white/5 sticky z-10 ${themeColors.stickyBg} left-sticky`} style={{ left: LEFT_NO }}>
+                    <input
+                      className="w-full h-full bg-transparent text-center text-xs text-white/70 focus:outline-none"
+                      value={slot.sub.number}
+                      onChange={(e) => onUpdate(idx, 'sub', 'number', e.target.value)}
+                    />
+                  </div>
+                  <div className={`border-b border-r border-white/10 bg-white/5 sticky z-10 ${themeColors.stickyBg} left-sticky`} style={{ left: LEFT_NAME }}>
+                    <input
+                      className={`w-full h-full bg-transparent px-2 text-xs ${themeColors.subText} focus:outline-none ${themeColors.inputPlaceholder}`}
+                      placeholder="Sustituto"
+                      value={slot.sub.name}
+                      onChange={(e) => onUpdate(idx, 'sub', 'name', e.target.value)}
+                    />
+                  </div>
+                  <div className={`border-b border-r border-white/10 bg-white/5 sticky z-10 ${themeColors.stickyBg} left-sticky`} style={{ left: LEFT_SEX }}>
+                    <select
+                      className="w-full h-full bg-transparent text-center text-xs text-white/70 focus:outline-none appearance-none [&>option]:bg-slate-900"
+                      value={slot.sub.gender}
+                      onChange={(e) => onUpdate(idx, 'sub', 'gender', e.target.value)}
+                    >
+                      <option value="">-</option>
+                      <option value="M">M</option>
+                      <option value="F">F</option>
+                    </select>
+                  </div>
+                  <div className={`border-b border-r border-white/10 bg-white/5 sticky z-10 ${themeColors.stickyBg} left-sticky`} style={{ left: LEFT_POS }}>
+                    <select
+                      className="w-full h-full bg-transparent text-center text-xs text-white/70 focus:outline-none appearance-none [&>option]:bg-slate-900"
+                      value={slot.sub.pos}
+                      onChange={(e) => onUpdate(idx, 'sub', 'pos', e.target.value)}
+                    >
+                      <option value="">-</option>
+                      <option value="1B">1B</option>
+                      <option value="2B">2B</option>
+                      <option value="3B">3B</option>
+                      <option value="SS">SS</option>
+                      <option value="C">C</option>
+                    </select>
+                  </div>
+                  {slot.sub.scores.map((inning, iIdx) =>
+                    inning.map((score, atBatIdx) => (
+                      <div key={`sub-${iIdx}-${atBatIdx}`} className="border-b border-r border-white/10 bg-white/5">
+                        <ScoreCell
+                          value={score}
+                          onChange={(val) => onUpdate(idx, 'sub', 'score', val, iIdx, atBatIdx)}
+                          onOpenModal={(e) => handleCellClick(e, idx, 'sub', iIdx, atBatIdx, score)}
+                          isEx={iIdx >= 5}
+                          disabled={(iIdx < currentInningIdx) && !unlockedInnings.includes(iIdx)}
+                        />
+                      </div>
+                    ))
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+};
+
+interface LiveGameStatusProps {
+  visitorRuns: number;
+  localRuns: number;
+  inning: number;
+  visitorOuts: number;
+  localOuts: number;
+  visitorName: string;
+  localName: string;
+  visitorLogo?: string;
+  localLogo?: string;
+  onSwap: () => void;
+  onAdjustVisitor: (delta: number) => void;
+  onAdjustLocal: (delta: number) => void;
+}
+
+const LiveGameStatus = ({ visitorRuns, localRuns, inning, visitorOuts, localOuts, visitorName, localName, visitorLogo, localLogo, onSwap, onAdjustVisitor, onAdjustLocal }: LiveGameStatusProps) => {
+  return createPortal(
+    <div className="fixed top-2 left-0 w-full z-[150] flex justify-center pointer-events-none no-print" style={{ transform: 'translateZ(0)' }}>
+      <div className="pointer-events-auto bg-[#1e1e24]/90 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl flex flex-row overflow-hidden w-[340px] h-[90px] relative">
+
+        {/* --- Left: Visitor --- */}
+        <div className="flex-1 flex flex-col items-center justify-center border-r border-white/5 relative group">
+          {visitorLogo && (
+            <div
+              className="absolute inset-0 z-0 opacity-20 bg-center bg-no-repeat pointer-events-none"
+              style={{ backgroundImage: `url(${visitorLogo})`, backgroundSize: '100% 100%' }}
+            />
+          )}
+          <div className="relative z-10 flex flex-col items-center gap-1 w-full justify-center pb-4">
+            <span className="text-purple-400 font-bold tracking-widest text-xs uppercase mb-1 drop-shadow-md">VISITANTE</span>
+            <div className="flex items-center gap-4">
+              <button onClick={() => onAdjustVisitor(-1)} className="w-6 h-6 rounded-full bg-black/40 hover:bg-black/60 active:bg-black/80 flex items-center justify-center text-white/50 hover:text-white transition-colors border border-white/10">
+                <Minus size={12} />
+              </button>
+              <span className="text-5xl font-black text-white font-mono tracking-tighter leading-none drop-shadow-xl">{visitorRuns}</span>
+              <button onClick={() => onAdjustVisitor(1)} className="w-6 h-6 rounded-full bg-black/40 hover:bg-black/60 active:bg-black/80 flex items-center justify-center text-white/50 hover:text-white transition-colors border border-white/10">
+                <Plus size={12} />
+              </button>
+            </div>
+          </div>
+          <div className="flex gap-1.5 mt-1 absolute bottom-2">
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className={`w-2 h-2 rounded-full border border-red-500/40 ${i < visitorOuts ? 'bg-red-500 shadow-[0_0_5px_rgba(239,68,68,0.8)]' : 'bg-transparent'}`} />
+            ))}
+          </div>
+        </div>
+
+        {/* --- Center: Inning & Swap --- */}
+        <div className="w-[80px] flex flex-col items-center justify-between py-2 bg-white/5">
+          <div className="flex flex-col items-center">
+            <span className="text-[9px] font-bold text-white/40 uppercase tracking-widest">INNING</span>
+            <span className="text-2xl font-bold text-amber-400 font-mono leading-none mt-1">{inning}</span>
+          </div>
+
+          <button
+            onClick={onSwap}
+            className="flex flex-col items-center justify-center group opacity-50 hover:opacity-100 transition-opacity"
+            title="Intercambiar Equipos"
+          >
+            <Trophy size={14} className="text-amber-400/80 mb-0.5" />
+            <div className="flex items-center text-[8px] font-bold text-white/50 gap-1">
+              <ArrowRightLeft size={8} /> SWAP
+            </div>
+          </button>
+        </div>
+
+        {/* --- Right: Local --- */}
+        <div className="flex-1 flex flex-col items-center justify-center border-l border-white/5 relative group">
+          {localLogo && (
+            <div
+              className="absolute inset-0 z-0 opacity-20 bg-center bg-no-repeat pointer-events-none"
+              style={{ backgroundImage: `url(${localLogo})`, backgroundSize: '100% 100%' }}
+            />
+          )}
+          <div className="relative z-10 flex flex-col items-center gap-1 w-full justify-center pb-4">
+            <span className="text-amber-400 font-bold tracking-widest text-xs uppercase mb-1 drop-shadow-md">LOCAL (HOME)</span>
+            <div className="flex items-center gap-4">
+              <button onClick={() => onAdjustLocal(-1)} className="w-6 h-6 rounded-full bg-black/40 hover:bg-black/60 active:bg-black/80 flex items-center justify-center text-white/50 hover:text-white transition-colors border border-white/10">
+                <Minus size={12} />
+              </button>
+              <span className="text-5xl font-black text-white font-mono tracking-tighter leading-none drop-shadow-xl">{localRuns}</span>
+              <button onClick={() => onAdjustLocal(1)} className="w-6 h-6 rounded-full bg-black/40 hover:bg-black/60 active:bg-black/80 flex items-center justify-center text-white/50 hover:text-white transition-colors border border-white/10">
+                <Plus size={12} />
+              </button>
+            </div>
+          </div>
+          <div className="flex gap-1.5 mt-1 absolute bottom-2">
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className={`w-2 h-2 rounded-full border border-amber-500/40 ${i < localOuts ? 'bg-amber-500 shadow-[0_0_5px_rgba(245,158,11,0.8)]' : 'bg-transparent'}`} />
+            ))}
+          </div>
+        </div>
+
+        {/* Glass Gloss Effect */}
+        <div className="absolute top-0 left-0 w-full h-1/2 bg-gradient-to-b from-white/10 to-transparent pointer-events-none"></div>
+      </div>
+    </div>,
+    document.body
+  );
+};
+
+const StatsTable: React.FC<{
+  visitor: TeamData;
+  local: TeamData;
+  visitorName: string;
+  localName: string;
+}> = ({ visitor, local, visitorName, localName }) => {
+
+  const calculateStats = (p: PlayerStats) => {
+    let vb = 0; // At Bats
+    let h = 0; // Hits
+    let ca = 0; // Runs
+    let e = 0; // Reached on Error / Safe
+    let defE = p.defError || 0; // Defensive Errors
+
+    p.scores.flat().forEach(val => {
+      const v = val.toUpperCase();
+      if (v.includes('H')) h++;
+      if (v.includes('●')) ca++;
+      if (v.includes('S')) e++;
+
+      // Calculating VB: Hit + Out + Error 
+      // Note: This is a simplified logic for B5 based on provided nomenclature
+      if (v.includes('H') || v.includes('X') || v.includes('S')) vb++;
+    });
+
+    const ave = vb > 0 ? (h / vb).toFixed(3) : '.000';
+    return { vb, h, ca, e, ave, defE };
+  };
+
+  const getAllStats = () => {
+    const rows: any[] = [];
+    const processTeam = (team: TeamData, tName: string) => {
+      team.slots.forEach((slot, idx) => {
+        // Starter
+        const sStat = calculateStats(slot.starter);
+        rows.push({
+          team: tName, type: 'Titular', no: slot.starter.number || '-', name: slot.starter.name || `Jugador ${idx + 1}`,
+          ...sStat
+        });
+        // Sub
+        if (slot.sub.name || slot.sub.scores.flat().some(x => x)) {
+          const subStat = calculateStats(slot.sub);
+          rows.push({
+            team: tName, type: 'Sub', no: slot.sub.number || '-', name: slot.sub.name || 'Sustituto',
+            ...subStat
+          });
+        }
+      });
+    };
+    processTeam(visitor, visitorName || 'VISITANTE');
+    processTeam(local, localName || 'LOCAL');
+    return rows;
+  };
+
+  const exportToCSV = () => {
+    const stats = getAllStats();
+    const headers = ['Equipo', 'Tipo', 'No', 'Jugador', 'VB', 'H', 'CA', 'E', 'AVE'];
+    const csvContent = [
+      headers.join(','),
+      ...stats.map(row => [row.team, row.type, row.no, row.name, row.vb, row.h, row.ca, row.e, row.ave].join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `estadisticas_b5_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const printStats = () => {
+    window.print();
+    // Note: CSS @media print is configured to handle showing only the table if a specific class or context is present, 
+    // but since we want a specific button for it, we rely on the user selecting "Print" and the CSS hiding the rest 
+    // if we are in a 'stats-only' mode. 
+    // Alternatively, we can just rely on the existing print CSS which cleans up everything.
+    // For specific "Print ONLY Stats", we add a class to body temporarily.
+    document.body.classList.add('print-stats-only');
+    setTimeout(() => {
+      document.body.classList.remove('print-stats-only');
+    }, 1000);
+  };
+
+  const renderRows = (team: TeamData, teamName: string, colorClass: string) => {
+    return team.slots.map((slot, idx) => {
+      const starterStats = calculateStats(slot.starter);
+      return (
+        <React.Fragment key={`${teamName}-${idx}`}>
+          <tr className="border-b border-white/5 hover:bg-white/5 text-[10px] md:text-xs">
+            <td className={`p-2 font-bold ${colorClass}`}>{teamName}</td>
+            <td className="p-2 font-mono text-center">{slot.starter.number || '-'}</td>
+            <td className="p-2 truncate max-w-[100px]">{slot.starter.name || 'Jugador ' + (idx + 1)}</td>
+            <td className="p-2 text-center text-white/70">{starterStats.vb}</td>
+            <td className="p-2 text-center text-green-400 font-bold">{starterStats.h}</td>
+            <td className="p-2 text-center text-rose-400 font-bold">{starterStats.ca}</td>
+            <td className="p-2 text-center text-yellow-500 font-bold">{starterStats.defE}</td>
+            <td className="p-2 text-center text-yellow-400">{starterStats.e}</td>
+            <td className="p-2 text-center font-mono text-white">{starterStats.ave}</td>
+          </tr>
+          {(slot.sub.name || slot.sub.scores.flat().some(x => x)) && (
+            <tr className="border-b border-white/5 hover:bg-white/5 bg-white/[0.02] text-[10px] md:text-xs">
+              <td className={`p-2 uppercase tracking-wider ${colorClass} opacity-70`}>Sub</td>
+              <td className="p-2 font-mono text-center">{slot.sub.number || '-'}</td>
+              <td className="p-2 truncate max-w-[100px] text-white/70">{slot.sub.name || 'Sustituto'}</td>
+              <td className="p-2 text-center text-white/50">{calculateStats(slot.sub).vb}</td>
+              <td className="p-2 text-center text-green-400/70">{calculateStats(slot.sub).h}</td>
+              <td className="p-2 text-center text-rose-400/70">{calculateStats(slot.sub).ca}</td>
+              <td className="p-2 text-center text-yellow-500/70">{calculateStats(slot.sub).defE}</td>
+              <td className="p-2 text-center text-yellow-400/70">{calculateStats(slot.sub).e}</td>
+              <td className="p-2 text-center font-mono text-white/70">{calculateStats(slot.sub).ave}</td>
+            </tr>
+          )}
+        </React.Fragment>
+      );
+    });
+  }
+
+  return (
+    <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden shadow-xl mt-6 print-stats-table">
+      <div className="p-3 bg-white/10 border-b border-white/10 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Table2 size={16} className="text-purple-300" />
+          <h3 className="font-bold text-sm uppercase tracking-wider text-white">Estadísticas en Tiempo Real</h3>
+        </div>
+        <div className="flex gap-2 no-print">
+          <button onClick={exportToCSV} className="p-1.5 bg-green-600/20 hover:bg-green-600/30 text-green-400 rounded border border-green-600/30 transition-colors" title="Exportar Excel/CSV">
+            <FileSpreadsheet size={14} />
+          </button>
+          <button onClick={printStats} className="p-1.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 rounded border border-blue-600/30 transition-colors" title="Imprimir PDF (Solo Tabla)">
+            <FileDown size={14} />
+          </button>
+        </div>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-left">
+          <thead className="text-[10px] uppercase bg-black/20 text-white/50">
+            <tr>
+              <th className="p-2">Equipo</th>
+              <th className="p-2 text-center">No</th>
+              <th className="p-2">Jugador</th>
+              <th className="p-2 text-center" title="Veces al Bate">VB</th>
+              <th className="p-2 text-center" title="Hits">H</th>
+              <th className="p-2 text-center" title="Carreras Anotadas">CA</th>
+              <th className="p-2 text-center" title="Errores Defensivos">E (Def)</th>
+              <th className="p-2 text-center" title="Embasa por Error">E (Emb)</th>
+              <th className="p-2 text-center" title="Promedio">AVE</th>
+            </tr>
+          </thead>
+          <tbody>
+            {renderRows(visitor, visitorName || 'VISITANTE', 'text-purple-300')}
+            {renderRows(local, localName || 'LOCAL', 'text-orange-300')}
+          </tbody>
+        </table>
+      </div>
+      <div className="p-2 text-[9px] text-white/30 text-center italic bg-black/20">
+        * VB = Hits + Outs + Error | E = Embasado por Error
+      </div>
+    </div>
+  );
+};
+
+export const ScoreCard: React.FC = () => {
+  const [state, setState] = useState<ScoreCardState>(initialState);
+  const [loaded, setLoaded] = useState(false);
+  const [showSidebar, setShowSidebar] = useState(true);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [showStats, setShowStats] = useState(false);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('b5tools_game_state_v7');
+    if (saved) {
+      try { setState(JSON.parse(saved)); } catch (e) { console.error(e); }
+    }
+    setLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    if (loaded) {
+      localStorage.setItem('b5tools_game_state_v7', JSON.stringify(state));
+    }
+  }, [state, loaded]);
+
+  const currentInningIdx = state.visitorTeam.slots[0].starter.scores.length - 1;
+  const currentInning = currentInningIdx + 1;
+
+  const calculateRunsFromGrid = (team: TeamData) => {
+    let runs = 0;
+    team.slots.forEach(slot => {
+      slot.starter.scores.flat().forEach(val => { if (val.includes('●')) runs++; });
+      slot.sub.scores.flat().forEach(val => { if (val.includes('●')) runs++; });
+    });
+    return runs;
+  };
+
+  const countHits = (team: TeamData) => {
+    let hits = 0;
+    team.slots.forEach(slot => {
+      slot.starter.scores.flat().forEach(val => { if (val.includes('H')) hits++; });
+      slot.sub.scores.flat().forEach(val => { if (val.includes('H')) hits++; });
+    });
+    return hits;
+  };
+
+  const countTotalPlays = (team: TeamData) => {
+    let plays = 0;
+    team.slots.forEach(slot => {
+      slot.starter.scores.flat().forEach(val => { if (val.trim()) plays++; });
+      // Subs share the slot, so their plays count towards the slot's turn usually, 
+      // but simple logic: count all non-empty cells in the grid to determine rotation is standard.
+      // However, standard baseball scorecard rotation is simply "Who is next".
+      // Better logic: Find the LAST non-empty cell across the whole team history.
+      // Simplified Logic for "Next Batter": Total Plays % 9 (or roster size).
+      slot.sub.scores.flat().forEach(val => { if (val.trim()) plays++; });
+    });
+    return plays;
+  };
+
+  const visitorNextBatterIdx = countTotalPlays(state.visitorTeam) % state.visitorTeam.slots.length;
+  const localNextBatterIdx = countTotalPlays(state.localTeam) % state.localTeam.slots.length;
+
+  const visitorRunsManual = state.inningScores.visitor.reduce((acc, curr) => acc + (parseInt(curr) || 0), 0);
+  const localRunsManual = state.inningScores.local.reduce((acc, curr) => acc + (parseInt(curr) || 0), 0);
+  const visitorRunsGrid = calculateRunsFromGrid(state.visitorTeam);
+  const localRunsGrid = calculateRunsFromGrid(state.localTeam);
+
+  // Use manual adjustments
+  const visitorRunsTotal = Math.max(visitorRunsManual, visitorRunsGrid) + (state.scoreAdjustments?.visitor || 0);
+  const localRunsTotal = Math.max(localRunsManual, localRunsGrid) + (state.scoreAdjustments?.local || 0);
+
+  const visitorHits = countHits(state.visitorTeam);
+  const localHits = countHits(state.localTeam);
+
+  const countOutsForInning = (team: TeamData, iIdx: number) => {
+    let outs = 0;
+    team.slots.forEach(slot => {
+      slot.starter.scores[iIdx].forEach(val => { if (val.trim().toUpperCase().includes('X')) outs++; });
+      slot.sub.scores[iIdx].forEach(val => { if (val.trim().toUpperCase().includes('X')) outs++; });
+    });
+    return Math.min(outs, 3);
+  };
+
+  const visitorOuts = countOutsForInning(state.visitorTeam, currentInningIdx);
+  const localOuts = countOutsForInning(state.localTeam, currentInningIdx);
+
+  useEffect(() => {
+    if (!loaded) return;
+    if (state.winner) return;
+
+    const countOuts = (team: TeamData) => {
+      const lastInningIdx = team.slots[0].starter.scores.length - 1;
+      let outs = 0;
+      team.slots.forEach(slot => {
+        slot.starter.scores[lastInningIdx].forEach(val => {
+          if (val.trim().toUpperCase().includes('X')) outs++;
+        });
+        slot.sub.scores[lastInningIdx].forEach(val => {
+          if (val.trim().toUpperCase().includes('X')) outs++;
+        });
+      });
+      return outs;
+    };
+
+    const vOuts = countOuts(state.visitorTeam);
+    const lOuts = countOuts(state.localTeam);
+    const currentInningCount = state.visitorTeam.slots[0].starter.scores.length;
+
+    if (vOuts >= 3 && lOuts >= 3) {
+      setState(prev => {
+        if (prev.visitorTeam.slots[0].starter.scores.length > currentInningCount) return prev;
+        const newVisitorTeam = { ...prev.visitorTeam };
+        newVisitorTeam.slots.forEach(slot => { slot.starter.scores.push(['']); slot.sub.scores.push(['']); });
+        const newLocalTeam = { ...prev.localTeam };
+        newLocalTeam.slots.forEach(slot => { slot.starter.scores.push(['']); slot.sub.scores.push(['']); });
+        return {
+          ...prev,
+          visitorTeam: newVisitorTeam,
+          localTeam: newLocalTeam,
+          inningScores: { visitor: [...prev.inningScores.visitor, ''], local: [...prev.inningScores.local, ''] }
+        };
+      });
+    }
+
+  }, [state.visitorTeam, state.localTeam, loaded, state.winner]);
+
+
+
+  const handleScoreAdjustment = (team: 'visitor' | 'local', delta: number) => {
+    setState(prev => ({
+      ...prev,
+      scoreAdjustments: {
+        ...prev.scoreAdjustments,
+        [team]: (prev.scoreAdjustments?.[team] || 0) + delta
+      }
+    }));
+  };
+
+  const updateGameInfo = (field: string, value: string) => {
+    if (field.includes('.')) {
+      const [parent, child] = field.split('.');
+      setState(prev => ({ ...prev, gameInfo: { ...prev.gameInfo, [parent]: { ...(prev.gameInfo[parent as keyof typeof prev.gameInfo] as any), [child]: value } } }));
+    } else {
+      setState(prev => ({ ...prev, gameInfo: { ...prev.gameInfo, [field]: value } }));
+    }
+  };
+
+  const updateTeam = (team: 'visitorTeam' | 'localTeam', index: number, type: 'starter' | 'sub', field: string, value: any, inningIndex?: number, atBatIndex?: number, errorCulprit?: { team: string, slotIdx: number, type: 'starter' | 'sub' }) => {
+    setState(prev => {
+      if (prev.winner) return prev;
+
+      const newTeam = { ...prev[team] };
+      const newSlots = [...newTeam.slots];
+      const slot = { ...newSlots[index] };
+      const player = { ...slot[type] };
+
+      let nextHistory = [...prev.history];
+      let nextErrors = { ...prev.errors };
+      let nextInningScores = { ...prev.inningScores };
+      let foundWinner = null;
+
+      const opposingTeamKey = team === 'visitorTeam' ? 'localTeam' : 'visitorTeam';
+      let opposingTeamData = { ...prev[opposingTeamKey] };
+      let opSlots = [...opposingTeamData.slots];
+
+      if (field === 'score' && inningIndex !== undefined && atBatIndex !== undefined) {
+        const newScores = [...player.scores];
+        const newInning = [...newScores[inningIndex]];
+        let isThirdOut = false;
+
+        // --- CHECK PREVIOUS VALUE FOR UNDO LOGIC ---
+        const prevValue = player.scores[inningIndex][atBatIndex];
+        if (prevValue.startsWith('S-')) {
+          // It was an error with specific culprit
+          const culpritNum = prevValue.split('-')[1];
+          // Find this player in opposing team and decrement defError
+          for (let i = 0; i < opSlots.length; i++) {
+            const s = { ...opSlots[i] };
+            let pType: 'starter' | 'sub' | null = null;
+            if (s.starter.number === culpritNum) pType = 'starter';
+            else if (s.sub.number === culpritNum) pType = 'sub';
+
+            if (pType) {
+              const p = { ...s[pType] };
+              p.defError = Math.max(0, (p.defError || 0) - 1); // Decrement
+              s[pType] = p;
+              opSlots[i] = s; // Update the slot in the working copy
+              break;
+            }
+          }
+        }
+        // --- END UNDO LOGIC ---
+
+
+        let actionDesc = '';
+        const vUpper = value.toUpperCase();
+        if (vUpper.includes('X')) actionDesc = 'OUT';
+        if (vUpper.includes('H')) actionDesc = 'HIT';
+        if (vUpper.includes('S')) actionDesc = 'ERROR (Salvado)';
+        if (vUpper.includes('●')) actionDesc = actionDesc ? actionDesc + ' + CARRERA' : 'CARRERA';
+        if (value === '') actionDesc = 'BORRAR / CAMBIO';
+
+        if (errorCulprit) {
+          // Visual only for history, actual update below
+          const opTeamData = prev[opposingTeamKey];
+          const culpritPlayer = opTeamData.slots[errorCulprit.slotIdx][errorCulprit.type];
+          actionDesc += ` (Error de #${culpritPlayer.number})`;
+        }
+
+        if (actionDesc) {
+          nextHistory.unshift({
+            id: Date.now(),
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            inning: inningIndex + 1,
+            teamName: team === 'visitorTeam' ? (prev.gameInfo.visitor || 'Visitante') : (prev.gameInfo.home || 'Local'),
+            playerNum: player.number || `#${index + 1}`,
+            playerName: player.name || 'Jugador',
+            actionCode: value,
+            description: actionDesc
+          });
+          if (nextHistory.length > 50) nextHistory = nextHistory.slice(0, 50);
+        }
+
+        if (value.toUpperCase().includes('X') && !value.includes('■')) {
+          let existingOuts = 0;
+          prev[team].slots.forEach((s, sIdx) => {
+            s.starter.scores[inningIndex].forEach((v, vIdx) => { if (sIdx === index && type === 'starter' && vIdx === atBatIndex) return; if (v.toUpperCase().includes('X')) existingOuts++; });
+            s.sub.scores[inningIndex].forEach((v, vIdx) => { if (sIdx === index && type === 'sub' && vIdx === atBatIndex) return; if (v.toUpperCase().includes('X')) existingOuts++; });
+          });
+
+          if (existingOuts === 2) {
+            value = value + '■';
+            isThirdOut = true;
+          }
+        }
+
+        newInning[atBatIndex] = value;
+        newScores[inningIndex] = newInning;
+        player.scores = newScores;
+
+        // const prevValue already captured above
+        const hadRun = prevValue.includes('●');
+        const hasRun = value.includes('●');
+
+        if (!hadRun && hasRun) {
+          const isVisitor = team === 'visitorTeam';
+          const currentSummary = parseInt(prev.inningScores[isVisitor ? 'visitor' : 'local'][inningIndex] || '0');
+          const targetScores = [...nextInningScores[isVisitor ? 'visitor' : 'local']];
+          targetScores[inningIndex] = (currentSummary + 1).toString();
+          nextInningScores[isVisitor ? 'visitor' : 'local'] = targetScores;
+        }
+
+        const hadError = prevValue.includes('S');
+        const hasError = value.includes('S');
+        const errorTeam = team === 'visitorTeam' ? 'local' : 'visitor';
+
+        if (!hadError && hasError) {
+          const currentErrors = parseInt(nextErrors[errorTeam] || '0');
+          nextErrors[errorTeam] = (currentErrors + 1).toString();
+        } else if (hadError && !hasError) {
+          const currentErrors = parseInt(nextErrors[errorTeam] || '0');
+          nextErrors[errorTeam] = Math.max(0, currentErrors - 1).toString();
+        }
+
+        if (isThirdOut) {
+          // Simplified Check for win condition
+          const tempState = { ...prev, [team]: newTeam };
+          const vRuns = calculateRunsFromGrid(tempState.visitorTeam);
+          const lRuns = calculateRunsFromGrid(tempState.localTeam);
+          const vAdj = prev.scoreAdjustments?.visitor || 0;
+          const lAdj = prev.scoreAdjustments?.local || 0;
+
+          const finalV = vRuns + vAdj;
+          const finalL = lRuns + lAdj;
+
+          const isVisitorUpdate = (team === 'visitorTeam');
+
+          // Win condition: We are in inning 5+ (index 4), and logic should ideally check if trailing team has had their turn.
+          // For simplicity/requirement: If inning >= 5 and score diff exists after pair of innings.
+          // But here we check *after every 3rd out*.
+          // If Visitor just finished inning 9 top, game isn't over unless Local is already ahead? 
+          // Simplified: If inning >= 9 (index 8) or whatever "game end" is. 
+          // For now, let's just use the existing logic but FIX THE SCORE calculation.
+
+          if (inningIndex >= 6 && !isVisitorUpdate) { // End of a full inning (Local finished)
+            if (finalL > finalV) foundWinner = { name: prev.gameInfo.home || 'LOCAL', score: `${finalL} - ${finalV}`, isVisitor: false };
+            else if (finalV > finalL) foundWinner = { name: prev.gameInfo.visitor || 'VISITANTE', score: `${finalV} - ${finalL}`, isVisitor: true };
+          }
+          // Walk-off logic: If Local scores correctly in bottom inning? (Handled differently usually)
+        }
+
+      } else {
+        (player as any)[field] = value;
+      }
+
+      slot[type] = player;
+      newSlots[index] = slot;
+      newTeam.slots = newSlots;
+
+      if (errorCulprit) {
+        // Use existing opSlots from top scope
+        let opSlot = { ...opSlots[errorCulprit.slotIdx] };
+        let opPlayer = { ...opSlot[errorCulprit.type] };
+
+        opPlayer.defError = (opPlayer.defError || 0) + 1;
+
+        opSlot[errorCulprit.type] = opPlayer;
+        opSlots[errorCulprit.slotIdx] = opSlot;
+      }
+
+      // Ensure the opposingTeamData has the latest slots (modified by Undo or Redo)
+      opposingTeamData.slots = opSlots;
+
+      return {
+        ...prev,
+        [team]: newTeam,
+        [opposingTeamKey]: opposingTeamData,
+        inningScores: nextInningScores,
+        errors: nextErrors,
+        winner: foundWinner || prev.winner,
+        history: nextHistory
+      };
+    });
+  };
+
+  const updateInningScore = (team: 'visitor' | 'local', index: number, value: string) => {
+    setState(prev => {
+      const newScores = [...prev.inningScores[team]];
+      newScores[index] = value;
+      return { ...prev, inningScores: { ...prev.inningScores, [team]: newScores } };
+    });
+  };
+
+  const handleAddColumn = (inningIndex: number) => {
+    setState(prev => {
+      const newVisitorTeam = { ...prev.visitorTeam };
+      newVisitorTeam.slots.forEach(slot => { slot.starter.scores[inningIndex].push(''); slot.sub.scores[inningIndex].push(''); });
+      const newLocalTeam = { ...prev.localTeam };
+      newLocalTeam.slots.forEach(slot => { slot.starter.scores[inningIndex].push(''); slot.sub.scores[inningIndex].push(''); });
+      return { ...prev, visitorTeam: newVisitorTeam, localTeam: newLocalTeam };
+    });
+  };
+
+  const swapTeams = () => {
+    setState(prev => ({
+      ...prev,
+      visitorTeam: prev.localTeam,
+      localTeam: prev.visitorTeam,
+      gameInfo: {
+        ...prev.gameInfo,
+        visitor: prev.gameInfo.home,
+        home: prev.gameInfo.visitor,
+        visitorLogo: prev.gameInfo.homeLogo,
+        homeLogo: prev.gameInfo.visitorLogo
+      },
+      inningScores: {
+        visitor: prev.inningScores.local,
+        local: prev.inningScores.visitor
+      },
+      errors: {
+        visitor: prev.errors.local,
+        local: prev.errors.visitor
+      },
+      timeouts: {
+        visitor: prev.timeouts.local,
+        local: prev.timeouts.visitor
+      }
+    }));
+  };
+
+  const handleReset = () => {
+    setShowResetConfirm(true);
+  };
+
+  const confirmReset = () => {
+    setState(initialState);
+    setShowResetConfirm(false);
+  };
+
+  const handlePrint = () => {
+    window.print();
+  };
+
+  return (
+    <div className="w-full bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-4 md:p-8 shadow-2xl relative transition-all duration-300 mb-20 pt-24 md:pt-16 print-container">
+      <style>{`
+        @media print {
+          @page { size: landscape; margin: 10mm; }
+          body { background: white !important; color: black !important; -webkit-print-color-adjust: exact; padding: 0 !important; margin: 0 !important; overflow: visible !important; height: auto !important; }
+          #root { height: auto !important; overflow: visible !important; }
+          .no-print, .fixed, button { display: none !important; }
+          /* Logic for printing ONLY stats table when requested */
+          body.print-stats-only > * { display: none !important; }
+          body.print-stats-only .print-stats-table { display: block !important; position: absolute; top: 0; left: 0; width: 100%; margin: 0; }
+          body.print-stats-only .print-stats-table * { visibility: visible !important; }
+
+          .print-container { box-shadow: none !important; border: none !important; background: white !important; padding: 0 !important; margin: 0 !important; width: 100% !important; max-width: none !important; position: static !important; }
+          .print-panel { border: 1px solid #ccc !important; background: transparent !important; box-shadow: none !important; color: black !important; margin-bottom: 20px !important; break-inside: avoid; page-break-inside: avoid; }
+          .print-panel input, .print-panel select { color: black !important; border: 1px solid #ddd !important; background: transparent !important; font-size: 10px !important; }
+          .print-overflow-visible { overflow: visible !important; }
+          .left-sticky { position: static !important; background: white !important; color: black !important; border-color: #ccc !important; }
+          .bg-white\\/5 { background: transparent !important; border-color: #ccc !important; }
+          .bg-white\\/10 { background: #eee !important; color: black !important; }
+          .text-white { color: black !important; }
+          .text-white\\/50 { color: #666 !important; }
+          .text-white\\/40 { color: #888 !important; }
+          .text-white\\/80 { color: #333 !important; }
+          .text-white\\/70 { color: #444 !important; }
+          .bg-slate-900 { background: white !important; }
+        }
+      `}</style>
+
+      <WinnerModal winner={state.winner} onClose={() => setShowResetConfirm(true)} />
+      <ResetConfirmModal isOpen={showResetConfirm} onConfirm={confirmReset} onCancel={() => setShowResetConfirm(false)} />
+
+      <LiveGameStatus
+        visitorRuns={visitorRunsTotal}
+        localRuns={localRunsTotal}
+        inning={currentInning}
+        visitorOuts={visitorOuts}
+        localOuts={localOuts}
+        visitorName={state.gameInfo.visitor}
+        localName={state.gameInfo.home}
+        visitorLogo={state.gameInfo.visitorLogo}
+        localLogo={state.gameInfo.homeLogo}
+        onSwap={swapTeams}
+        onAdjustVisitor={(delta) => handleScoreAdjustment('visitor', delta)}
+        onAdjustLocal={(delta) => handleScoreAdjustment('local', delta)}
+      />
+
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4 pb-6 border-b border-white/10 mt-20 md:mt-10 no-print">
+        <div>
+          <h2 className="text-2xl md:text-3xl font-bold uppercase tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-white to-purple-300">
+            Tarjeta de Anotación
+          </h2>
+          <p className="text-white/40 text-xs mt-1">B5Tools Official Scoring System</p>
+        </div>
+
+        <div className="flex flex-wrap gap-2 w-full md:w-auto">
+          <button
+            onClick={handleReset}
+            className="flex items-center gap-2 px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-300 rounded-lg border border-red-500/20 text-xs font-bold transition-all hover:shadow-lg hover:shadow-red-500/10"
+          >
+            <RotateCcw size={14} /> REINICIAR
+          </button>
+          <button
+            onClick={handlePrint}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 rounded-lg border border-blue-500/20 text-xs font-bold transition-all hover:shadow-lg hover:shadow-blue-500/10"
+          >
+            <Printer size={14} /> HOJA
+          </button>
+          <button
+            onClick={() => setShowStats(!showStats)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg border text-xs font-bold transition-all ${showStats ? 'bg-amber-500/20 text-amber-200 border-amber-500/30' : 'bg-white/5 text-white/60 border-white/10 hover:bg-white/10'}`}
+          >
+            <Table2 size={14} /> ESTADÍSTICAS
+          </button>
+          <button
+            onClick={() => setShowSidebar(!showSidebar)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg border text-xs font-bold transition-all hidden md:flex ${showSidebar ? 'bg-purple-500/20 text-purple-200 border-purple-500/30' : 'bg-white/5 text-white/60 border-white/10 hover:bg-white/10'}`}
+          >
+            {showSidebar ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
+            {showSidebar ? 'PANEL' : 'PANEL'}
+          </button>
+        </div>
+      </div>
+
+      <div className="flex gap-4 mb-6 print-panel p-4 rounded-xl">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full">
+          <GlassInput placeholder="Juego #" className="text-center" value={state.gameInfo.gameNum} onChange={e => updateGameInfo('gameNum', e.target.value)} />
+          <GlassInput placeholder="Set #" className="text-center" value={state.gameInfo.setNum} onChange={e => updateGameInfo('setNum', e.target.value)} />
+          <GlassInput placeholder="Fecha" type="date" className="col-span-2 md:col-span-2" value={state.gameInfo.date} onChange={e => updateGameInfo('date', e.target.value)} />
+        </div>
+      </div>
+
+      {showStats && (
+        <div className="mb-8 animate-in slide-in-from-top duration-300">
+          <StatsTable visitor={state.visitorTeam} local={state.localTeam} visitorName={state.gameInfo.visitor} localName={state.gameInfo.home} />
+        </div>
+      )}
+
+      <div className={`grid gap-8 transition-all duration-500 ease-in-out ${showSidebar ? 'grid-cols-1 xl:grid-cols-4' : 'grid-cols-1'}`}>
+        <div className={`${showSidebar ? 'xl:col-span-3' : 'w-full'}`}>
+          <LineupGrid
+            title="Alineación Visitante"
+            teamNameValue={state.gameInfo.visitor}
+            onTeamNameChange={(val) => updateGameInfo('visitor', val)}
+            teamData={state.visitorTeam}
+            onUpdate={(idx, type, field, val, iIdx, abIdx, errorCulprit) => updateTeam('visitorTeam', idx, type, field, val, iIdx, abIdx, errorCulprit)}
+            onAddColumn={handleAddColumn}
+            theme="purple"
+            currentInningIdx={currentInningIdx}
+            nextBatterIdx={visitorNextBatterIdx}
+            opposingTeam={state.localTeam}
+          />
+          <LineupGrid
+            title="Alineación Local"
+            teamNameValue={state.gameInfo.home}
+            onTeamNameChange={(val) => updateGameInfo('home', val)}
+            teamData={state.localTeam}
+            onUpdate={(idx, type, field, val, iIdx, abIdx, errorCulprit) => updateTeam('localTeam', idx, type, field, val, iIdx, abIdx, errorCulprit)}
+            onAddColumn={handleAddColumn}
+            theme="amber"
+            currentInningIdx={currentInningIdx}
+            nextBatterIdx={localNextBatterIdx}
+            opposingTeam={state.visitorTeam}
+          />
+
+          <div className="mt-8 bg-white/5 border border-white/10 rounded-xl overflow-hidden shadow-2xl print-panel">
+            <div className="flex bg-white/10 text-xs font-bold text-center border-b border-white/10">
+              <div className="w-32 md:w-48 p-3 text-left pl-6 text-white/60">EQUIPO</div>
+              {state.inningScores.visitor.map((_, i) => (
+                <div key={i} className="flex-1 p-3 text-white/80 border-l border-white/5">{i + 1 > 5 ? `E${i - 4}` : i + 1}</div>
+              ))}
+              <div className="w-12 p-3 bg-white/5 border-l border-white/5 text-purple-300">C</div>
+              <div className="w-12 p-3 bg-white/5 border-l border-white/5 text-green-300">H</div>
+              <div className="w-12 p-3 bg-white/5 border-l border-white/5 text-red-300">E</div>
+            </div>
+
+            <div className="flex border-b border-white/10 items-center hover:bg-white/5 transition-colors">
+              <div className="w-32 md:w-48 p-2 pl-6 text-sm font-bold text-purple-300 truncate uppercase tracking-wide">
+                {state.gameInfo.visitor || 'VISITANTE'}
+              </div>
+              {state.inningScores.visitor.map((score, i) => (
+                <div key={i} className="flex-1 p-1 border-l border-white/5">
+                  <input
+                    type="text"
+                    className="w-full bg-transparent text-center text-white font-mono font-bold focus:outline-none focus:text-purple-300"
+                    placeholder="-"
+                    value={score}
+                    onChange={e => updateInningScore('visitor', i, e.target.value)}
+                  />
+                </div>
+              ))}
+              <div className="w-12 p-2 font-black text-center bg-white/5 border-l border-white/5 text-white">{visitorRunsTotal}</div>
+              <div className="w-12 p-2 font-bold text-center bg-white/5 border-l border-white/5 text-white/70">{visitorHits}</div>
+              <div className="w-12 p-2 font-bold text-center bg-white/5 border-l border-white/5 text-white/70">{state.errors.visitor}</div>
+            </div>
+
+            <div className="flex items-center hover:bg-white/5 transition-colors">
+              <div className="w-32 md:w-48 p-2 pl-6 text-sm font-bold text-orange-300 truncate uppercase tracking-wide">
+                {state.gameInfo.home || 'LOCAL'}
+              </div>
+              {state.inningScores.local.map((score, i) => (
+                <div key={i} className="flex-1 p-1 border-l border-white/5">
+                  <input
+                    type="text"
+                    className="w-full bg-transparent text-center text-white font-mono font-bold focus:outline-none focus:text-orange-300"
+                    placeholder="-"
+                    value={score}
+                    onChange={e => updateInningScore('local', i, e.target.value)}
+                  />
+                </div>
+              ))}
+              <div className="w-12 p-2 font-black text-center bg-white/5 border-l border-white/5 text-white">{localRunsTotal}</div>
+              <div className="w-12 p-2 font-bold text-center bg-white/5 border-l border-white/5 text-white/70">{localHits}</div>
+              <div className="w-12 p-2 font-bold text-center bg-white/5 border-l border-white/5 text-white/70">{state.errors.local}</div>
+            </div>
+          </div>
+        </div>
+
+        <div className={`flex flex-col gap-6 xl:col-span-1 transition-all duration-300 ${showSidebar ? 'opacity-100 translate-x-0' : 'hidden opacity-0 translate-x-10 no-print'}`}>
+          <div className="bg-white/5 rounded-xl border border-white/10 shadow-lg overflow-hidden flex flex-col max-h-[400px] print-panel">
+            <div className="p-4 border-b border-white/10 bg-white/5 backdrop-blur-sm sticky top-0 z-10 flex justify-between items-center">
+              <GlassTitle className="text-sm mb-0 pb-0 border-0 flex items-center gap-2">
+                <History size={14} className="text-purple-300" /> Historial de Jugadas
+              </GlassTitle>
+              <div className="flex items-center gap-1">
+                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                <span className="text-[10px] text-white/40 uppercase font-bold">En Vivo</span>
+              </div>
+            </div>
+
+            <div className="overflow-y-auto p-4 space-y-3 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent flex-1">
+              {state.history.length === 0 ? (
+                <div className="text-center py-8 text-white/20 italic text-xs">
+                  Aún no hay jugadas registradas...
+                </div>
+              ) : (
+                state.history.map((event) => (
+                  <div key={event.id} className="flex gap-3 items-start animate-in slide-in-from-left duration-300">
+                    <div className="text-[10px] font-mono text-white/30 pt-1 min-w-[35px]">{event.timestamp}</div>
+                    <div className="flex-1">
+                      <div className="bg-white/5 border border-white/5 rounded p-2">
+                        <div className="flex justify-between items-center mb-1">
+                          <span className={`text-[10px] font-bold uppercase tracking-wide ${event.teamName === (state.gameInfo.visitor || 'Visitante') ? 'text-purple-300' : 'text-orange-300'}`}>
+                            {event.teamName}
+                          </span>
+                          <span className="text-[9px] bg-white/10 px-1 rounded text-white/50">INN {event.inning}</span>
+                        </div>
+                        <div className="text-xs text-white">
+                          <span className="font-bold mr-1">#{event.playerNum} {event.playerName}:</span>
+                          <span className={event.actionCode.includes('X') ? 'text-red-300' : event.actionCode.includes('H') ? 'text-green-300' : event.actionCode.includes('●') ? 'text-rose-400 font-bold' : 'text-white/80'}>
+                            {event.description}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className="bg-white/5 p-5 rounded-xl border border-white/10 shadow-lg print-panel">
+            <GlassTitle className="text-sm">Datos Generales</GlassTitle>
+            <div className="space-y-3">
+              <GlassInput label="Competencia" value={state.gameInfo.competition} onChange={e => updateGameInfo('competition', e.target.value)} />
+              <GlassInput label="Lugar" value={state.gameInfo.place} onChange={e => updateGameInfo('place', e.target.value)} />
+              <GlassInput label="Lugar" value={state.gameInfo.place} onChange={e => updateGameInfo('place', e.target.value)} />
+
+              <div className="flex gap-2 items-end">
+                <GlassInput label="Visitador" containerClassName="border-l-2 border-purple-500 pl-2 flex-1" value={state.gameInfo.visitor} onChange={e => updateGameInfo('visitor', e.target.value)} />
+                <label className="cursor-pointer p-2 bg-white/5 hover:bg-white/10 rounded border border-white/10 mb-1 transition-colors group">
+                  <input type="file" accept="image/*" className="hidden" onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      const reader = new FileReader();
+                      reader.onloadend = () => updateGameInfo('visitorLogo', reader.result as string);
+                      reader.readAsDataURL(file);
+                    }
+                  }} />
+                  <Upload size={16} className={`text-white/40 group-hover:text-purple-300 ${state.gameInfo.visitorLogo ? 'text-purple-500' : ''}`} />
+                </label>
+              </div>
+
+              <div className="flex gap-2 items-end">
+                <GlassInput label="Home Club" containerClassName="border-l-2 border-amber-500 pl-2 flex-1" value={state.gameInfo.home} onChange={e => updateGameInfo('home', e.target.value)} />
+                <label className="cursor-pointer p-2 bg-white/5 hover:bg-white/10 rounded border border-white/10 mb-1 transition-colors group">
+                  <input type="file" accept="image/*" className="hidden" onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      const reader = new FileReader();
+                      reader.onloadend = () => updateGameInfo('homeLogo', reader.result as string);
+                      reader.readAsDataURL(file);
+                    }
+                  }} />
+                  <Upload size={16} className={`text-white/40 group-hover:text-amber-300 ${state.gameInfo.homeLogo ? 'text-amber-500' : ''}`} />
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white/5 p-5 rounded-xl border border-white/10 shadow-lg print-panel">
+            <GlassTitle className="text-sm">Oficiales</GlassTitle>
+            <div className="space-y-3">
+              <GlassInput label="Oficial del Plato" value={state.gameInfo.officials.plate} onChange={e => updateGameInfo('officials.plate', e.target.value)} />
+              <GlassInput label="1er Oficial del Campo" value={state.gameInfo.officials.field1} onChange={e => updateGameInfo('officials.field1', e.target.value)} />
+              <GlassInput label="2do Oficial del Campo" value={state.gameInfo.officials.field2} onChange={e => updateGameInfo('officials.field2', e.target.value)} />
+              <GlassInput label="3er Oficial del Campo" value={state.gameInfo.officials.field3} onChange={e => updateGameInfo('officials.field3', e.target.value)} />
+              <GlassInput label="Oficial de Mesa" value={state.gameInfo.officials.table} onChange={e => updateGameInfo('officials.table', e.target.value)} />
+            </div>
+          </div>
+
+          <div className="bg-white/5 p-4 rounded-xl border border-white/10 text-xs shadow-lg print-panel">
+            <h4 className="font-bold text-white mb-3 border-b border-white/10 pb-1 uppercase tracking-wider flex items-center gap-2">
+              <Hash size={12} /> Nomenclatura
+            </h4>
+            <div className="grid grid-cols-2 gap-y-3 gap-x-2">
+              <div className="flex items-center gap-2">
+                <X size={14} className="text-red-400 stroke-[3]" /> <span className="text-white/80">Out</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="font-black text-green-400 text-sm">H</span> <span className="text-white/80">Hit</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="font-black text-yellow-400 text-sm">S</span> <span className="text-white/80">Salvado (Error)</span>
+              </div>
+              <div className="flex items-center gap-2 col-span-2 border-t border-white/5 pt-2 mt-1">
+                <ArrowRightLeft size={14} className="text-purple-300" /> <span className="text-white/80">Sustitución</span>
+              </div>
+              <div className="flex items-center gap-2 col-span-2">
+                <Square size={14} className="text-amber-500 fill-amber-500" /> <span className="text-white/80">Fin de la entrada</span>
+              </div>
+              <div className="flex items-center gap-2 col-span-2">
+                <Circle size={14} className="text-red-500 fill-red-500" /> <span className="text-white/80">Carrera Anotada</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white/5 p-4 rounded-xl border border-white/10 shadow-lg print-panel">
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              <div className="bg-black/20 p-2 rounded border border-white/5">
+                <div className="flex items-center gap-1 text-[10px] font-bold text-white/50 mb-1 uppercase tracking-wider"><Clock size={10} /> INICIO</div>
+                <input
+                  type="time"
+                  className="bg-transparent text-white text-sm w-full focus:outline-none"
+                  value={state.gameInfo.times.start}
+                  onChange={e => updateGameInfo('times.start', e.target.value)}
+                />
+              </div>
+              <div className="bg-black/20 p-2 rounded border border-white/5">
+                <div className="flex items-center gap-1 text-[10px] font-bold text-white/50 mb-1 uppercase tracking-wider"><Clock size={10} /> FIN</div>
+                <input
+                  type="time"
+                  className="bg-transparent text-white text-sm w-full focus:outline-none"
+                  value={state.gameInfo.times.end}
+                  onChange={e => updateGameInfo('times.end', e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="text-[10px] font-bold text-white/70 uppercase tracking-widest border-b border-white/10 pb-1">Tiempos Fuera</div>
+              <div className="flex justify-between items-center bg-white/5 p-2 rounded">
+                <span className="text-xs font-semibold">VISITANTE</span>
+                <div className="flex gap-2">
+                  <input
+                    type="checkbox"
+                    className="accent-purple-500 w-4 h-4 cursor-pointer"
+                    checked={state.timeouts.visitor[0]}
+                    onChange={e => setState(p => ({ ...p, timeouts: { ...p.timeouts, visitor: [e.target.checked, p.timeouts.visitor[1]] } }))}
+                  />
+                  <input
+                    type="checkbox"
+                    className="accent-purple-500 w-4 h-4 cursor-pointer"
+                    checked={state.timeouts.visitor[1]}
+                    onChange={e => setState(p => ({ ...p, timeouts: { ...p.timeouts, visitor: [p.timeouts.visitor[0], e.target.checked] } }))}
+                  />
+                </div>
+              </div>
+              <div className="flex justify-between items-center bg-white/5 p-2 rounded">
+                <span className="text-xs font-semibold">LOCAL</span>
+                <div className="flex gap-2">
+                  <input
+                    type="checkbox"
+                    className="accent-amber-500 w-4 h-4 cursor-pointer"
+                    checked={state.timeouts.local[0]}
+                    onChange={e => setState(p => ({ ...p, timeouts: { ...p.timeouts, local: [e.target.checked, p.timeouts.local[1]] } }))}
+                  />
+                  <input
+                    type="checkbox"
+                    className="accent-amber-500 w-4 h-4 cursor-pointer"
+                    checked={state.timeouts.local[1]}
+                    onChange={e => setState(p => ({ ...p, timeouts: { ...p.timeouts, local: [p.timeouts.local[0], e.target.checked] } }))}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
