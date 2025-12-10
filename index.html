@@ -1,31 +1,60 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>B5Tools Official</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-      body {
-        font-family: 'Inter', sans-serif;
-      }
-      /* Custom scrollbar for glass feel */
-      ::-webkit-scrollbar {
-        width: 8px;
-        height: 8px;
-      }
-      ::-webkit-scrollbar-track {
-        background: rgba(255, 255, 255, 0.05);
-      }
-      ::-webkit-scrollbar-thumb {
-        background: rgba(255, 255, 255, 0.2);
-        border-radius: 4px;
-      }
-      ::-webkit-scrollbar-thumb:hover {
-        background: rgba(255, 255, 255, 0.4);
-      }
-    </style>
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>B5Tools Official</title>
+
+  <!-- SEO Meta Tags -->
+  <meta name="description"
+    content="B5Tools: la herramienta definitiva para clubes y ligas de Baseball Five y pelotica de goma. Anotación digital, estadísticas, gestión de equipos y torneos a nivel mundial." />
+  <meta name="keywords"
+    content="Baseball5, Baseball 5, B5 tools, B5Tools, Baseball5 stats, Baseball5 software, Baseball5 app, Baseball5 analytics, Baseball5 herramientas, Baseball5 gestión de clubes, Baseball5 entrenadores, Baseball5 árbitros, Baseball5 torneos, Baseball5 ligas, gestor Baseball5, estadística Baseball5, anotación Baseball5, marcador Baseball5, software deportivo Baseball5, plataforma Baseball5, pelotica de goma, juego de pelotica, pelotica de goma software, pelota suave, pelota de goma deporte, pelota de goma competencias, anotación pelotica, liga de pelotica, entrenador de pelotica, deportes urbanos, deporte a la manito, juego a la manito, anotación a la manito, reglas a la manito, herramientas a la manito, béisbol urbano, béisbol callejero, baseball callejero, béisbol adaptado, béisbol sin bate, béisbol 5 software, equipos Baseball5, clubes Baseball5, organización de torneos Baseball5, gestión de equipos Baseball5, planificación de entrenamientos Baseball5, estadísticas deportivas, análisis deportivo, software de análisis deportivo, gestor de ligas deportivas, plataforma deportiva global, clubes deportivos, clubes Baseball5 globales, Baseball5 Latinoamérica, Baseball5 Caribe, Baseball5 República Dominicana, Baseball5 Cuba, Baseball5 Puerto Rico, Baseball5 México, Baseball5 España, Baseball5 Europa, herramienta deportiva digital, estadísticas en tiempo real, anotación en vivo Baseball5, scorekeeping Baseball5, score digital Baseball5, herramienta para coaches Baseball5, herramienta para árbitros Baseball5, plataforma para clubes deportivos, SaaS deportivo, herramienta con IA para deportes, analytics deportivo con IA, LLM sports assistant, Supabase sports backend, gestión deportiva digital, deportes de barrio, deportes escolares, torneos escolares Baseball5, torneos comunitarios Baseball5" />
+  <meta name="author" content="B5Tools Development Team" />
+
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://b5tools.com/" />
+  <meta property="og:title" content="B5Tools - La Herramienta del Momento para Baseball5" />
+  <meta property="og:description"
+    content="B5Tools es un sistema deportivo integral para Baseball Five: anotación digital, dashboards avanzados, gestión de clubes, jugadores y torneos, con infraestructura escalable y soporte global." />
+  <meta property="og:image" content="/logo.png" />
+
+  <!-- Twitter -->
+  <meta property="twitter:card" content="summary_large_image" />
+  <meta property="twitter:url" content="https://b5tools.com/" />
+  <meta property="twitter:title" content="B5Tools - La Herramienta del Momento para Baseball5" />
+  <meta property="twitter:description"
+    content="B5Tools es un sistema deportivo integral para Baseball Five: anotación digital, dashboards avanzados, gestión de clubes, jugadores y torneos, con infraestructura escalable y soporte global." />
+  <meta property="twitter:image" content="/logo.png" />
+  <link rel="icon" type="image/png" href="/logo.png" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+    }
+
+    /* Custom scrollbar for glass feel */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.4);
+    }
+  </style>
   <script type="importmap">
 {
   "imports": {
@@ -37,10 +66,12 @@
   }
 }
 </script>
-<link rel="stylesheet" href="/index.css">
+  <link rel="stylesheet" href="/index.css">
 </head>
-  <body class="bg-slate-900 text-white overflow-x-hidden">
-    <div id="root"></div>
+
+<body class="bg-slate-900 text-white overflow-x-hidden">
+  <div id="root"></div>
   <script type="module" src="/index.tsx"></script>
 </body>
+
 </html>

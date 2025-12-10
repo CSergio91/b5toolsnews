@@ -30,7 +30,9 @@ import {
   Share2,
   Facebook,
   Linkedin,
-  Copy
+  Copy,
+  Maximize2,
+  Minimize2
 } from 'lucide-react';
 
 // --- Types for State Management ---
@@ -498,7 +500,10 @@ const LineupGrid: React.FC<{
   currentInningIdx: number;
   nextBatterIdx: number;
   opposingTeam: TeamData;
-}> = ({ title, teamNameValue, onTeamNameChange, teamData, onUpdate, onAddColumn, theme, currentInningIdx, nextBatterIdx, opposingTeam }) => {
+
+  isFullScreen?: boolean;
+  onToggleFullScreen?: () => void;
+}> = ({ title, teamNameValue, onTeamNameChange, teamData, onUpdate, onAddColumn, theme, currentInningIdx, nextBatterIdx, opposingTeam, isFullScreen, onToggleFullScreen }) => {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [activeCell, setActiveCell] = useState<{
@@ -603,21 +608,33 @@ const LineupGrid: React.FC<{
         opposingTeam={opposingTeam}
       />
 
-      <div className={`mb-8 border rounded-xl p-4 bg-white/5 ${theme === 'purple' ? 'border-purple-500/20 shadow-purple-900/20' : 'border-amber-500/20 shadow-orange-900/20'} shadow-lg transition-all print-panel`}>
-        <div className="flex flex-col md:flex-row items-start md:items-center gap-4 mb-4">
-          <span className={`text-xs font-bold uppercase tracking-widest px-2 py-1 rounded bg-white/5 border border-white/10 ${themeColors.headerText}`}>
-            {title}
-          </span>
-          <input
-            type="text"
-            value={teamNameValue}
-            onChange={(e) => onTeamNameChange(e.target.value)}
-            placeholder={`Nombre del Equipo ${theme === 'purple' ? 'Visitante' : 'Local'}`}
-            className={`bg-transparent text-xl md:text-2xl font-bold uppercase tracking-wide focus:outline-none border-b border-transparent focus:border-white/20 transition-all w-full md:w-auto ${theme === 'purple' ? 'text-white placeholder-purple-300/30' : 'text-white placeholder-orange-300/30'}`}
-          />
+      <div className={`mb-8 border rounded-xl p-4 bg-white/5 ${theme === 'purple' ? 'border-purple-500/20 shadow-purple-900/20' : 'border-amber-500/20 shadow-orange-900/20'} shadow-lg transition-all print-panel
+        ${isFullScreen ? 'fixed inset-0 z-[155] bg-[#1e1e24] m-0 rounded-none border-0 flex flex-col pt-32 pb-4 px-4 overflow-hidden' : ''}`}>
+        <div className={`flex flex-col md:flex-row items-center justify-between gap-4 mb-4 ${isFullScreen ? 'w-full shrink-0' : ''}`}>
+          <div className="flex flex-col md:flex-row items-start md:items-center gap-4 w-full">
+            <span className={`text-xs font-bold uppercase tracking-widest px-2 py-1 rounded bg-white/5 border border-white/10 ${themeColors.headerText}`}>
+              {title}
+            </span>
+            <input
+              type="text"
+              value={teamNameValue}
+              onChange={(e) => onTeamNameChange(e.target.value)}
+              placeholder={`Nombre del Equipo ${theme === 'purple' ? 'Visitante' : 'Local'}`}
+              className={`bg-transparent text-xl md:text-2xl font-bold uppercase tracking-wide focus:outline-none border-b border-transparent focus:border-white/20 transition-all w-full md:w-auto ${theme === 'purple' ? 'text-white placeholder-purple-300/30' : 'text-white placeholder-orange-300/30'}`}
+            />
+          </div>
+          {onToggleFullScreen && (
+            <button
+              onClick={onToggleFullScreen}
+              className={`p-2 rounded-lg border transition-all ${isFullScreen ? 'bg-red-500/20 text-red-300 border-red-500/30 hover:bg-red-500/30' : 'bg-white/5 text-white/40 border-white/10 hover:bg-white/10 hover:text-white'}`}
+              title={isFullScreen ? "Salir de Pantalla Completa" : "Pantalla Completa"}
+            >
+              {isFullScreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+            </button>
+          )}
         </div>
 
-        <div className={`overflow-x-auto rounded-lg border border-white/10 bg-black/20 shadow-inner scrollbar-thin ${theme === 'purple' ? 'scrollbar-thumb-purple-600/50' : 'scrollbar-thumb-orange-600/50'} scrollbar-track-transparent pb-2 print-overflow-visible`}>
+        <div className={`overflow-x-auto rounded-lg border border-white/10 bg-black/20 shadow-inner scrollbar-thin ${theme === 'purple' ? 'scrollbar-thumb-purple-600/50' : 'scrollbar-thumb-orange-600/50'} scrollbar-track-transparent pb-2 print-overflow-visible ${isFullScreen ? 'w-full flex-1 overflow-auto border-0 rounded-none bg-transparent shadow-none' : ''}`}>
           <div
             className="grid min-w-max"
             style={{
@@ -836,8 +853,8 @@ interface LiveGameStatusProps {
 
 const LiveGameStatus = ({ visitorRuns, localRuns, inning, visitorOuts, localOuts, visitorName, localName, visitorLogo, localLogo, onSwap, onAdjustVisitor, onAdjustLocal }: LiveGameStatusProps) => {
   return createPortal(
-    <div className="fixed top-2 left-0 w-full z-[150] flex justify-center pointer-events-none no-print" style={{ transform: 'translateZ(0)' }}>
-      <div className="pointer-events-auto bg-[#1e1e24]/90 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl flex flex-row overflow-hidden w-[340px] h-[90px] relative">
+    <div className="fixed top-2 left-0 w-full z-[160] flex justify-center pointer-events-none no-print" style={{ transform: 'translateZ(0)' }}>
+      <div className="pointer-events-auto bg-[#1e1e24]/80 backdrop-blur-md border border-white/10 rounded-2xl shadow-2xl flex flex-row overflow-hidden w-[340px] h-[90px] relative">
 
         {/* --- Left: Visitor --- */}
         <div className="flex-1 flex flex-col items-center justify-center border-r border-white/5 relative group">
@@ -925,7 +942,8 @@ const StatsTable: React.FC<{
   local: TeamData;
   visitorName: string;
   localName: string;
-}> = ({ visitor, local, visitorName, localName }) => {
+  competitionName: string;
+}> = ({ visitor, local, visitorName, localName, competitionName }) => {
 
   const calculateStats = (p: PlayerStats) => {
     let vb = 0; // At Bats
@@ -976,13 +994,25 @@ const StatsTable: React.FC<{
 
   const exportToCSV = () => {
     const stats = getAllStats();
-    const headers = ['Equipo', 'Tipo', 'No', 'Jugador', 'VB', 'H', 'CA', 'E', 'AVE'];
+    const headers = ['Equipo', 'Tipo', 'No', 'Jugador', 'VB', 'H', 'CA', 'E (Def)', 'E (Emb)', 'AVE'];
+    const delimiter = ';';
     const csvContent = [
-      headers.join(','),
-      ...stats.map(row => [row.team, row.type, row.no, row.name, row.vb, row.h, row.ca, row.e, row.ave].join(','))
+      headers.join(delimiter),
+      ...stats.map(row => [
+        row.team,
+        row.type,
+        row.no,
+        `"${row.name}"`, // Quote names to handle special chars
+        row.vb,
+        row.h,
+        row.ca,
+        row.defE, // Added Defensive Errors column which was missing in export headers match
+        row.e,
+        row.ave.replace('.', ',') // Replace dot with comma for Excel numbers in generic locales if needed, but standardizing on string is safer or letting Excel handle it. Let's keep raw ave for now but semicolon helps.
+      ].join(delimiter))
     ].join('\n');
 
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
@@ -993,16 +1023,11 @@ const StatsTable: React.FC<{
   };
 
   const printStats = () => {
-    window.print();
-    // Note: CSS @media print is configured to handle showing only the table if a specific class or context is present, 
-    // but since we want a specific button for it, we rely on the user selecting "Print" and the CSS hiding the rest 
-    // if we are in a 'stats-only' mode. 
-    // Alternatively, we can just rely on the existing print CSS which cleans up everything.
-    // For specific "Print ONLY Stats", we add a class to body temporarily.
     document.body.classList.add('print-stats-only');
     setTimeout(() => {
+      window.print();
       document.body.classList.remove('print-stats-only');
-    }, 1000);
+    }, 100);
   };
 
   const renderRows = (team: TeamData, teamName: string, colorClass: string) => {
@@ -1040,7 +1065,42 @@ const StatsTable: React.FC<{
   }
 
   return (
-    <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden shadow-xl mt-6 print-stats-table">
+    <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden shadow-xl mt-6 print-stats-table relative print:border-none print:shadow-none">
+      <style>{`
+        @media print {
+          body.print-stats-only * { visibility: hidden; }
+          body.print-stats-only .print-stats-table,
+          body.print-stats-only .print-stats-table * { visibility: visible; }
+          body.print-stats-only .print-stats-table {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            background: white !important;
+            color: black !important;
+          }
+          body.print-stats-only .print-stats-table th,
+          body.print-stats-only .print-stats-table td {
+             color: black !important;
+             border-color: #ddd !important;
+          }
+           body.print-stats-only .print-stats-table .print-header { display: flex !important; margin-bottom: 20px; }
+        }
+      `}</style>
+
+      {/* Header specifically for Printing */}
+      <div className="hidden print-header flex-col items-center justify-center border-b-2 border-black pb-4 mb-4">
+        <div className="flex items-center gap-4">
+          <img src="/logo.png" className="w-16 h-16 object-contain" alt="Logo" />
+          <div className="text-center">
+            <h1 className="text-2xl font-bold uppercase text-black">{competitionName || 'COMPETENCIA'}</h1>
+            <p className="text-sm text-gray-600 font-semibold">ESTADÍSTICAS EN TIEMPO REAL</p>
+          </div>
+        </div>
+        <div className="mt-2 text-[10px] text-gray-500 uppercase tracking-widest font-bold">
+          Creado por B5ToolsPro
+        </div>
+      </div>
       <div className="p-3 bg-white/10 border-b border-white/10 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <Table2 size={16} className="text-purple-300" />
@@ -1089,6 +1149,7 @@ export const ScoreCard: React.FC = () => {
   const [showSidebar, setShowSidebar] = useState(true);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showStats, setShowStats] = useState(false);
+  const [fullScreenMode, setFullScreenMode] = useState<'visitor' | 'local' | null>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem('b5tools_game_state_v7');
@@ -1103,6 +1164,17 @@ export const ScoreCard: React.FC = () => {
       localStorage.setItem('b5tools_game_state_v7', JSON.stringify(state));
     }
   }, [state, loaded]);
+
+  useEffect(() => {
+    if (fullScreenMode) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [fullScreenMode]);
 
   const currentInningIdx = state.visitorTeam.slots[0].starter.scores.length - 1;
   const currentInning = currentInningIdx + 1;
@@ -1413,13 +1485,34 @@ export const ScoreCard: React.FC = () => {
     });
   };
 
-  const handleAddColumn = (inningIndex: number) => {
+  const handleAddColumn = (inningIndex: number, team: 'visitor' | 'local') => {
     setState(prev => {
-      const newVisitorTeam = { ...prev.visitorTeam };
-      newVisitorTeam.slots.forEach(slot => { slot.starter.scores[inningIndex].push(''); slot.sub.scores[inningIndex].push(''); });
-      const newLocalTeam = { ...prev.localTeam };
-      newLocalTeam.slots.forEach(slot => { slot.starter.scores[inningIndex].push(''); slot.sub.scores[inningIndex].push(''); });
-      return { ...prev, visitorTeam: newVisitorTeam, localTeam: newLocalTeam };
+      const targetTeamKey = team === 'visitor' ? 'visitorTeam' : 'localTeam';
+      const currentTeam = prev[targetTeamKey];
+
+      const newSlots = currentTeam.slots.map(slot => ({
+        ...slot,
+        starter: {
+          ...slot.starter,
+          scores: slot.starter.scores.map((inning, idx) =>
+            idx === inningIndex ? [...inning, ''] : inning
+          )
+        },
+        sub: {
+          ...slot.sub,
+          scores: slot.sub.scores.map((inning, idx) =>
+            idx === inningIndex ? [...inning, ''] : inning
+          )
+        }
+      }));
+
+      return {
+        ...prev,
+        [targetTeamKey]: {
+          ...currentTeam,
+          slots: newSlots
+        }
+      };
     });
   };
 
@@ -1539,7 +1632,7 @@ export const ScoreCard: React.FC = () => {
           </button>
           <button
             onClick={() => setShowSidebar(!showSidebar)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg border text-xs font-bold transition-all hidden md:flex ${showSidebar ? 'bg-purple-500/20 text-purple-200 border-purple-500/30' : 'bg-white/5 text-white/60 border-white/10 hover:bg-white/10'}`}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg border text-xs font-bold transition-all ${showSidebar ? 'bg-purple-500/20 text-purple-200 border-purple-500/30' : 'bg-white/5 text-white/60 border-white/10 hover:bg-white/10'}`}
           >
             {showSidebar ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
             {showSidebar ? 'PANEL' : 'PANEL'}
@@ -1557,23 +1650,25 @@ export const ScoreCard: React.FC = () => {
 
       {showStats && (
         <div className="mb-8 animate-in slide-in-from-top duration-300">
-          <StatsTable visitor={state.visitorTeam} local={state.localTeam} visitorName={state.gameInfo.visitor} localName={state.gameInfo.home} />
+          <StatsTable visitor={state.visitorTeam} local={state.localTeam} visitorName={state.gameInfo.visitor} localName={state.gameInfo.home} competitionName={state.gameInfo.competition} />
         </div>
       )}
 
-      <div className={`grid gap-8 transition-all duration-500 ease-in-out ${showSidebar ? 'grid-cols-1 xl:grid-cols-4' : 'grid-cols-1'}`}>
-        <div className={`${showSidebar ? 'xl:col-span-3' : 'w-full'}`}>
+      <div className={`gap-8 transition-all duration-500 ease-in-out ${showSidebar ? 'flex flex-col xl:grid xl:grid-cols-4' : 'grid grid-cols-1'}`}>
+        <div className={`${showSidebar ? 'xl:col-span-3' : 'w-full'} flex flex-col order-2 xl:order-none`}>
           <LineupGrid
             title="Alineación Visitante"
             teamNameValue={state.gameInfo.visitor}
             onTeamNameChange={(val) => updateGameInfo('visitor', val)}
             teamData={state.visitorTeam}
             onUpdate={(idx, type, field, val, iIdx, abIdx, errorCulprit) => updateTeam('visitorTeam', idx, type, field, val, iIdx, abIdx, errorCulprit)}
-            onAddColumn={handleAddColumn}
+            onAddColumn={(iIdx) => handleAddColumn(iIdx, 'visitor')}
             theme="purple"
             currentInningIdx={currentInningIdx}
             nextBatterIdx={visitorNextBatterIdx}
             opposingTeam={state.localTeam}
+            isFullScreen={fullScreenMode === 'visitor'}
+            onToggleFullScreen={() => setFullScreenMode(fullScreenMode === 'visitor' ? null : 'visitor')}
           />
           <LineupGrid
             title="Alineación Local"
@@ -1581,14 +1676,51 @@ export const ScoreCard: React.FC = () => {
             onTeamNameChange={(val) => updateGameInfo('home', val)}
             teamData={state.localTeam}
             onUpdate={(idx, type, field, val, iIdx, abIdx, errorCulprit) => updateTeam('localTeam', idx, type, field, val, iIdx, abIdx, errorCulprit)}
-            onAddColumn={handleAddColumn}
+            onAddColumn={(iIdx) => handleAddColumn(iIdx, 'local')}
             theme="amber"
             currentInningIdx={currentInningIdx}
             nextBatterIdx={localNextBatterIdx}
             opposingTeam={state.visitorTeam}
+            isFullScreen={fullScreenMode === 'local'}
+            onToggleFullScreen={() => setFullScreenMode(fullScreenMode === 'local' ? null : 'local')}
           />
 
-          <div className="mt-8 bg-white/5 border border-white/10 rounded-xl overflow-hidden shadow-2xl print-panel">
+          {/* Floating Controls for Full Screen Mode */}
+          {fullScreenMode && (
+            <div className="fixed bottom-6 right-6 z-[160] flex flex-col gap-3 animate-in slide-in-from-bottom duration-300 no-print">
+              {(() => {
+                const isVisitor = fullScreenMode === 'visitor';
+                const outs = isVisitor ? visitorOuts : localOuts;
+                const isEnd = outs >= 3;
+
+                return (
+                  <button
+                    onClick={() => setFullScreenMode(isVisitor ? 'local' : 'visitor')}
+                    className={`w-14 h-14 rounded-full text-white shadow-lg flex items-center justify-center transition-all border border-white/20 relative group
+                      ${isEnd ? 'animate-bounce' : 'hover:scale-110 active:scale-95'}`}
+                    style={{ backgroundColor: isEnd ? '#f59e0b' : '#2563eb' }}
+                    title="Cambiar Alineación (Local/Visitante)"
+                  >
+                    <ArrowRightLeft size={isEnd ? 28 : 24} />
+                    {isEnd && (
+                      <span className="absolute -top-2 -right-2 bg-red-600 text-white text-[9px] font-bold px-2 py-0.5 rounded-full shadow border border-white/20 animate-pulse">
+                        CAMBIO
+                      </span>
+                    )}
+                  </button>
+                );
+              })()}
+              <button
+                onClick={() => setFullScreenMode(null)}
+                className="w-14 h-14 rounded-full bg-red-600 hover:bg-red-500 text-white shadow-lg shadow-red-500/30 flex items-center justify-center transition-all hover:scale-110 active:scale-95 border border-white/20"
+                title="Salir de Pantalla Completa"
+              >
+                <Minimize2 size={24} />
+              </button>
+            </div>
+          )}
+
+          <div className="order-first lg:order-last mb-8 lg:mb-0 lg:mt-0 mt-8 bg-white/5 border border-white/10 rounded-xl overflow-hidden shadow-2xl print-panel">
             <div className="flex bg-white/10 text-xs font-bold text-center border-b border-white/10">
               <div className="w-32 md:w-48 p-3 text-left pl-6 text-white/60">EQUIPO</div>
               {state.inningScores.visitor.map((_, i) => (
@@ -1641,8 +1773,8 @@ export const ScoreCard: React.FC = () => {
           </div>
         </div>
 
-        <div className={`flex flex-col gap-6 xl:col-span-1 transition-all duration-300 ${showSidebar ? 'opacity-100 translate-x-0' : 'hidden opacity-0 translate-x-10 no-print'}`}>
-          <div className="bg-white/5 rounded-xl border border-white/10 shadow-lg overflow-hidden flex flex-col max-h-[400px] print-panel">
+        <div className={`contents xl:flex xl:flex-col gap-6 xl:col-span-1 transition-all duration-300 xl:order-none ${showSidebar ? 'opacity-100 translate-x-0' : 'hidden opacity-0 translate-x-10 no-print'}`}>
+          <div className="bg-white/5 rounded-xl border border-white/10 shadow-lg overflow-hidden flex flex-col max-h-[400px] print-panel order-3 xl:order-none">
             <div className="p-4 border-b border-white/10 bg-white/5 backdrop-blur-sm sticky top-0 z-10 flex justify-between items-center">
               <GlassTitle className="text-sm mb-0 pb-0 border-0 flex items-center gap-2">
                 <History size={14} className="text-purple-300" /> Historial de Jugadas
@@ -1684,12 +1816,12 @@ export const ScoreCard: React.FC = () => {
             </div>
           </div>
 
-          <div className="bg-white/5 p-5 rounded-xl border border-white/10 shadow-lg print-panel">
+          <div className="bg-white/5 p-5 rounded-xl border border-white/10 shadow-lg print-panel order-1 xl:order-none">
             <GlassTitle className="text-sm">Datos Generales</GlassTitle>
             <div className="space-y-3">
               <GlassInput label="Competencia" value={state.gameInfo.competition} onChange={e => updateGameInfo('competition', e.target.value)} />
               <GlassInput label="Lugar" value={state.gameInfo.place} onChange={e => updateGameInfo('place', e.target.value)} />
-              <GlassInput label="Lugar" value={state.gameInfo.place} onChange={e => updateGameInfo('place', e.target.value)} />
+              <GlassInput type="time" label="Hora de Inicio" value={state.gameInfo.times.start} onChange={e => updateGameInfo('times.start', e.target.value)} />
 
               <div className="flex gap-2 items-end">
                 <GlassInput label="Visitador" containerClassName="border-l-2 border-purple-500 pl-2 flex-1" value={state.gameInfo.visitor} onChange={e => updateGameInfo('visitor', e.target.value)} />
@@ -1723,7 +1855,7 @@ export const ScoreCard: React.FC = () => {
             </div>
           </div>
 
-          <div className="bg-white/5 p-5 rounded-xl border border-white/10 shadow-lg print-panel">
+          <div className="bg-white/5 p-5 rounded-xl border border-white/10 shadow-lg print-panel order-4 xl:order-none">
             <GlassTitle className="text-sm">Oficiales</GlassTitle>
             <div className="space-y-3">
               <GlassInput label="Oficial del Plato" value={state.gameInfo.officials.plate} onChange={e => updateGameInfo('officials.plate', e.target.value)} />
@@ -1734,7 +1866,7 @@ export const ScoreCard: React.FC = () => {
             </div>
           </div>
 
-          <div className="bg-white/5 p-4 rounded-xl border border-white/10 text-xs shadow-lg print-panel">
+          <div className="bg-white/5 p-4 rounded-xl border border-white/10 text-xs shadow-lg print-panel order-5 xl:order-none">
             <h4 className="font-bold text-white mb-3 border-b border-white/10 pb-1 uppercase tracking-wider flex items-center gap-2">
               <Hash size={12} /> Nomenclatura
             </h4>
@@ -1760,7 +1892,7 @@ export const ScoreCard: React.FC = () => {
             </div>
           </div>
 
-          <div className="bg-white/5 p-4 rounded-xl border border-white/10 shadow-lg print-panel">
+          <div className="bg-white/5 p-4 rounded-xl border border-white/10 shadow-lg print-panel order-6 xl:order-none">
             <div className="grid grid-cols-2 gap-4 mb-4">
               <div className="bg-black/20 p-2 rounded border border-white/5">
                 <div className="flex items-center gap-1 text-[10px] font-bold text-white/50 mb-1 uppercase tracking-wider"><Clock size={10} /> INICIO</div>
