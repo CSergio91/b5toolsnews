@@ -376,7 +376,6 @@ const ScoringModal: React.FC<{
                   <Trash2 size={16} />
                 </button>
                 <input
-                  autoFocus
                   className="flex-1 bg-white/5 border border-white/10 rounded-md px-2 py-1 text-white text-xs focus:outline-none focus:border-purple-500 placeholder-white/20"
                   placeholder="Manual..."
                   value={manualValue}
@@ -867,7 +866,8 @@ const LiveGameStatus = ({ visitorRuns, localRuns, inning, visitorOuts, localOuts
   useEffect(() => {
     if (!hasInitialized.current) {
       // Correctly center initially
-      const initialX = (window.innerWidth - 340) / 2;
+      const width = window.innerWidth < 768 ? 280 : 340;
+      const initialX = (window.innerWidth - width) / 2;
       setPosition({ x: initialX > 0 ? initialX : 0, y: 10 });
       hasInitialized.current = true;
     }
@@ -884,7 +884,10 @@ const LiveGameStatus = ({ visitorRuns, localRuns, inning, visitorOuts, localOuts
     };
 
     const handleMouseMove = (e: MouseEvent) => handleMove(e.clientX, e.clientY);
-    const handleTouchMove = (e: TouchEvent) => handleMove(e.touches[0].clientX, e.touches[0].clientY);
+    const handleTouchMove = (e: TouchEvent) => {
+      e.preventDefault(); // Prevent scrolling while dragging
+      handleMove(e.touches[0].clientX, e.touches[0].clientY);
+    };
 
     const handleUp = () => setIsDragging(false);
 
@@ -925,14 +928,14 @@ const LiveGameStatus = ({ visitorRuns, localRuns, inning, visitorOuts, localOuts
       onMouseDown={handleMouseDown}
       onTouchStart={handleTouchStart}
     >
-      <div className={`bg-[#1e1e24]/90 backdrop-blur-md border border-white/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden w-[340px] relative transition-shadow ${isDragging ? 'shadow-purple-500/20 cursor-grabbing' : 'cursor-grab'}`}>
+      <div className={`bg-[#1e1e24]/90 backdrop-blur-md border border-white/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden w-[280px] md:w-[340px] relative transition-shadow ${isDragging ? 'shadow-purple-500/20 cursor-grabbing' : 'cursor-grab'}`}>
 
         {/* Drag Handle */}
-        <div className="h-4 w-full bg-white/5 flex items-center justify-center border-b border-white/5">
+        <div className="h-3 md:h-4 w-full bg-white/5 flex items-center justify-center border-b border-white/5">
           <GripHorizontal size={12} className="text-white/20" />
         </div>
 
-        <div className="flex flex-row h-[90px]">
+        <div className="flex flex-row h-[70px] md:h-[90px]">
           {/* --- Left: Visitor --- */}
           <div className="flex-1 flex flex-col items-center justify-center border-r border-white/5 relative group">
             {visitorLogo && (
@@ -941,15 +944,15 @@ const LiveGameStatus = ({ visitorRuns, localRuns, inning, visitorOuts, localOuts
                 style={{ backgroundImage: `url(${visitorLogo})`, backgroundSize: '100% 100%' }}
               />
             )}
-            <div className="relative z-10 flex flex-col items-center gap-1 w-full justify-center pb-4">
-              <span className="text-purple-400 font-bold tracking-widest text-xs uppercase mb-1 drop-shadow-md">VISITANTE</span>
-              <div className="flex items-center gap-4">
-                <button onMouseDown={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} onClick={() => onAdjustVisitor(-1)} className="w-6 h-6 rounded-full bg-black/40 hover:bg-black/60 active:bg-black/80 flex items-center justify-center text-white/50 hover:text-white transition-colors border border-white/10 cursor-pointer">
-                  <Minus size={12} />
+            <div className="relative z-10 flex flex-col items-center gap-1 w-full justify-center pb-2 md:pb-4">
+              <span className="text-purple-400 font-bold tracking-widest text-[9px] md:text-xs uppercase mb-0.5 md:mb-1 drop-shadow-md">VISITANTE</span>
+              <div className="flex items-center gap-2 md:gap-4">
+                <button onMouseDown={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} onClick={() => onAdjustVisitor(-1)} className="w-5 h-5 md:w-6 md:h-6 rounded-full bg-black/40 hover:bg-black/60 active:bg-black/80 flex items-center justify-center text-white/50 hover:text-white transition-colors border border-white/10 cursor-pointer">
+                  <Minus size={10} className="md:w-3 md:h-3" />
                 </button>
-                <span className="text-5xl font-black text-white font-mono tracking-tighter leading-none drop-shadow-xl select-none">{visitorRuns}</span>
-                <button onMouseDown={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} onClick={() => onAdjustVisitor(1)} className="w-6 h-6 rounded-full bg-black/40 hover:bg-black/60 active:bg-black/80 flex items-center justify-center text-white/50 hover:text-white transition-colors border border-white/10 cursor-pointer">
-                  <Plus size={12} />
+                <span className="text-3xl md:text-5xl font-black text-white font-mono tracking-tighter leading-none drop-shadow-xl select-none">{visitorRuns}</span>
+                <button onMouseDown={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} onClick={() => onAdjustVisitor(1)} className="w-5 h-5 md:w-6 md:h-6 rounded-full bg-black/40 hover:bg-black/60 active:bg-black/80 flex items-center justify-center text-white/50 hover:text-white transition-colors border border-white/10 cursor-pointer">
+                  <Plus size={10} className="md:w-3 md:h-3" />
                 </button>
               </div>
             </div>
@@ -1293,7 +1296,7 @@ const StatsChart: React.FC<{
   vName: string;
   lName: string;
   height?: number;
-}> = ({ type, dataV, dataL, labels, vName, lName, height = 200 }) => {
+}> = ({ type, dataV = [], dataL = [], labels, vName, lName, height = 200 }) => {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
   const width = 300;
@@ -1301,8 +1304,8 @@ const StatsChart: React.FC<{
   const graphWidth = width - padding * 2;
   const step = labels.length > 1 ? graphWidth / (labels.length - 1) : graphWidth;
 
-  // Normalize scale
-  const maxVal = Math.max(...dataV, ...dataL, 10);
+  // Normalize scale (safe fallback)
+  const maxVal = Math.max(...dataV, ...dataL, 10) || 10;
   const yScale = (val: number) => (height - padding) - ((val / maxVal) * (height - padding * 2));
 
   // Path Builder for Line
