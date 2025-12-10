@@ -32,7 +32,13 @@ import {
   Linkedin,
   Copy,
   Maximize2,
-  Minimize2
+  Minimize2,
+  GripHorizontal,
+  LineChart,
+  BarChart,
+  PlusCircle,
+  HelpCircle,
+  TrendingUp
 } from 'lucide-react';
 
 // --- Types for State Management ---
@@ -852,80 +858,153 @@ interface LiveGameStatusProps {
 }
 
 const LiveGameStatus = ({ visitorRuns, localRuns, inning, visitorOuts, localOuts, visitorName, localName, visitorLogo, localLogo, onSwap, onAdjustVisitor, onAdjustLocal }: LiveGameStatusProps) => {
+  const [position, setPosition] = useState({ x: 0, y: 10 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const containerRef = useRef<HTMLDivElement>(null);
+  const hasInitialized = useRef(false);
+
+  useEffect(() => {
+    if (!hasInitialized.current) {
+      // Correctly center initially
+      const initialX = (window.innerWidth - 340) / 2;
+      setPosition({ x: initialX > 0 ? initialX : 0, y: 10 });
+      hasInitialized.current = true;
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleMove = (clientX: number, clientY: number) => {
+      if (isDragging) {
+        setPosition({
+          x: clientX - dragOffset.x,
+          y: clientY - dragOffset.y
+        });
+      }
+    };
+
+    const handleMouseMove = (e: MouseEvent) => handleMove(e.clientX, e.clientY);
+    const handleTouchMove = (e: TouchEvent) => handleMove(e.touches[0].clientX, e.touches[0].clientY);
+
+    const handleUp = () => setIsDragging(false);
+
+    if (isDragging) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('touchmove', handleTouchMove, { passive: false });
+      window.addEventListener('mouseup', handleUp);
+      window.addEventListener('touchend', handleUp);
+    }
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('mouseup', handleUp);
+      window.removeEventListener('touchend', handleUp);
+    };
+  }, [isDragging, dragOffset]);
+
+  const startDrag = (clientX: number, clientY: number) => {
+    if (containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      setDragOffset({
+        x: clientX - rect.left,
+        y: clientY - rect.top
+      });
+      setIsDragging(true);
+    }
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => startDrag(e.clientX, e.clientY);
+  const handleTouchStart = (e: React.TouchEvent) => startDrag(e.touches[0].clientX, e.touches[0].clientY);
+
   return createPortal(
-    <div className="fixed top-2 left-0 w-full z-[160] flex justify-center pointer-events-none no-print" style={{ transform: 'translateZ(0)' }}>
-      <div className="pointer-events-auto bg-[#1e1e24]/80 backdrop-blur-md border border-white/10 rounded-2xl shadow-2xl flex flex-row overflow-hidden w-[340px] h-[90px] relative">
+    <div
+      ref={containerRef}
+      className="fixed z-[160] pointer-events-auto no-print touch-none"
+      style={{ left: position.x, top: position.y }}
+      onMouseDown={handleMouseDown}
+      onTouchStart={handleTouchStart}
+    >
+      <div className={`bg-[#1e1e24]/90 backdrop-blur-md border border-white/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden w-[340px] relative transition-shadow ${isDragging ? 'shadow-purple-500/20 cursor-grabbing' : 'cursor-grab'}`}>
 
-        {/* --- Left: Visitor --- */}
-        <div className="flex-1 flex flex-col items-center justify-center border-r border-white/5 relative group">
-          {visitorLogo && (
-            <div
-              className="absolute inset-0 z-0 opacity-20 bg-center bg-no-repeat pointer-events-none"
-              style={{ backgroundImage: `url(${visitorLogo})`, backgroundSize: '100% 100%' }}
-            />
-          )}
-          <div className="relative z-10 flex flex-col items-center gap-1 w-full justify-center pb-4">
-            <span className="text-purple-400 font-bold tracking-widest text-xs uppercase mb-1 drop-shadow-md">VISITANTE</span>
-            <div className="flex items-center gap-4">
-              <button onClick={() => onAdjustVisitor(-1)} className="w-6 h-6 rounded-full bg-black/40 hover:bg-black/60 active:bg-black/80 flex items-center justify-center text-white/50 hover:text-white transition-colors border border-white/10">
-                <Minus size={12} />
-              </button>
-              <span className="text-5xl font-black text-white font-mono tracking-tighter leading-none drop-shadow-xl">{visitorRuns}</span>
-              <button onClick={() => onAdjustVisitor(1)} className="w-6 h-6 rounded-full bg-black/40 hover:bg-black/60 active:bg-black/80 flex items-center justify-center text-white/50 hover:text-white transition-colors border border-white/10">
-                <Plus size={12} />
-              </button>
-            </div>
-          </div>
-          <div className="flex gap-1.5 mt-1 absolute bottom-2">
-            {[...Array(3)].map((_, i) => (
-              <div key={i} className={`w-2 h-2 rounded-full border border-red-500/40 ${i < visitorOuts ? 'bg-red-500 shadow-[0_0_5px_rgba(239,68,68,0.8)]' : 'bg-transparent'}`} />
-            ))}
-          </div>
+        {/* Drag Handle */}
+        <div className="h-4 w-full bg-white/5 flex items-center justify-center border-b border-white/5">
+          <GripHorizontal size={12} className="text-white/20" />
         </div>
 
-        {/* --- Center: Inning & Swap --- */}
-        <div className="w-[80px] flex flex-col items-center justify-between py-2 bg-white/5">
-          <div className="flex flex-col items-center">
-            <span className="text-[9px] font-bold text-white/40 uppercase tracking-widest">INNING</span>
-            <span className="text-2xl font-bold text-amber-400 font-mono leading-none mt-1">{inning}</span>
-          </div>
-
-          <button
-            onClick={onSwap}
-            className="flex flex-col items-center justify-center group opacity-50 hover:opacity-100 transition-opacity"
-            title="Intercambiar Equipos"
-          >
-            <Trophy size={14} className="text-amber-400/80 mb-0.5" />
-            <div className="flex items-center text-[8px] font-bold text-white/50 gap-1">
-              <ArrowRightLeft size={8} /> SWAP
+        <div className="flex flex-row h-[90px]">
+          {/* --- Left: Visitor --- */}
+          <div className="flex-1 flex flex-col items-center justify-center border-r border-white/5 relative group">
+            {visitorLogo && (
+              <div
+                className="absolute inset-0 z-0 opacity-20 bg-center bg-no-repeat pointer-events-none"
+                style={{ backgroundImage: `url(${visitorLogo})`, backgroundSize: '100% 100%' }}
+              />
+            )}
+            <div className="relative z-10 flex flex-col items-center gap-1 w-full justify-center pb-4">
+              <span className="text-purple-400 font-bold tracking-widest text-xs uppercase mb-1 drop-shadow-md">VISITANTE</span>
+              <div className="flex items-center gap-4">
+                <button onMouseDown={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} onClick={() => onAdjustVisitor(-1)} className="w-6 h-6 rounded-full bg-black/40 hover:bg-black/60 active:bg-black/80 flex items-center justify-center text-white/50 hover:text-white transition-colors border border-white/10 cursor-pointer">
+                  <Minus size={12} />
+                </button>
+                <span className="text-5xl font-black text-white font-mono tracking-tighter leading-none drop-shadow-xl select-none">{visitorRuns}</span>
+                <button onMouseDown={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} onClick={() => onAdjustVisitor(1)} className="w-6 h-6 rounded-full bg-black/40 hover:bg-black/60 active:bg-black/80 flex items-center justify-center text-white/50 hover:text-white transition-colors border border-white/10 cursor-pointer">
+                  <Plus size={12} />
+                </button>
+              </div>
             </div>
-          </button>
-        </div>
-
-        {/* --- Right: Local --- */}
-        <div className="flex-1 flex flex-col items-center justify-center border-l border-white/5 relative group">
-          {localLogo && (
-            <div
-              className="absolute inset-0 z-0 opacity-20 bg-center bg-no-repeat pointer-events-none"
-              style={{ backgroundImage: `url(${localLogo})`, backgroundSize: '100% 100%' }}
-            />
-          )}
-          <div className="relative z-10 flex flex-col items-center gap-1 w-full justify-center pb-4">
-            <span className="text-amber-400 font-bold tracking-widest text-xs uppercase mb-1 drop-shadow-md">LOCAL (HOME)</span>
-            <div className="flex items-center gap-4">
-              <button onClick={() => onAdjustLocal(-1)} className="w-6 h-6 rounded-full bg-black/40 hover:bg-black/60 active:bg-black/80 flex items-center justify-center text-white/50 hover:text-white transition-colors border border-white/10">
-                <Minus size={12} />
-              </button>
-              <span className="text-5xl font-black text-white font-mono tracking-tighter leading-none drop-shadow-xl">{localRuns}</span>
-              <button onClick={() => onAdjustLocal(1)} className="w-6 h-6 rounded-full bg-black/40 hover:bg-black/60 active:bg-black/80 flex items-center justify-center text-white/50 hover:text-white transition-colors border border-white/10">
-                <Plus size={12} />
-              </button>
+            <div className="flex gap-1.5 mt-1 absolute bottom-2">
+              {[...Array(3)].map((_, i) => (
+                <div key={i} className={`w-2 h-2 rounded-full border border-red-500/40 ${i < visitorOuts ? 'bg-red-500 shadow-[0_0_5px_rgba(239,68,68,0.8)]' : 'bg-transparent'}`} />
+              ))}
             </div>
           </div>
-          <div className="flex gap-1.5 mt-1 absolute bottom-2">
-            {[...Array(3)].map((_, i) => (
-              <div key={i} className={`w-2 h-2 rounded-full border border-amber-500/40 ${i < localOuts ? 'bg-amber-500 shadow-[0_0_5px_rgba(245,158,11,0.8)]' : 'bg-transparent'}`} />
-            ))}
+
+          {/* --- Center: Inning & Swap --- */}
+          <div className="w-[80px] flex flex-col items-center justify-between py-2 bg-white/5">
+            <div className="flex flex-col items-center">
+              <span className="text-[9px] font-bold text-white/40 uppercase tracking-widest select-none">INNING</span>
+              <span className="text-2xl font-bold text-amber-400 font-mono leading-none mt-1 select-none">{inning}</span>
+            </div>
+
+            <button
+              onMouseDown={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()}
+              onClick={onSwap}
+              className="flex flex-col items-center justify-center group opacity-50 hover:opacity-100 transition-opacity cursor-pointer"
+              title="Intercambiar Equipos"
+            >
+              <Trophy size={14} className="text-amber-400/80 mb-0.5" />
+              <div className="flex items-center text-[8px] font-bold text-white/50 gap-1">
+                <ArrowRightLeft size={8} /> SWAP
+              </div>
+            </button>
+          </div>
+
+          {/* --- Right: Local --- */}
+          <div className="flex-1 flex flex-col items-center justify-center border-l border-white/5 relative group">
+            {localLogo && (
+              <div
+                className="absolute inset-0 z-0 opacity-20 bg-center bg-no-repeat pointer-events-none"
+                style={{ backgroundImage: `url(${localLogo})`, backgroundSize: '100% 100%' }}
+              />
+            )}
+            <div className="relative z-10 flex flex-col items-center gap-1 w-full justify-center pb-4">
+              <span className="text-amber-400 font-bold tracking-widest text-xs uppercase mb-1 drop-shadow-md">LOCAL (HOME)</span>
+              <div className="flex items-center gap-4">
+                <button onMouseDown={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} onClick={() => onAdjustLocal(-1)} className="w-6 h-6 rounded-full bg-black/40 hover:bg-black/60 active:bg-black/80 flex items-center justify-center text-white/50 hover:text-white transition-colors border border-white/10 cursor-pointer">
+                  <Minus size={12} />
+                </button>
+                <span className="text-5xl font-black text-white font-mono tracking-tighter leading-none drop-shadow-xl select-none">{localRuns}</span>
+                <button onMouseDown={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} onClick={() => onAdjustLocal(1)} className="w-6 h-6 rounded-full bg-black/40 hover:bg-black/60 active:bg-black/80 flex items-center justify-center text-white/50 hover:text-white transition-colors border border-white/10 cursor-pointer">
+                  <Plus size={12} />
+                </button>
+              </div>
+            </div>
+            <div className="flex gap-1.5 mt-1 absolute bottom-2">
+              {[...Array(3)].map((_, i) => (
+                <div key={i} className={`w-2 h-2 rounded-full border border-amber-500/40 ${i < localOuts ? 'bg-amber-500 shadow-[0_0_5px_rgba(245,158,11,0.8)]' : 'bg-transparent'}`} />
+              ))}
+            </div>
           </div>
         </div>
 
@@ -1143,12 +1222,440 @@ const StatsTable: React.FC<{
   );
 };
 
+const DraggableTrigger: React.FC<{
+  onClick: () => void;
+}> = ({ onClick }) => {
+  const [positionY, setPositionY] = useState(window.innerHeight / 2);
+  const [isDragging, setIsDragging] = useState(false);
+  const [offsetY, setOffsetY] = useState(0);
+
+  useEffect(() => {
+    const handleMove = (e: MouseEvent | TouchEvent) => {
+      if (!isDragging) return;
+
+      let clientY = 0;
+      if (e instanceof MouseEvent) clientY = e.clientY;
+      else if (e instanceof TouchEvent) clientY = e.touches[0].clientY;
+
+      // Constrain to window height with some padding
+      const newY = Math.max(50, Math.min(window.innerHeight - 50, clientY - offsetY));
+      setPositionY(newY);
+    };
+
+    const handleUp = () => setIsDragging(false);
+
+    if (isDragging) {
+      window.addEventListener('mousemove', handleMove as any);
+      window.addEventListener('touchmove', handleMove as any, { passive: false });
+      window.addEventListener('mouseup', handleUp);
+      window.addEventListener('touchend', handleUp);
+    }
+    return () => {
+      window.removeEventListener('mousemove', handleMove as any);
+      window.removeEventListener('touchmove', handleMove as any);
+      window.removeEventListener('mouseup', handleUp);
+      window.removeEventListener('touchend', handleUp);
+    };
+  }, [isDragging, offsetY]);
+
+  const handleStart = (e: React.MouseEvent | React.TouchEvent) => {
+    e.stopPropagation(); // Don't trigger click on start
+    let clientY = 0;
+    if (e.nativeEvent instanceof MouseEvent) clientY = e.nativeEvent.clientY;
+    else if (e.nativeEvent instanceof TouchEvent) clientY = e.nativeEvent.touches[0].clientY;
+
+    setOffsetY(clientY - positionY);
+    setIsDragging(true);
+  };
+
+  return (
+    <button
+      onClick={(e) => {
+        if (!isDragging) onClick();
+      }}
+      onMouseDown={handleStart}
+      onTouchStart={handleStart}
+      style={{ top: positionY }}
+      className={`fixed right-0 z-[140] bg-white/10 hover:bg-purple-500/80 backdrop-blur-md p-3 rounded-l-xl border-l border-t border-b border-white/20 shadow-lg group transition-all duration-75 no-print ${isDragging ? 'cursor-grabbing scale-110 bg-purple-600' : 'cursor-grab hover:pr-5 -translate-y-1/2'}`}
+      title="Análisis Avanzado (Arrastra para mover)"
+    >
+      <div className="absolute left-1 top-1/2 -translate-y-1/2 w-1 h-4 bg-white/20 rounded-full" />
+      <LineChart size={24} className="text-white group-hover:scale-110 transition-transform ml-2" />
+    </button>
+  );
+};
+
+const StatsChart: React.FC<{
+  type: 'line' | 'bar';
+  dataV: number[];
+  dataL: number[];
+  labels: string[];
+  vName: string;
+  lName: string;
+  height?: number;
+}> = ({ type, dataV, dataL, labels, vName, lName, height = 200 }) => {
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+
+  const width = 300;
+  const padding = 30;
+  const graphWidth = width - padding * 2;
+  const step = labels.length > 1 ? graphWidth / (labels.length - 1) : graphWidth;
+
+  // Normalize scale
+  const maxVal = Math.max(...dataV, ...dataL, 10);
+  const yScale = (val: number) => (height - padding) - ((val / maxVal) * (height - padding * 2));
+
+  // Path Builder for Line
+  const buildPath = (data: number[]) => {
+    return data.map((val, i) =>
+      `${i === 0 ? 'M' : 'L'} ${padding + (i * step)} ${yScale(val)}`
+    ).join(' ');
+  };
+
+  return (
+    <div className="w-full relative select-none">
+      <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-full overflow-visible">
+        {/* Grid */}
+        <line x1={padding} y1={yScale(0)} x2={width - padding} y2={yScale(0)} stroke="rgba(255,255,255,0.1)" strokeWidth="1" />
+        <line x1={padding} y1={yScale(maxVal)} x2={width - padding} y2={yScale(maxVal)} stroke="rgba(255,255,255,0.05)" strokeDasharray="4" />
+
+        {/* LINE CHART */}
+        {type === 'line' && (
+          <>
+            <path d={buildPath(dataV)} fill="none" stroke="#a855f7" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="drop-shadow-lg opacity-80" />
+            <path d={buildPath(dataL)} fill="none" stroke="#f59e0b" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="drop-shadow-lg opacity-80" />
+
+            {labels.map((_, i) => (
+              <g key={i}>
+                {/* Visitor Point */}
+                <circle
+                  cx={padding + (i * step)} cy={yScale(dataV[i])} r={hoverIdx === i ? 6 : 4}
+                  fill="#1a1a20" stroke="#a855f7" strokeWidth="2"
+                  className="transition-all cursor-pointer"
+                  onMouseEnter={() => setHoverIdx(i)} onMouseLeave={() => setHoverIdx(null)}
+                />
+                {/* Local Point */}
+                <circle
+                  cx={padding + (i * step)} cy={yScale(dataL[i])} r={hoverIdx === i ? 6 : 4}
+                  fill="#1a1a20" stroke="#f59e0b" strokeWidth="2"
+                  className="transition-all cursor-pointer"
+                  onMouseEnter={() => setHoverIdx(i)} onMouseLeave={() => setHoverIdx(null)}
+                />
+              </g>
+            ))}
+          </>
+        )}
+
+        {/* BAR CHART */}
+        {type === 'bar' && labels.map((_, i) => {
+          const barW = (step / 3);
+          const x = padding + (i * step) - (barW);
+          return (
+            <g key={i} onMouseEnter={() => setHoverIdx(i)} onMouseLeave={() => setHoverIdx(null)}>
+              <rect
+                x={x} y={yScale(dataV[i])} width={barW} height={height - padding - yScale(dataV[i])}
+                fill="#a855f7" className="opacity-80 hover:opacity-100 transition-opacity" rx="2"
+              />
+              <rect
+                x={x + barW + 2} y={yScale(dataL[i])} width={barW} height={height - padding - yScale(dataL[i])}
+                fill="#f59e0b" className="opacity-80 hover:opacity-100 transition-opacity" rx="2"
+              />
+              {/* Invisible Hover Zone */}
+              <rect x={x - 5} y={0} width={barW * 2 + 10} height={height} fill="transparent" />
+            </g>
+          );
+        })}
+
+        {/* Labels */}
+        {labels.map((p, i) => (
+          <text key={p} x={padding + (i * step)} y={height + 15} textAnchor="middle" fill={hoverIdx === i ? "white" : "rgba(255,255,255,0.5)"} fontSize="10" fontWeight="bold">
+            {p}
+          </text>
+        ))}
+      </svg>
+
+      {/* Tooltip Overlay */}
+      {hoverIdx !== null && (
+        <div
+          className="absolute bg-black/90 text-white text-[10px] p-2 rounded border border-white/20 shadow-xl z-10 pointer-events-none"
+          style={{
+            left: `${((padding + (hoverIdx * step)) / width) * 100}%`,
+            top: '10%',
+            transform: 'translateX(-50%)'
+          }}
+        >
+          <div className="font-bold border-b border-white/10 mb-1 pb-1">{labels[hoverIdx]}</div>
+          <div className="flex gap-2 items-center text-purple-300">
+            <span className="w-2 h-2 rounded-full bg-purple-500 inline-block" /> {vName.substring(0, 3)}: <span className="font-mono font-bold ml-auto">{dataV[hoverIdx].toFixed(labels[hoverIdx] === 'AVE' ? 3 : 0)}</span>
+          </div>
+          <div className="flex gap-2 items-center text-amber-300">
+            <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" /> {lName.substring(0, 3)}: <span className="font-mono font-bold ml-auto">{dataL[hoverIdx].toFixed(labels[hoverIdx] === 'AVE' ? 3 : 0)}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const AdvancedStatsPanel: React.FC<{
+  isOpen: boolean;
+  onClose: () => void;
+  visitor: TeamData;
+  local: TeamData;
+  visitorName: string;
+  localName: string;
+}> = ({ isOpen, onClose, visitor, local, visitorName, localName }) => {
+  const [customCharts, setCustomCharts] = useState<{ id: number, type: 'line' | 'bar', metrics: string[] }[]>([]);
+  const [newChartMode, setNewChartMode] = useState(false);
+  const [newChartType, setNewChartType] = useState<'line' | 'bar'>('bar');
+  const [selectedMetrics, setSelectedMetrics] = useState<string[]>(['H', 'CA']);
+
+  const availableMetrics = ['VB', 'H', 'CA', 'E', 'AVE'];
+
+  const toggleMetric = (m: string) => {
+    setSelectedMetrics(prev => prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m]);
+  };
+
+  const addChart = () => {
+    if (selectedMetrics.length === 0) return;
+    setCustomCharts([...customCharts, { id: Date.now(), type: newChartType, metrics: selectedMetrics }]);
+    setNewChartMode(false);
+    setSelectedMetrics(['H', 'CA']);
+  };
+
+  const removeChart = (id: number) => {
+    setCustomCharts(prev => prev.filter(c => c.id !== id));
+  };
+
+  // --- Helper: Calculate MVP ---
+  const getMVP = (team: TeamData) => {
+    let bestPlayer = { name: '', number: '', h: 0, ca: 0, vb: 0, ave: 0, score: -1 };
+
+    const processPlayer = (p: PlayerStats) => {
+      let vb = 0, h = 0, ca = 0;
+      p.scores.flat().forEach(val => {
+        const v = val.toUpperCase();
+        if (v.includes('H')) h++;
+        if (v.includes('●')) ca++;
+        if (v.includes('H') || v.includes('X') || v.includes('S')) vb++;
+      });
+      const ave = vb > 0 ? (h / vb) : 0;
+      const score = (h * 3) + (ca * 2) + (ave * 10);
+
+      if (score > bestPlayer.score && vb > 0) {
+        bestPlayer = { name: p.name || 'Sin Nombre', number: p.number, h, ca, vb, ave, score };
+      }
+    };
+
+    team.slots.forEach(slot => {
+      processPlayer(slot.starter);
+      processPlayer(slot.sub);
+    });
+
+    return bestPlayer.score > -1 ? bestPlayer : null;
+  };
+
+  const visitorMVP = getMVP(visitor);
+  const localMVP = getMVP(local);
+
+  // --- Helper: Calculate Team Totals ---
+  const getTeamStats = (team: TeamData) => {
+    let vb = 0, h = 0, ca = 0, e = 0;
+    team.slots.forEach(slot => {
+      [slot.starter, slot.sub].forEach(p => {
+        p.scores.flat().forEach(val => {
+          const v = val.toUpperCase();
+          if (v.includes('H')) h++;
+          if (v.includes('●')) ca++;
+          if (v.includes('S')) e++;
+          if (v.includes('H') || v.includes('X') || v.includes('S')) vb++;
+        });
+      });
+    });
+    return { vb, h, ca, e, ave: vb > 0 ? (h / vb) : 0 };
+  };
+
+  const vStats = getTeamStats(visitor);
+  const lStats = getTeamStats(local);
+
+  // General Chart Default Data
+  const defaultMetrics = ['VB', 'H', 'CA', 'AVE'];
+
+  const getChartData = (metrics: string[]) => {
+    const maxVal = Math.max(vStats.vb, lStats.vb, 10);
+    const dataV = metrics.map(m => {
+      if (m === 'VB') return vStats.vb;
+      if (m === 'H') return vStats.h;
+      if (m === 'CA') return vStats.ca;
+      if (m === 'E') return vStats.e;
+      if (m === 'AVE') return vStats.ave * maxVal; // Scaled
+      return 0;
+    });
+    const dataL = metrics.map(m => {
+      if (m === 'VB') return lStats.vb;
+      if (m === 'H') return lStats.h;
+      if (m === 'CA') return lStats.ca;
+      if (m === 'E') return lStats.e;
+      if (m === 'AVE') return lStats.ave * maxVal; // Scaled
+      return 0;
+    });
+    return { dataV, dataL };
+  };
+
+  return (
+    <>
+      {/* Overlay */}
+      {isOpen && <div className="fixed inset-0 bg-black/50 z-[190] backdrop-blur-sm" onClick={onClose} />}
+
+      {/* Panel */}
+      <div className={`fixed top-0 right-0 h-full w-full md:w-[450px] bg-[#1a1a20] shadow-2xl z-[200] transform transition-all duration-300 overflow-y-auto ${isOpen ? 'translate-x-0 opacity-100 visible' : 'translate-x-[110%] opacity-0 invisible'}`}>
+        <div className="p-5 pb-20">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-xl font-bold bg-gradient-to-r from-purple-400 to-amber-400 bg-clip-text text-transparent flex items-center gap-2">
+              <TrendingUp size={24} className="text-purple-400" />
+              Análisis Avanzado
+            </h2>
+            <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full text-white/50 hover:text-white transition-colors">
+              <X size={20} />
+            </button>
+          </div>
+
+          <div className="space-y-6">
+            {/* Legend */}
+            <div className="flex justify-center gap-6 text-xs font-bold">
+              <div className="flex items-center gap-2 text-purple-300">
+                <div className="w-3 h-3 rounded-full bg-purple-500"></div> {visitorName || 'Visitante'}
+              </div>
+              <div className="flex items-center gap-2 text-amber-300">
+                <div className="w-3 h-3 rounded-full bg-amber-500"></div> {localName || 'Local'}
+              </div>
+            </div>
+
+            {/* --- MVP Section --- */}
+            <div>
+              <h3 className="text-sm font-bold text-white/40 uppercase tracking-widest mb-3">Jugadores Destacados (MVP)</h3>
+              <div className="grid grid-cols-2 gap-3">
+                {/* Visitor MVP */}
+                <div className="relative overflow-hidden p-3 rounded-xl bg-gradient-to-br from-purple-900/50 to-purple-600/20 border border-purple-500/30">
+                  <div className="text-[10px] font-bold text-purple-300 mb-1">{visitorName || 'VISITANTE'}</div>
+                  <div className="text-sm font-bold text-white truncate">{visitorMVP?.name || '---'}</div>
+                  <div className="text-xl font-black text-purple-400 mt-1">{visitorMVP?.ave.toFixed(3)}</div>
+                </div>
+                {/* Local MVP */}
+                <div className="relative overflow-hidden p-3 rounded-xl bg-gradient-to-br from-amber-900/50 to-amber-600/20 border border-amber-500/30">
+                  <div className="text-[10px] font-bold text-amber-300 mb-1">{localName || 'LOCAL'}</div>
+                  <div className="text-sm font-bold text-white truncate">{localMVP?.name || '---'}</div>
+                  <div className="text-xl font-black text-amber-400 mt-1">{localMVP?.ave.toFixed(3)}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* --- General Chart --- */}
+            <div>
+              <h3 className="text-sm font-bold text-white/40 uppercase tracking-widest mb-3 mt-6">Comparativa General</h3>
+              <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+                <StatsChart
+                  type="line"
+                  labels={defaultMetrics}
+                  {...getChartData(defaultMetrics)}
+                  vName={visitorName} lName={localName}
+                />
+              </div>
+            </div>
+
+            {/* --- Custom Charts List --- */}
+            {customCharts.map((chart, idx) => (
+              <div key={chart.id} className="animate-in slide-in-from-right duration-300">
+                <div className="flex justify-between items-center mb-2 mt-6">
+                  <h3 className="text-sm font-bold text-white/40 uppercase tracking-widest">Gráfico Personalizado #{idx + 1}</h3>
+                  <button onClick={() => removeChart(chart.id)} className="text-red-400 hover:text-red-300"><Trash2 size={14} /></button>
+                </div>
+                <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+                  <StatsChart
+                    type={chart.type}
+                    labels={chart.metrics}
+                    {...getChartData(chart.metrics)}
+                    vName={visitorName} lName={localName}
+                  />
+                </div>
+              </div>
+            ))}
+
+            {/* --- Add Graph Button --- */}
+            {customCharts.length < 3 && !newChartMode && (
+              <button
+                onClick={() => setNewChartMode(true)}
+                className="w-full py-4 rounded-xl border-2 border-dashed border-white/10 hover:border-white/30 text-white/30 hover:text-white transition-all flex flex-col items-center gap-2 group mt-4"
+              >
+                <PlusCircle size={24} className="group-hover:scale-110 transition-transform" />
+                <span className="font-bold text-xs uppercase tracking-widest">Añadir Gráfico</span>
+              </button>
+            )}
+
+            {/* --- New Chart Wizard --- */}
+            {newChartMode && (
+              <div className="bg-white/5 rounded-xl p-4 border border-white/10 mt-4 animate-in fade-in zoom-in-95">
+                <h3 className="font-bold text-white mb-4 flex justify-between items-center">
+                  Nuevo Gráfico
+                  <button onClick={() => setNewChartMode(false)}><X size={16} className="text-white/50" /></button>
+                </h3>
+
+                <div className="mb-4">
+                  <label className="text-xs text-white/50 font-bold uppercase mb-2 block">Tipo de Gráfico</label>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setNewChartType('bar')}
+                      className={`flex-1 py-2 rounded border text-xs font-bold transition-colors ${newChartType === 'bar' ? 'bg-purple-500 border-purple-400 text-white' : 'bg-transparent border-white/20 text-white/50'}`}
+                    >
+                      <BarChart size={14} className="inline mr-1" /> Barras
+                    </button>
+                    <button
+                      onClick={() => setNewChartType('line')}
+                      className={`flex-1 py-2 rounded border text-xs font-bold transition-colors ${newChartType === 'line' ? 'bg-purple-500 border-purple-400 text-white' : 'bg-transparent border-white/20 text-white/50'}`}
+                    >
+                      <LineChart size={14} className="inline mr-1" /> Líneas
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mb-4">
+                  <label className="text-xs text-white/50 font-bold uppercase mb-2 block">Métricas a Comparar</label>
+                  <div className="flex flex-wrap gap-2">
+                    {availableMetrics.map(m => (
+                      <button
+                        key={m}
+                        onClick={() => toggleMetric(m)}
+                        className={`px-3 py-1.5 rounded-full text-[10px] font-bold border transition-colors ${selectedMetrics.includes(m) ? 'bg-white text-black border-white' : 'bg-transparent text-white/40 border-white/10'}`}
+                      >
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <button
+                  onClick={addChart}
+                  className="w-full py-2 bg-gradient-to-r from-purple-500 to-indigo-500 rounded-lg text-white font-bold text-xs shadow-lg active:scale-95 transition-transform"
+                >
+                  Crear Gráfico
+                </button>
+              </div>
+            )}
+
+          </div>
+        </div>
+      </div>
+    </>
+  );
+};
+
 export const ScoreCard: React.FC = () => {
   const [state, setState] = useState<ScoreCardState>(initialState);
   const [loaded, setLoaded] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showStats, setShowStats] = useState(false);
+  const [showAdvancedStats, setShowAdvancedStats] = useState(false);
   const [fullScreenMode, setFullScreenMode] = useState<'visitor' | 'local' | null>(null);
 
   useEffect(() => {
@@ -1653,6 +2160,19 @@ export const ScoreCard: React.FC = () => {
           <StatsTable visitor={state.visitorTeam} local={state.localTeam} visitorName={state.gameInfo.visitor} localName={state.gameInfo.home} competitionName={state.gameInfo.competition} />
         </div>
       )}
+
+      {/* Advanced Stats Toggle Button (Draggable) */}
+      <DraggableTrigger onClick={() => setShowAdvancedStats(true)} />
+
+      {/* Advanced Stats Panel */}
+      <AdvancedStatsPanel
+        isOpen={showAdvancedStats}
+        onClose={() => setShowAdvancedStats(false)}
+        visitor={state.visitorTeam}
+        local={state.localTeam}
+        visitorName={state.gameInfo.visitor}
+        localName={state.gameInfo.home}
+      />
 
       <div className={`gap-8 transition-all duration-500 ease-in-out ${showSidebar ? 'flex flex-col xl:grid xl:grid-cols-4' : 'grid grid-cols-1'}`}>
         <div className={`${showSidebar ? 'xl:col-span-3' : 'w-full'} flex flex-col order-2 xl:order-none`}>
