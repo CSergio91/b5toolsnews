@@ -91,6 +91,10 @@ export const UserNavbar: React.FC<UserNavbarProps> = ({ showGameControls = false
                 // Also fetch subscription on auth change
                 fetchSubscription(session.user.id);
             }
+
+            if (event === 'PASSWORD_RECOVERY') {
+                setIsProfileModalOpen(true);
+            }
         });
 
         return () => {
@@ -299,6 +303,7 @@ export const UserNavbar: React.FC<UserNavbarProps> = ({ showGameControls = false
                 plan={subscriptionTier}
                 featureName={selectedFeature}
             />
+            <EditProfileModal isOpen={isProfileModalOpen} onClose={() => setIsProfileModalOpen(false)} />
         </>
     );
 };

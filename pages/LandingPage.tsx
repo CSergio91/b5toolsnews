@@ -8,10 +8,12 @@ export const LandingPage: React.FC = () => {
     const navigate = useNavigate();
     // isLogin true = showing Front (Login), false = showing Back (Register)
     const [isLogin, setIsLogin] = useState(true);
+    const [isForgot, setIsForgot] = useState(false); // New state for forgot password view
 
     // Login State
     const [loginEmail, setLoginEmail] = useState('');
     const [loginPassword, setLoginPassword] = useState('');
+    const [forgotEmail, setForgotEmail] = useState('');
 
     // Register State
     const [regEmail, setRegEmail] = useState('');
@@ -62,6 +64,39 @@ export const LandingPage: React.FC = () => {
         }
     };
 
+    const handleForgotPassword = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setLoading(true);
+        setError(null);
+        setSuccessMsg(null);
+
+        try {
+            // 1. Check if email exists in DB
+            // 1. Check if email exists in DB using secure RPC
+            const { data: emailExists, error: rpcError } = await supabase
+                .rpc('check_email_exists', { email_check: forgotEmail });
+
+            if (rpcError) throw rpcError;
+
+            // Strict check: if email doesn't exist, user not found
+            if (!emailExists) {
+                throw new Error('Este correo no está registrado.');
+            }
+
+            // 2. Send Reset Email
+            const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail, {
+                redirectTo: `${window.location.origin}/dashboard?reset=true`,
+            });
+            if (error) throw error;
+
+            setSuccessMsg('Correo de recuperación enviado. Revisa tu bandeja de entrada.');
+        } catch (err: any) {
+            setError(err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const handleRegister = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
@@ -74,6 +109,16 @@ export const LandingPage: React.FC = () => {
         }
 
         try {
+            // Check if email already exists using secure RPC
+            const { data: emailExists, error: rpcError } = await supabase
+                .rpc('check_email_exists', { email_check: regEmail });
+
+            if (rpcError) throw rpcError;
+
+            if (emailExists) {
+                throw new Error('Este correo ya está registrado. Por favor inicia sesión.');
+            }
+
             // Upload logic would go here if buckets were set up
             let logoUrl = '';
 
@@ -170,45 +215,78 @@ export const LandingPage: React.FC = () => {
                                     <h2 className="text-3xl font-bold mb-2">Bienvenido</h2>
                                     <p className="text-white/40 text-sm mb-8">Inicia sesión para continuar.</p>
 
-                                    <button
-                                        onClick={handleGoogleLogin}
-                                        className="w-full py-3 bg-white text-black font-bold rounded-xl hover:bg-gray-100 transition-colors flex items-center justify-center gap-3 mb-6"
-                                    >
-                                        <img src="https://www.google.com/favicon.ico" alt="Google" className="w-5 h-5" />
-                                        <span>Continuar con Google</span>
-                                    </button>
+                                    {isForgot ? (
+                                        <div className="animate-in fade-in slide-in-from-right duration-300">
+                                            <div className="flex items-center gap-2 mb-6">
+                                                <button onClick={() => { setIsForgot(false); setError(null); setSuccessMsg(null); }} className="text-white/50 hover:text-white transition-colors">
+                                                    <ArrowRight size={20} className="rotate-180" />
+                                                </button>
+                                                <h3 className="text-xl font-bold">Recuperar Contraseña</h3>
+                                            </div>
 
-                                    <div className="relative mb-6">
-                                        <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-white/10"></div></div>
-                                        <div className="relative flex justify-center text-xs uppercase"><span className="bg-[#0f0e1a] px-2 text-white/30">O con correo</span></div>
-                                    </div>
+                                            <p className="text-white/40 text-sm mb-6">Ingresa tu correo para recibir un enlace de recuperación.</p>
 
-                                    <form onSubmit={handleLogin} className="space-y-4">
-                                        <input
-                                            type="email" placeholder="Correo Electrónico" value={loginEmail} onChange={e => setLoginEmail(e.target.value)}
-                                            className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-purple-500 focus:bg-black/40 transition-all outline-none" required
-                                        />
-                                        <div className="relative">
-                                            <input
-                                                type={showLoginPassword ? "text" : "password"}
-                                                placeholder="Contraseña"
-                                                value={loginPassword}
-                                                onChange={e => setLoginPassword(e.target.value)}
-                                                className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-purple-500 focus:bg-black/40 transition-all outline-none pr-10" required
-                                            />
-                                            <button
-                                                type="button"
-                                                onClick={() => setShowLoginPassword(!showLoginPassword)}
-                                                className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white transition-colors"
-                                            >
-                                                {showLoginPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                                            </button>
+                                            <form onSubmit={handleForgotPassword} className="space-y-4">
+                                                <input
+                                                    type="email" placeholder="Correo Electrónico" value={forgotEmail} onChange={e => setForgotEmail(e.target.value)}
+                                                    className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-purple-500 focus:bg-black/40 transition-all outline-none" required
+                                                />
+                                                {error && <div className="text-red-300 text-xs bg-red-500/10 p-2 rounded border border-red-500/20">{error}</div>}
+                                                {successMsg && <div className="text-green-300 text-xs bg-green-500/10 p-2 rounded border border-green-500/20">{successMsg}</div>}
+
+                                                <button type="submit" disabled={loading} className="w-full py-3 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl shadow-lg shadow-purple-900/40 active:scale-95 transition-all">
+                                                    {loading ? 'Enviando...' : 'Enviar Correo'}
+                                                </button>
+                                            </form>
                                         </div>
-                                        {error && <div className="text-red-300 text-xs bg-red-500/10 p-2 rounded border border-red-500/20">{error}</div>}
-                                        <button type="submit" disabled={loading} className="w-full py-3 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl shadow-lg shadow-purple-900/40 active:scale-95 transition-all">
-                                            {loading ? 'Cargando...' : 'Iniciar Sesión'}
-                                        </button>
-                                    </form>
+                                    ) : (
+                                        <>
+                                            <button
+                                                onClick={handleGoogleLogin}
+                                                className="w-full py-3 bg-white text-black font-bold rounded-xl hover:bg-gray-100 transition-colors flex items-center justify-center gap-3 mb-6"
+                                            >
+                                                <img src="https://www.google.com/favicon.ico" alt="Google" className="w-5 h-5" />
+                                                <span>Continuar con Google</span>
+                                            </button>
+
+                                            <div className="relative mb-6">
+                                                <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-white/10"></div></div>
+                                                <div className="relative flex justify-center text-xs uppercase"><span className="bg-[#0f0e1a] px-2 text-white/30">O con correo</span></div>
+                                            </div>
+
+                                            <form onSubmit={handleLogin} className="space-y-4">
+                                                <input
+                                                    type="email" placeholder="Correo Electrónico" value={loginEmail} onChange={e => setLoginEmail(e.target.value)}
+                                                    className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-purple-500 focus:bg-black/40 transition-all outline-none" required
+                                                />
+                                                <div className="relative">
+                                                    <input
+                                                        type={showLoginPassword ? "text" : "password"}
+                                                        placeholder="Contraseña"
+                                                        value={loginPassword}
+                                                        onChange={e => setLoginPassword(e.target.value)}
+                                                        className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-purple-500 focus:bg-black/40 transition-all outline-none pr-10" required
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShowLoginPassword(!showLoginPassword)}
+                                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white transition-colors"
+                                                    >
+                                                        {showLoginPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                                                    </button>
+                                                </div>
+                                                <div className="flex justify-end">
+                                                    <button type="button" onClick={() => setIsForgot(true)} className="text-xs text-purple-400 hover:text-purple-300">
+                                                        ¿Olvidaste tu contraseña?
+                                                    </button>
+                                                </div>
+                                                {error && <div className="text-red-300 text-xs bg-red-500/10 p-2 rounded border border-red-500/20">{error}</div>}
+                                                <button type="submit" disabled={loading} className="w-full py-3 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl shadow-lg shadow-purple-900/40 active:scale-95 transition-all">
+                                                    {loading ? 'Cargando...' : 'Iniciar Sesión'}
+                                                </button>
+                                            </form>
+                                        </>
+                                    )}
                                 </div>
 
                                 <div className="mt-auto pt-6 text-center border-t border-white/10 relative z-10">
