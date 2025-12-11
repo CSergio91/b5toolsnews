@@ -6,6 +6,7 @@ import { DashboardPage } from './pages/DashboardPage';
 import { DashboardGamePage } from './pages/DashboardGamePage';
 import { LoadingProvider } from './context/LoadingContext';
 import { GlobalLoader } from './components/GlobalLoader';
+import { TournamentsPage } from './pages/TournamentsPage';
 import { PrivateRoute } from './components/PrivateRoute';
 import { ErrorPage } from './pages/ErrorPage';
 import { supabase } from './lib/supabase';
@@ -23,6 +24,7 @@ const App: React.FC = () => {
           <Route element={<PrivateRoute />}>
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/dashboard/game" element={<DashboardGamePage />} />
+            <Route path="/torneos" element={<TournamentsPage />} />
           </Route>
 
           {/* Redirect generic 404s to Error Page */}

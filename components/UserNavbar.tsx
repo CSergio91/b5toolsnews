@@ -166,7 +166,7 @@ export const UserNavbar: React.FC<UserNavbarProps> = ({ showGameControls = false
                                 </span>
                             </button>
                             <button
-                                onClick={() => handleFeatureClick('Mis Torneos')}
+                                onClick={() => navigate('/torneos')}
                                 className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-600/20 text-blue-300 border border-blue-500/20 hover:bg-blue-600/30 transition-colors text-xs font-medium"
                             >
                                 <Trophy size={14} />
@@ -265,7 +265,7 @@ export const UserNavbar: React.FC<UserNavbarProps> = ({ showGameControls = false
                                     <MenuItem
                                         icon={Trophy}
                                         label="Mis Torneos"
-                                        onClick={() => { setIsMenuOpen(false); handleFeatureClick('Mis Torneos'); }}
+                                        onClick={() => { setIsMenuOpen(false); navigate('/torneos'); }}
                                     />
                                     {!isPremium && (
                                         <span className="absolute top-1/2 -translate-y-1/2 right-2 text-[10px] font-bold bg-orange-500 text-white px-1.5 py-0.5 rounded shadow-lg pointer-events-none">

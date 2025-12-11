@@ -84,7 +84,7 @@ export const DashboardPage: React.FC = () => {
                         description="Gestiona tus competiciones y ligas."
                         color="blue"
                         badge={!isPremium ? "Mejorar Plan" : undefined}
-                        onClick={() => handleFeatureClick("Mis Torneos")}
+                        onClick={() => navigate('/torneos')}
                     />
                     <DashboardCard
                         title="Administrar Club"
