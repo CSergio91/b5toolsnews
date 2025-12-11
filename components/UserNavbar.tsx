@@ -135,8 +135,12 @@ export const UserNavbar: React.FC<UserNavbarProps> = ({ showGameControls = false
         if (!isPremium) {
             setIsSubscriptionModalOpen(true);
         } else {
-            setSelectedFeature(featureName);
-            setIsComingSoonModalOpen(true);
+            if (featureName === 'Mis Torneos') {
+                navigate('/torneos');
+            } else {
+                setSelectedFeature(featureName);
+                setIsComingSoonModalOpen(true);
+            }
         }
     };
 
@@ -166,7 +170,7 @@ export const UserNavbar: React.FC<UserNavbarProps> = ({ showGameControls = false
                                 </span>
                             </button>
                             <button
-                                onClick={() => navigate('/torneos')}
+                                onClick={() => handleFeatureClick('Mis Torneos')}
                                 className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-600/20 text-blue-300 border border-blue-500/20 hover:bg-blue-600/30 transition-colors text-xs font-medium"
                             >
                                 <Trophy size={14} />
@@ -298,7 +302,6 @@ export const UserNavbar: React.FC<UserNavbarProps> = ({ showGameControls = false
             <EditProfileModal
                 isOpen={isProfileModalOpen}
                 onClose={() => setIsProfileModalOpen(false)}
-                userEmail={userEmail}
             />
 
             <SubscriptionModal
@@ -312,7 +315,6 @@ export const UserNavbar: React.FC<UserNavbarProps> = ({ showGameControls = false
                 plan={subscriptionTier}
                 featureName={selectedFeature}
             />
-            <EditProfileModal isOpen={isProfileModalOpen} onClose={() => setIsProfileModalOpen(false)} />
         </>
     );
 };

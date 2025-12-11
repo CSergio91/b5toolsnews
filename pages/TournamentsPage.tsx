@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { UserNavbar } from '../components/UserNavbar';
 import { ParticlesBackground } from '../components/ParticlesBackground';
 import { Trophy, Plus, HelpCircle, ChevronRight, ChevronDown, Check, Calendar as CalendarIcon, Loader2, Search, Book } from 'lucide-react';
@@ -10,6 +11,7 @@ import { DeleteConfirmationModal } from '../components/DeleteConfirmationModal';
 import { TournamentsOnboardingModal } from '../components/TournamentsOnboardingModal';
 
 export const TournamentsPage: React.FC = () => {
+    const navigate = useNavigate();
     const [isAnimated, setIsAnimated] = useState(false);
     const [showOnboarding, setShowOnboarding] = useState(false);
     const [showCreateModal, setShowCreateModal] = useState(false);
@@ -26,9 +28,35 @@ export const TournamentsPage: React.FC = () => {
 
     useEffect(() => {
         const timer = setTimeout(() => setIsAnimated(true), 500);
-        fetchTournaments();
+        checkSubscription();
         return () => clearTimeout(timer);
     }, []);
+
+    const checkSubscription = async () => {
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return;
+
+            // Check Subscription
+            const { data: profile } = await supabase
+                .from('profiles')
+                .select('subscription_tier')
+                .eq('id', user.id)
+                .single();
+
+            const tier = profile?.subscription_tier || 'basic';
+            if (tier !== 'pro' && tier !== 'ultra') {
+                navigate('/dashboard');
+                return;
+            }
+
+            // If allowed, fetch data
+            fetchTournaments();
+        } catch (error) {
+            console.error('Error checking subscription:', error);
+            setLoading(false);
+        }
+    };
 
     const fetchTournaments = async () => {
         try {

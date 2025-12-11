@@ -53,8 +53,12 @@ export const DashboardPage: React.FC = () => {
         if (!isPremium) {
             setIsSubscriptionModalOpen(true);
         } else {
-            setSelectedFeature(featureName);
-            setIsComingSoonModalOpen(true);
+            if (featureName === 'Mis Torneos') {
+                navigate('/torneos');
+            } else {
+                setSelectedFeature(featureName);
+                setIsComingSoonModalOpen(true);
+            }
         }
     };
 
@@ -84,7 +88,7 @@ export const DashboardPage: React.FC = () => {
                         description="Gestiona tus competiciones y ligas."
                         color="blue"
                         badge={!isPremium ? "Mejorar Plan" : undefined}
-                        onClick={() => navigate('/torneos')}
+                        onClick={() => handleFeatureClick("Mis Torneos")}
                     />
                     <DashboardCard
                         title="Administrar Club"

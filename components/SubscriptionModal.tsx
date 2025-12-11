@@ -153,6 +153,7 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ isOpen, on
                                 <FeatureItem text="Equipos ilimitados" />
                                 <FeatureItem text="Análisis con IA" />
                                 <FeatureItem text="API de datos en vivo" />
+                                <FeatureItem text="Transmisiones en vivo" />
                                 <FeatureItem text="Soporte Prioritario 24/7" />
                                 <FeatureItem text="Branding personalizado" />
                             </div>

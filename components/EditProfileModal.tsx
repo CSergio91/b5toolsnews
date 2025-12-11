@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { X, Save, Lock, User, Check, Eye, EyeOff } from 'lucide-react';
+import { X, Save, Lock, User, Check, Eye, EyeOff, Upload } from 'lucide-react';
 
 interface EditProfileModalProps {
     isOpen: boolean;
@@ -16,6 +16,8 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onCl
     const [firstName, setFirstName] = useState('');
     const [lastName, setLastName] = useState('');
     const [clubName, setClubName] = useState('');
+    const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+    const [avatarFile, setAvatarFile] = useState<File | null>(null);
 
     // Password Data
     const [newPassword, setNewPassword] = useState('');
@@ -31,6 +33,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onCl
             setError(null);
             setNewPassword('');
             setConfirmPassword('');
+            setAvatarFile(null);
         }
     }, [isOpen]);
 
@@ -49,11 +52,13 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onCl
                 setFirstName(profile.first_name || '');
                 setLastName(profile.last_name || '');
                 setClubName(profile.club_name || '');
+                setAvatarUrl(profile.avatar_url || user.user_metadata.avatar_url || null);
             } else {
                 // Fallback to meta data if profile empty (legacy)
                 setFirstName(user.user_metadata.first_name || '');
                 setLastName(user.user_metadata.last_name || '');
                 setClubName(user.user_metadata.club_name || '');
+                setAvatarUrl(user.user_metadata.avatar_url || null);
             }
         }
         setLoading(false);
@@ -69,14 +74,35 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onCl
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) throw new Error('No user found');
 
+            let finalAvatarUrl = avatarUrl;
+
+            // 1. Upload Avatar if selected
+            if (avatarFile) {
+                const fileExt = avatarFile.name.split('.').pop();
+                const fileName = `${user.id}/avatar_${Date.now()}.${fileExt}`;
+
+                const { error: uploadError } = await supabase.storage
+                    .from('avatars')
+                    .upload(fileName, avatarFile, { upsert: true });
+
+                if (uploadError) throw uploadError;
+
+                const { data: { publicUrl } } = supabase.storage
+                    .from('avatars')
+                    .getPublicUrl(fileName);
+
+                finalAvatarUrl = publicUrl;
+            }
+
             const updates: any = {
                 first_name: firstName,
                 last_name: lastName,
                 club_name: clubName,
+                avatar_url: finalAvatarUrl,
                 updated_at: new Date()
             };
 
-            // 1. Update Profile Table
+            // 2. Update Profile Table
             const { error: profileError } = await supabase
                 .from('profiles')
                 .update(updates)
@@ -84,12 +110,17 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onCl
 
             if (profileError) throw profileError;
 
-            // 2. Update Auth Metadata (optional but good for sync)
+            // 3. Update Auth Metadata
             await supabase.auth.updateUser({
-                data: { first_name: firstName, last_name: lastName, club_name: clubName }
+                data: {
+                    first_name: firstName,
+                    last_name: lastName,
+                    club_name: clubName,
+                    avatar_url: finalAvatarUrl
+                }
             });
 
-            // 3. Update Password if provided
+            // 4. Update Password if provided
             if (newPassword) {
                 if (newPassword !== confirmPassword) {
                     throw new Error('Las contraseñas no coinciden.');
@@ -106,6 +137,8 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onCl
             }
 
             setSuccess('Perfil actualizado correctamente.');
+            window.dispatchEvent(new Event('subscription-updated')); // Trigger navbar refresh
+
             setTimeout(() => {
                 onClose();
             }, 1500);
@@ -134,6 +167,35 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onCl
                 </h2>
 
                 <form onSubmit={handleUpdate} className="space-y-4">
+
+                    {/* Avatar Upload */}
+                    <div className="flex flex-col items-center mb-6">
+                        <div className="relative w-24 h-24 rounded-full bg-indigo-600/30 border-2 border-white/10 flex items-center justify-center overflow-hidden group cursor-pointer mb-2">
+                            {avatarFile ? (
+                                <img src={URL.createObjectURL(avatarFile)} alt="Preview" className="w-full h-full object-cover" />
+                            ) : avatarUrl ? (
+                                <img src={avatarUrl} alt="Current" className="w-full h-full object-cover" />
+                            ) : (
+                                <User size={40} className="text-indigo-400" />
+                            )}
+
+                            <label className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+                                <Upload size={20} className="text-white mb-1" />
+                                <span className="text-[9px] text-white font-bold uppercase tracking-wider">Cambiar</span>
+                                <input
+                                    type="file"
+                                    className="hidden"
+                                    accept="image/*"
+                                    onChange={e => {
+                                        if (e.target.files && e.target.files[0]) {
+                                            setAvatarFile(e.target.files[0]);
+                                        }
+                                    }}
+                                />
+                            </label>
+                        </div>
+                        <p className="text-xs text-slate-400">Click para subir nueva imagen</p>
+                    </div>
 
                     <div className="grid grid-cols-2 gap-4">
                         <div>
