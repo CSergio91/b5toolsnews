@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { MapPin, Calendar, Clock, PlayCircle, Bell, Loader2 } from 'lucide-react';
-import { Tournament, ReminderType, TournamentReminder } from '../types/tournament';
+import { MapPin, Calendar, Clock, PlayCircle, Bell, Loader2, Pencil, Trash2 } from 'lucide-react';
+import { Tournament, ReminderType } from '../types/tournament';
 import { supabase } from '../lib/supabase';
-import { useLoading } from '../context/LoadingContext';
 
 interface TournamentCardProps {
     tournament: Tournament;
+    onEdit: (tournament: Tournament) => void;
+    onDelete: (id: string, name: string) => void;
 }
 
-export const TournamentCard: React.FC<TournamentCardProps> = ({ tournament }) => {
+export const TournamentCard: React.FC<TournamentCardProps> = ({ tournament, onEdit, onDelete }) => {
     const [reminders, setReminders] = useState<ReminderType[]>([]);
     const [loadingReminders, setLoadingReminders] = useState<Record<string, boolean>>({});
 
@@ -52,9 +53,7 @@ export const TournamentCard: React.FC<TournamentCardProps> = ({ tournament }) =>
                 setReminders(prev => prev.filter(r => r !== type));
             } else {
                 // Create reminder
-                // Calculate scheduled_at roughly based on type relative to start_date
-                // This is a simplification; a real backend would calculate precise execution time
-                let scheduledAt = new Date(tournament.start_date + 'T' + tournament.start_time);
+                let scheduledAt = new Date(tournament.start_date + 'T' + (tournament.start_time || '00:00'));
 
                 if (type === '7_days') scheduledAt.setDate(scheduledAt.getDate() - 7);
                 if (type === '3_days') scheduledAt.setDate(scheduledAt.getDate() - 3);
@@ -86,55 +85,69 @@ export const TournamentCard: React.FC<TournamentCardProps> = ({ tournament }) =>
     };
 
     const formatTime = (timeStr: string) => {
+        if (!timeStr) return '';
         return timeStr.substring(0, 5);
     };
 
     return (
-        <div className="w-full bg-slate-900/50 border border-white/10 rounded-2xl overflow-hidden hover:border-blue-500/30 transition-all group">
+        <div className="w-full bg-slate-900/50 border border-white/10 rounded-lg overflow-hidden hover:border-blue-500/30 transition-all group relative">
             {/* Top Bar with Status Color */}
-            <div className="h-1 w-full bg-gradient-to-r from-blue-500 to-cyan-400"></div>
+            <div className="h-0.5 w-full bg-gradient-to-r from-blue-500 to-cyan-400"></div>
 
-            <div className="p-5">
-                <div className="flex justify-between items-start mb-4">
+            {/* Admin Controls - Absolute Positioned */}
+            <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-20">
+                <button
+                    onClick={() => onEdit(tournament)}
+                    className="p-1 rounded bg-slate-800 hover:bg-blue-500/20 hover:text-blue-300 text-slate-400 border border-white/5 hover:border-blue-500/30 transition-all"
+                >
+                    <Pencil size={10} />
+                </button>
+                <button
+                    onClick={() => onDelete(tournament.id, tournament.name)}
+                    className="p-1 rounded bg-slate-800 hover:bg-red-500/20 hover:text-red-300 text-slate-400 border border-white/5 hover:border-red-500/30 transition-all"
+                >
+                    <Trash2 size={10} />
+                </button>
+            </div>
+
+            <div className="p-3">
+                <div className="flex justify-between items-start mb-1.5 pr-12">
                     <div>
-                        <h3 className="text-xl font-bold text-white mb-1 group-hover:text-blue-400 transition-colors">{tournament.name}</h3>
-                        <div className="flex items-center gap-2 text-slate-400 text-sm">
-                            <MapPin size={14} />
-                            <span>{tournament.location}</span>
+                        <h3 className="text-sm font-bold text-white mb-0.5 group-hover:text-blue-400 transition-colors leading-tight truncate max-w-[200px]">{tournament.name}</h3>
+                        <div className="flex items-center gap-1 text-slate-400 text-[10px]">
+                            <MapPin size={10} />
+                            <span className="truncate max-w-[150px]">{tournament.location}</span>
                         </div>
                     </div>
                 </div>
 
-                <div className="flex items-center gap-4 mb-6">
-                    <div className="flex items-center gap-2 bg-white/5 px-3 py-1.5 rounded-lg border border-white/5">
-                        <Calendar size={14} className="text-orange-400" />
-                        <span className="text-sm font-medium text-slate-200">
+                <div className="flex items-center gap-2 mb-3">
+                    <div className="flex items-center gap-1 bg-white/5 px-1.5 py-0.5 rounded border border-white/5">
+                        <Calendar size={10} className="text-orange-400" />
+                        <span className="text-[10px] font-medium text-slate-200">
                             {formatDate(tournament.start_date)} - {formatDate(tournament.end_date)}
                         </span>
                     </div>
-                    <div className="flex items-center gap-2 bg-white/5 px-3 py-1.5 rounded-lg border border-white/5">
-                        <Clock size={14} className="text-blue-400" />
-                        <span className="text-sm font-medium text-slate-200">
-                            {formatTime(tournament.start_time)}
-                        </span>
-                    </div>
+                    {tournament.start_time && (
+                        <div className="flex items-center gap-1 bg-white/5 px-1.5 py-0.5 rounded border border-white/5">
+                            <Clock size={10} className="text-blue-400" />
+                            <span className="text-[10px] font-medium text-slate-200">
+                                {formatTime(tournament.start_time)}
+                            </span>
+                        </div>
+                    )}
                 </div>
 
-                <button className="w-full py-2.5 bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white font-bold rounded-xl shadow-lg shadow-orange-500/20 active:scale-95 transition-all flex items-center justify-center gap-2 mb-6">
-                    <PlayCircle size={18} />
-                    Generar Torneo
-                </button>
+                <div className="flex items-center gap-2">
+                    <button className="flex-1 py-1.5 bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white font-bold rounded shadow-lg shadow-orange-500/20 active:scale-95 transition-all flex items-center justify-center gap-1 text-[10px]">
+                        <PlayCircle size={12} />
+                        Generar
+                    </button>
 
-                {/* Reminders Section */}
-                <div className="pt-4 border-t border-white/5">
-                    <div className="flex items-center gap-2 mb-3 text-xs text-slate-500 uppercase tracking-wider font-semibold">
-                        <Bell size={12} />
-                        Recordatorios
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
-                        {(['7_days', '3_days', '1_day', '1_hour'] as ReminderType[]).map((type) => {
-                            const labels = { '7_days': '1 sem', '3_days': '3 días', '1_day': '1 día', '1_hour': '1 hora' };
+                    {/* Reminders - Compact */}
+                    <div className="flex gap-0.5">
+                        {(['7_days', '3_days', '1_day'] as ReminderType[]).map((type) => {
+                            const labels = { '7_days': '7d', '3_days': '3d', '1_day': '1d', '1_hour': '1h' };
                             const isActive = reminders.includes(type);
                             const isLoading = loadingReminders[type];
 
@@ -143,15 +156,16 @@ export const TournamentCard: React.FC<TournamentCardProps> = ({ tournament }) =>
                                     key={type}
                                     onClick={() => toggleReminder(type)}
                                     disabled={isLoading}
-                                    className={`
-                                        px-3 py-1 rounded-full text-xs font-medium border transition-all flex items-center gap-1
+                                    title={`Recordar ${labels[type]} antes`}
+                                    className={`relative
+                                        w-6 h-6 rounded border transition-all flex items-center justify-center
                                         ${isActive
-                                            ? 'bg-blue-500/20 border-blue-500/50 text-blue-300 shadow-[0_0_10px_rgba(59,130,246,0.2)]'
-                                            : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-slate-300'}
+                                            ? 'bg-blue-500/20 border-blue-500/50 text-blue-300'
+                                            : 'bg-white/5 border-white/5 text-slate-500 hover:bg-white/10 hover:text-slate-300'}
                                     `}
                                 >
-                                    {isActive && <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse"></span>}
-                                    {isLoading ? <Loader2 size={10} className="animate-spin" /> : labels[type]}
+                                    {isLoading ? <Loader2 size={8} className="animate-spin" /> : <Bell size={10} className={isActive ? 'fill-blue-300' : ''} />}
+                                    {isActive && <span className="absolute top-0 right-0 w-1 h-1 bg-blue-400 rounded-full"></span>}
                                 </button>
                             );
                         })}

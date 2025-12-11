@@ -1,15 +1,17 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Trophy, MapPin, Calendar, Clock, Loader2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useLoading } from '../context/LoadingContext';
+import { Tournament } from '../types/tournament';
 
 interface CreateTournamentModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onTournamentCreated: () => void;
+    onTournamentSaved: () => void;
+    initialData?: Tournament | null;
 }
 
-export const CreateTournamentModal: React.FC<CreateTournamentModalProps> = ({ isOpen, onClose, onTournamentCreated }) => {
+export const CreateTournamentModal: React.FC<CreateTournamentModalProps> = ({ isOpen, onClose, onTournamentSaved, initialData }) => {
     const { startLoading, stopLoading } = useLoading();
     const [formData, setFormData] = useState({
         name: '',
@@ -19,6 +21,30 @@ export const CreateTournamentModal: React.FC<CreateTournamentModalProps> = ({ is
         start_time: ''
     });
     const [error, setError] = useState<string | null>(null);
+
+    // Reset or Populate form when modal opens or initialData changes
+    useEffect(() => {
+        if (isOpen) {
+            if (initialData) {
+                setFormData({
+                    name: initialData.name,
+                    location: initialData.location,
+                    start_date: initialData.start_date,
+                    end_date: initialData.end_date,
+                    start_time: initialData.start_time
+                });
+            } else {
+                setFormData({
+                    name: '',
+                    location: '',
+                    start_date: '',
+                    end_date: '',
+                    start_time: ''
+                });
+            }
+            setError(null);
+        }
+    }, [isOpen, initialData]);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -40,35 +66,45 @@ export const CreateTournamentModal: React.FC<CreateTournamentModalProps> = ({ is
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) throw new Error('No usuario autenticado');
 
-            const { error: insertError } = await supabase
-                .from('tournaments')
-                .insert([{
-                    user_id: user.id,
-                    name: formData.name,
-                    location: formData.location,
-                    start_date: formData.start_date,
-                    end_date: formData.end_date,
-                    start_time: formData.start_time,
-                    status: 'active' // Default to active for now
-                }]);
+            if (initialData) {
+                // UPDATE
+                const { error: updateError } = await supabase
+                    .from('tournaments')
+                    .update({
+                        name: formData.name,
+                        location: formData.location,
+                        start_date: formData.start_date,
+                        end_date: formData.end_date,
+                        start_time: formData.start_time
+                    })
+                    .eq('id', initialData.id);
 
-            if (insertError) throw insertError;
+                if (updateError) throw updateError;
+
+            } else {
+                // INSERT
+                const { error: insertError } = await supabase
+                    .from('tournaments')
+                    .insert([{
+                        user_id: user.id,
+                        name: formData.name,
+                        location: formData.location,
+                        start_date: formData.start_date,
+                        end_date: formData.end_date,
+                        start_time: formData.start_time,
+                        status: 'active'
+                    }]);
+
+                if (insertError) throw insertError;
+            }
 
             // Success
-            onTournamentCreated();
+            onTournamentSaved();
             onClose();
-            // Reset form
-            setFormData({
-                name: '',
-                location: '',
-                start_date: '',
-                end_date: '',
-                start_time: ''
-            });
 
         } catch (err: any) {
-            console.error('Error creating tournament:', err);
-            setError(err.message || 'Error al crear el torneo');
+            console.error('Error saving tournament:', err);
+            setError(err.message || 'Error al guardar el torneo');
         } finally {
             stopLoading();
         }
@@ -95,7 +131,7 @@ export const CreateTournamentModal: React.FC<CreateTournamentModalProps> = ({ is
                         <div className="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400">
                             <Trophy size={20} />
                         </div>
-                        <h2 className="text-xl font-bold text-white">Nuevo Torneo</h2>
+                        <h2 className="text-xl font-bold text-white">{initialData ? 'Editar Torneo' : 'Nuevo Torneo'}</h2>
                     </div>
 
                     {error && (
@@ -183,7 +219,7 @@ export const CreateTournamentModal: React.FC<CreateTournamentModalProps> = ({ is
                                 type="submit"
                                 className="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold rounded-xl shadow-lg shadow-blue-500/20 active:scale-95 transition-all flex items-center justify-center gap-2"
                             >
-                                Guardar Torneo
+                                {initialData ? 'Actualizar Torneo' : 'Guardar Torneo'}
                             </button>
                         </div>
                     </form>
