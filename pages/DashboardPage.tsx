@@ -38,8 +38,18 @@ export const DashboardPage: React.FC = () => {
     };
 
     const isPremium = subscriptionTier === 'pro' || subscriptionTier === 'ultra';
+    const isUltra = subscriptionTier === 'ultra';
 
     const handleFeatureClick = (featureName: string) => {
+        // Special restriction for Live Stream
+        if (featureName === 'Transmitir en Vivo') {
+            if (!isUltra) {
+                setIsSubscriptionModalOpen(true);
+                return;
+            }
+        }
+
+        // General Premium restriction
         if (!isPremium) {
             setIsSubscriptionModalOpen(true);
         } else {
@@ -89,7 +99,7 @@ export const DashboardPage: React.FC = () => {
                         icon={Video}
                         description="Conecta con tus fans en tiempo real"
                         color="indigo"
-                        badge={!isPremium ? "Mejorar Plan" : undefined}
+                        badge={!isUltra ? "Mejorar Plan" : undefined} // Only Ultra
                         onClick={() => handleFeatureClick("Transmitir en Vivo")}
                     />
                 </div>

@@ -121,8 +121,17 @@ export const UserNavbar: React.FC<UserNavbarProps> = ({ showGameControls = false
     };
 
     const isPremium = subscriptionTier === 'pro' || subscriptionTier === 'ultra';
+    const isUltra = subscriptionTier === 'ultra';
 
     const handleFeatureClick = (featureName: string) => {
+        // Special restriction for Live Stream
+        if (featureName === 'Transmitir en Vivo') {
+            if (!isUltra) {
+                setIsSubscriptionModalOpen(true);
+                return;
+            }
+        }
+
         if (!isPremium) {
             setIsSubscriptionModalOpen(true);
         } else {
@@ -173,7 +182,7 @@ export const UserNavbar: React.FC<UserNavbarProps> = ({ showGameControls = false
                                 <Video size={14} />
                                 <span className="hidden xl:inline">Transmitir</span>
                                 <span className="bg-orange-500 text-white text-[9px] font-bold px-1 rounded ml-1">
-                                    {!isPremium && 'Mejorar'}
+                                    {!isUltra && 'Mejorar'}
                                 </span>
                             </button>
                         </div>
