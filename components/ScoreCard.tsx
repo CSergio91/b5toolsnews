@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { GlassInput, GlassTitle } from './GlassInput';
+import { SubscriptionModal } from './SubscriptionModal';
 import {
   Clock,
   ArrowRightLeft,
@@ -40,6 +41,7 @@ import {
   HelpCircle,
   TrendingUp
 } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 // --- Types for State Management ---
 
@@ -151,7 +153,7 @@ const initialState: ScoreCardState = {
     local: ['']
   },
   totals: { visitor: '', local: '' },
-  errors: { visitor: '', local: '' },
+  errors: { visitor: '0', local: '0' },
   timeouts: {
     visitor: [false, false],
     local: [false, false]
@@ -854,9 +856,17 @@ interface LiveGameStatusProps {
   onSwap: () => void;
   onAdjustVisitor: (delta: number) => void;
   onAdjustLocal: (delta: number) => void;
+  visitorHits: number;
+  localHits: number;
+  visitorErrors: number;
+  localErrors: number;
+  inningScores: {
+    visitor: string[];
+    local: string[];
+  };
 }
 
-const LiveGameStatus = ({ visitorRuns, localRuns, inning, visitorOuts, localOuts, visitorName, localName, visitorLogo, localLogo, onSwap, onAdjustVisitor, onAdjustLocal }: LiveGameStatusProps) => {
+const LiveGameStatus = ({ visitorRuns, localRuns, inning, visitorOuts, localOuts, visitorName, localName, visitorLogo, localLogo, onSwap, onAdjustVisitor, onAdjustLocal, visitorHits, localHits, visitorErrors, localErrors, inningScores }: LiveGameStatusProps) => {
   const [position, setPosition] = useState({ x: 0, y: 10 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
@@ -865,10 +875,10 @@ const LiveGameStatus = ({ visitorRuns, localRuns, inning, visitorOuts, localOuts
 
   useEffect(() => {
     if (!hasInitialized.current) {
-      // Correctly center initially
-      const width = window.innerWidth < 768 ? 280 : 340;
+      // Correctly center initially - wider for table
+      const width = Math.min(window.innerWidth - 20, 600); // Max width 600 or window width
       const initialX = (window.innerWidth - width) / 2;
-      setPosition({ x: initialX > 0 ? initialX : 0, y: 10 });
+      setPosition({ x: initialX > 0 ? initialX : 10, y: 10 });
       hasInitialized.current = true;
     }
   }, []);
@@ -885,7 +895,8 @@ const LiveGameStatus = ({ visitorRuns, localRuns, inning, visitorOuts, localOuts
 
     const handleMouseMove = (e: MouseEvent) => handleMove(e.clientX, e.clientY);
     const handleTouchMove = (e: TouchEvent) => {
-      e.preventDefault(); // Prevent scrolling while dragging
+      if (e.target instanceof Element && e.target.closest('.no-drag')) return; // Allow interaction with buttons
+      e.preventDefault();
       handleMove(e.touches[0].clientX, e.touches[0].clientY);
     };
 
@@ -906,7 +917,8 @@ const LiveGameStatus = ({ visitorRuns, localRuns, inning, visitorOuts, localOuts
     };
   }, [isDragging, dragOffset]);
 
-  const startDrag = (clientX: number, clientY: number) => {
+  const startDrag = (clientX: number, clientY: number, target: EventTarget | null) => {
+    if (target instanceof Element && target.closest('.no-drag')) return;
     if (containerRef.current) {
       const rect = containerRef.current.getBoundingClientRect();
       setDragOffset({
@@ -917,102 +929,91 @@ const LiveGameStatus = ({ visitorRuns, localRuns, inning, visitorOuts, localOuts
     }
   };
 
-  const handleMouseDown = (e: React.MouseEvent) => startDrag(e.clientX, e.clientY);
-  const handleTouchStart = (e: React.TouchEvent) => startDrag(e.touches[0].clientX, e.touches[0].clientY);
+  const handleMouseDown = (e: React.MouseEvent) => startDrag(e.clientX, e.clientY, e.target);
+  const handleTouchStart = (e: React.TouchEvent) => startDrag(e.touches[0].clientX, e.touches[0].clientY, e.target);
+
+  // Pad innings to always show at least 5 frames or current inning length
+  const totalFrames = Math.max(5, Math.max(inningScores.visitor.length, inningScores.local.length));
+  const frames = Array.from({ length: totalFrames }, (_, i) => i);
 
   return createPortal(
     <div
       ref={containerRef}
-      className="fixed z-[160] pointer-events-auto no-print touch-none"
+      className={`fixed z-[160] pointer-events-auto no-print touch-none select-none`}
       style={{ left: position.x, top: position.y }}
       onMouseDown={handleMouseDown}
       onTouchStart={handleTouchStart}
     >
-      <div className={`bg-[#1e1e24]/90 backdrop-blur-md border border-white/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden w-[280px] md:w-[340px] relative transition-shadow ${isDragging ? 'shadow-purple-500/20 cursor-grabbing' : 'cursor-grab'}`}>
+      <div className={`bg-[#2e2b44]/95 backdrop-blur-xl border border-white/20 rounded-xl shadow-2xl flex flex-col overflow-hidden w-full max-w-[650px] min-w-[320px] transition-shadow ${isDragging ? 'shadow-purple-500/20 cursor-grabbing' : 'cursor-grab'} ring-1 ring-black/50`}>
 
-        {/* Drag Handle */}
-        <div className="h-3 md:h-4 w-full bg-white/5 flex items-center justify-center border-b border-white/5">
-          <GripHorizontal size={12} className="text-white/20" />
-        </div>
-
-        <div className="flex flex-row h-[70px] md:h-[90px]">
-          {/* --- Left: Visitor --- */}
-          <div className="flex-1 flex flex-col items-center justify-center border-r border-white/5 relative group">
-            {visitorLogo && (
-              <div
-                className="absolute inset-0 z-0 opacity-20 bg-center bg-no-repeat pointer-events-none"
-                style={{ backgroundImage: `url(${visitorLogo})`, backgroundSize: '100% 100%' }}
-              />
-            )}
-            <div className="relative z-10 flex flex-col items-center gap-1 w-full justify-center pb-2 md:pb-4">
-              <span className="text-purple-400 font-bold tracking-widest text-[9px] md:text-xs uppercase mb-0.5 md:mb-1 drop-shadow-md">VISITANTE</span>
-              <div className="flex items-center gap-2 md:gap-4">
-                <button onMouseDown={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} onClick={() => onAdjustVisitor(-1)} className="w-5 h-5 md:w-6 md:h-6 rounded-full bg-black/40 hover:bg-black/60 active:bg-black/80 flex items-center justify-center text-white/50 hover:text-white transition-colors border border-white/10 cursor-pointer">
-                  <Minus size={10} className="md:w-3 md:h-3" />
-                </button>
-                <span className="text-3xl md:text-5xl font-black text-white font-mono tracking-tighter leading-none drop-shadow-xl select-none">{visitorRuns}</span>
-                <button onMouseDown={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} onClick={() => onAdjustVisitor(1)} className="w-5 h-5 md:w-6 md:h-6 rounded-full bg-black/40 hover:bg-black/60 active:bg-black/80 flex items-center justify-center text-white/50 hover:text-white transition-colors border border-white/10 cursor-pointer">
-                  <Plus size={10} className="md:w-3 md:h-3" />
-                </button>
-              </div>
-            </div>
-            <div className="flex gap-1.5 mt-1 absolute bottom-2">
-              {[...Array(3)].map((_, i) => (
-                <div key={i} className={`w-2 h-2 rounded-full border border-red-500/40 ${i < visitorOuts ? 'bg-red-500 shadow-[0_0_5px_rgba(239,68,68,0.8)]' : 'bg-transparent'}`} />
-              ))}
-            </div>
+        {/* Table Structure */}
+        <div className="flex flex-col text-[10px] md:text-xs">
+          {/* Header */}
+          <div className="flex bg-[#3f3c56] text-white/70 font-bold uppercase tracking-wider border-b border-white/10">
+            <div className="w-24 md:w-32 p-2 pl-3 flex items-center">EQUIPO</div>
+            {frames.map(i => (
+              <div key={i} className="flex-1 min-w-[20px] p-2 text-center border-l border-white/10">{i + 1}</div>
+            ))}
+            <div className="w-8 md:w-10 p-2 text-center border-l border-white/10 text-white font-black bg-white/5">C</div>
+            <div className="w-8 md:w-10 p-2 text-center border-l border-white/10 text-green-400 font-black bg-white/5">H</div>
+            <div className="w-8 md:w-10 p-2 text-center border-l border-white/10 text-yellow-400 font-black bg-white/5">E</div>
           </div>
 
-          {/* --- Center: Inning & Swap --- */}
-          <div className="w-[80px] flex flex-col items-center justify-between py-2 bg-white/5">
-            <div className="flex flex-col items-center">
-              <span className="text-[9px] font-bold text-white/40 uppercase tracking-widest select-none">INNING</span>
-              <span className="text-2xl font-bold text-amber-400 font-mono leading-none mt-1 select-none">{inning}</span>
-            </div>
-
-            <button
-              onMouseDown={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()}
-              onClick={onSwap}
-              className="flex flex-col items-center justify-center group opacity-50 hover:opacity-100 transition-opacity cursor-pointer"
-              title="Intercambiar Equipos"
-            >
-              <Trophy size={14} className="text-amber-400/80 mb-0.5" />
-              <div className="flex items-center text-[8px] font-bold text-white/50 gap-1">
-                <ArrowRightLeft size={8} /> SWAP
+          {/* Visitor Row */}
+          <div className="flex items-center border-b border-white/5 bg-[#2a1205]/10 relative group hover:bg-white/5 transition-colors">
+            <div className="w-24 md:w-32 p-2 pl-3 flex flex-col justify-center relative">
+              <span className="font-bold text-purple-300 uppercase truncate text-xs md:text-sm">{visitorName || 'VISITANTE'}</span>
+              {/* Visitor Dots */}
+              <div className="flex gap-1 mt-1">
+                {[...Array(3)].map((_, i) => (
+                  <div key={i} className={`w-1.5 h-1.5 rounded-full border border-red-500/40 ${i < visitorOuts ? 'bg-red-500 shadow-[0_0_5px_rgba(239,68,68,0.8)]' : 'bg-transparent'}`} />
+                ))}
               </div>
-            </button>
+            </div>
+            {frames.map(i => (
+              <div key={i} className="flex-1 min-w-[20px] p-2 text-center border-l border-white/5 font-mono font-bold text-white/80">
+                {inningScores.visitor[i] || '0'}
+              </div>
+            ))}
+            <div className="w-8 md:w-10 p-2 text-center border-l border-white/5 font-mono font-black text-white text-sm bg-white/5 flex items-center justify-center relative group/score">
+              {visitorRuns}
+              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/score:opacity-100 bg-black/60 transition-opacity no-drag gap-1">
+                <button onClick={() => onAdjustVisitor(-1)} className="w-4 h-4 bg-white/10 rounded-full flex items-center justify-center hover:bg-white/30 text-xs">-</button>
+                <button onClick={() => onAdjustVisitor(1)} className="w-4 h-4 bg-white/10 rounded-full flex items-center justify-center hover:bg-white/30 text-xs">+</button>
+              </div>
+            </div>
+            <div className="w-8 md:w-10 p-2 text-center border-l border-white/5 font-mono font-bold text-white/60 bg-white/5">{visitorHits}</div>
+            <div className="w-8 md:w-10 p-2 text-center border-l border-white/5 font-mono font-bold text-white/60 bg-white/5">{visitorErrors}</div>
           </div>
 
-          {/* --- Right: Local --- */}
-          <div className="flex-1 flex flex-col items-center justify-center border-l border-white/5 relative group">
-            {localLogo && (
-              <div
-                className="absolute inset-0 z-0 opacity-20 bg-center bg-no-repeat pointer-events-none"
-                style={{ backgroundImage: `url(${localLogo})`, backgroundSize: '100% 100%' }}
-              />
-            )}
-            <div className="relative z-10 flex flex-col items-center gap-1 w-full justify-center pb-4">
-              <span className="text-amber-400 font-bold tracking-widest text-xs uppercase mb-1 drop-shadow-md">LOCAL (HOME)</span>
-              <div className="flex items-center gap-4">
-                <button onMouseDown={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} onClick={() => onAdjustLocal(-1)} className="w-6 h-6 rounded-full bg-black/40 hover:bg-black/60 active:bg-black/80 flex items-center justify-center text-white/50 hover:text-white transition-colors border border-white/10 cursor-pointer">
-                  <Minus size={12} />
-                </button>
-                <span className="text-5xl font-black text-white font-mono tracking-tighter leading-none drop-shadow-xl select-none">{localRuns}</span>
-                <button onMouseDown={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} onClick={() => onAdjustLocal(1)} className="w-6 h-6 rounded-full bg-black/40 hover:bg-black/60 active:bg-black/80 flex items-center justify-center text-white/50 hover:text-white transition-colors border border-white/10 cursor-pointer">
-                  <Plus size={12} />
-                </button>
+          {/* Local Row */}
+          <div className="flex items-center bg-[#2a1205]/20 relative group hover:bg-white/5 transition-colors">
+            <div className="w-24 md:w-32 p-2 pl-3 flex flex-col justify-center relative">
+              <span className="font-bold text-orange-300 uppercase truncate text-xs md:text-sm">{localName || 'LOCAL'}</span>
+              {/* Local Dots */}
+              <div className="flex gap-1 mt-1">
+                {[...Array(3)].map((_, i) => (
+                  <div key={i} className={`w-1.5 h-1.5 rounded-full border border-amber-500/40 ${i < localOuts ? 'bg-amber-500 shadow-[0_0_5px_rgba(245,158,11,0.8)]' : 'bg-transparent'}`} />
+                ))}
               </div>
             </div>
-            <div className="flex gap-1.5 mt-1 absolute bottom-2">
-              {[...Array(3)].map((_, i) => (
-                <div key={i} className={`w-2 h-2 rounded-full border border-amber-500/40 ${i < localOuts ? 'bg-amber-500 shadow-[0_0_5px_rgba(245,158,11,0.8)]' : 'bg-transparent'}`} />
-              ))}
+            {frames.map(i => (
+              <div key={i} className="flex-1 min-w-[20px] p-2 text-center border-l border-white/5 font-mono font-bold text-white/80">
+                {inningScores.local[i] || '0'}
+              </div>
+            ))}
+            <div className="w-8 md:w-10 p-2 text-center border-l border-white/5 font-mono font-black text-white text-sm bg-white/5 flex items-center justify-center relative group/score">
+              {localRuns}
+              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/score:opacity-100 bg-black/60 transition-opacity no-drag gap-1">
+                <button onClick={() => onAdjustLocal(-1)} className="w-4 h-4 bg-white/10 rounded-full flex items-center justify-center hover:bg-white/30 text-xs">-</button>
+                <button onClick={() => onAdjustLocal(1)} className="w-4 h-4 bg-white/10 rounded-full flex items-center justify-center hover:bg-white/30 text-xs">+</button>
+              </div>
             </div>
+            <div className="w-8 md:w-10 p-2 text-center border-l border-white/5 font-mono font-bold text-white/60 bg-white/5">{localHits}</div>
+            <div className="w-8 md:w-10 p-2 text-center border-l border-white/5 font-mono font-bold text-white/60 bg-white/5">{localErrors}</div>
           </div>
         </div>
 
-        {/* Glass Gloss Effect */}
-        <div className="absolute top-0 left-0 w-full h-1/2 bg-gradient-to-b from-white/10 to-transparent pointer-events-none"></div>
       </div>
     </div>,
     document.body
@@ -1407,11 +1408,25 @@ const AdvancedStatsPanel: React.FC<{
   local: TeamData;
   visitorName: string;
   localName: string;
-}> = ({ isOpen, onClose, visitor, local, visitorName, localName }) => {
+  plan: string;
+}> = ({ isOpen, onClose, visitor, local, visitorName, localName, plan }) => {
   const [customCharts, setCustomCharts] = useState<{ id: number, type: 'line' | 'bar', metrics: string[] }[]>([]);
   const [newChartMode, setNewChartMode] = useState(false);
   const [newChartType, setNewChartType] = useState<'line' | 'bar'>('bar');
+
   const [selectedMetrics, setSelectedMetrics] = useState<string[]>(['H', 'CA']);
+  const [chartsEnabled, setChartsEnabled] = useState(false); // Default to false if restricted
+  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
+
+  const isPro = plan === 'pro' || plan === 'ultra';
+
+  const handleToggle = () => {
+    if (!isPro) {
+      setShowSubscriptionModal(true);
+      return;
+    }
+    setChartsEnabled(!chartsEnabled);
+  };
 
   const availableMetrics = ['VB', 'H', 'CA', 'E', 'AVE'];
 
@@ -1475,7 +1490,13 @@ const AdvancedStatsPanel: React.FC<{
         });
       });
     });
-    return { vb, h, ca, e, ave: vb > 0 ? (h / vb) : 0 };
+    return {
+      vb,
+      h,
+      ca,
+      e: Number.isNaN(e) ? 0 : e, // Ensure no NaN
+      ave: vb > 0 ? (h / vb) : 0
+    };
   };
 
   const vStats = getTeamStats(visitor);
@@ -1507,6 +1528,7 @@ const AdvancedStatsPanel: React.FC<{
 
   return (
     <>
+      <SubscriptionModal isOpen={showSubscriptionModal} onClose={() => setShowSubscriptionModal(false)} />
       {/* Overlay */}
       {isOpen && <div className="fixed inset-0 bg-black/50 z-[190] backdrop-blur-sm" onClick={onClose} />}
 
@@ -1517,10 +1539,26 @@ const AdvancedStatsPanel: React.FC<{
             <h2 className="text-xl font-bold bg-gradient-to-r from-purple-400 to-amber-400 bg-clip-text text-transparent flex items-center gap-2">
               <TrendingUp size={24} className="text-purple-400" />
               Análisis Avanzado
+
             </h2>
-            <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full text-white/50 hover:text-white transition-colors">
-              <X size={20} />
-            </button>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2" title="Activar/Desactivar Gráficos">
+                <span className={`text-[10px] uppercase font-bold ${!isPro ? 'text-orange-400' : 'text-white/40'}`}>
+                  {!isPro ? 'MEJORAR PLAN' : (chartsEnabled ? 'ON' : 'OFF')}
+                </span>
+                <button
+                  onClick={handleToggle}
+                  className={`w-10 h-5 rounded-full p-1 transition-colors relative ${!isPro ? 'bg-orange-500/20 border border-orange-500/50' : (chartsEnabled ? 'bg-purple-500' : 'bg-white/10 border border-white/10')}`}
+                >
+                  <div className={`w-3 h-3 rounded-full shadow-sm transition-transform duration-200 flex items-center justify-center ${chartsEnabled ? 'translate-x-5 bg-white' : 'translate-x-0 bg-white/50'}`}>
+                    {!isPro && <Lock size={8} className="text-orange-600" />}
+                  </div>
+                </button>
+              </div>
+              <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full text-white/50 hover:text-white transition-colors">
+                <X size={20} />
+              </button>
+            </div>
           </div>
 
           <div className="space-y-6">
@@ -1553,116 +1591,154 @@ const AdvancedStatsPanel: React.FC<{
               </div>
             </div>
 
-            {/* --- General Chart --- */}
-            <div>
-              <h3 className="text-sm font-bold text-white/40 uppercase tracking-widest mb-3 mt-6">Comparativa General</h3>
-              <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-                <StatsChart
-                  type="line"
-                  labels={defaultMetrics}
-                  {...getChartData(defaultMetrics)}
-                  vName={visitorName} lName={localName}
-                />
-              </div>
-            </div>
+            {/* --- Charts Section (Toggleable) --- */}
+            {chartsEnabled && (
+              <div className="animate-in fade-in slide-in-from-bottom duration-500">
 
-            {/* --- Custom Charts List --- */}
-            {customCharts.map((chart, idx) => (
-              <div key={chart.id} className="animate-in slide-in-from-right duration-300">
-                <div className="flex justify-between items-center mb-2 mt-6">
-                  <h3 className="text-sm font-bold text-white/40 uppercase tracking-widest">Gráfico Personalizado #{idx + 1}</h3>
-                  <button onClick={() => removeChart(chart.id)} className="text-red-400 hover:text-red-300"><Trash2 size={14} /></button>
-                </div>
-                <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-                  <StatsChart
-                    type={chart.type}
-                    labels={chart.metrics}
-                    {...getChartData(chart.metrics)}
-                    vName={visitorName} lName={localName}
-                  />
-                </div>
-              </div>
-            ))}
-
-            {/* --- Add Graph Button --- */}
-            {customCharts.length < 3 && !newChartMode && (
-              <button
-                onClick={() => setNewChartMode(true)}
-                className="w-full py-4 rounded-xl border-2 border-dashed border-white/10 hover:border-white/30 text-white/30 hover:text-white transition-all flex flex-col items-center gap-2 group mt-4"
-              >
-                <PlusCircle size={24} className="group-hover:scale-110 transition-transform" />
-                <span className="font-bold text-xs uppercase tracking-widest">Añadir Gráfico</span>
-              </button>
-            )}
-
-            {/* --- New Chart Wizard --- */}
-            {newChartMode && (
-              <div className="bg-white/5 rounded-xl p-4 border border-white/10 mt-4 animate-in fade-in zoom-in-95">
-                <h3 className="font-bold text-white mb-4 flex justify-between items-center">
-                  Nuevo Gráfico
-                  <button onClick={() => setNewChartMode(false)}><X size={16} className="text-white/50" /></button>
-                </h3>
-
-                <div className="mb-4">
-                  <label className="text-xs text-white/50 font-bold uppercase mb-2 block">Tipo de Gráfico</label>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setNewChartType('bar')}
-                      className={`flex-1 py-2 rounded border text-xs font-bold transition-colors ${newChartType === 'bar' ? 'bg-purple-500 border-purple-400 text-white' : 'bg-transparent border-white/20 text-white/50'}`}
-                    >
-                      <BarChart size={14} className="inline mr-1" /> Barras
-                    </button>
-                    <button
-                      onClick={() => setNewChartType('line')}
-                      className={`flex-1 py-2 rounded border text-xs font-bold transition-colors ${newChartType === 'line' ? 'bg-purple-500 border-purple-400 text-white' : 'bg-transparent border-white/20 text-white/50'}`}
-                    >
-                      <LineChart size={14} className="inline mr-1" /> Líneas
-                    </button>
+                {/* --- General Chart --- */}
+                <div>
+                  <h3 className="text-sm font-bold text-white/40 uppercase tracking-widest mb-3 mt-6">Comparativa General</h3>
+                  <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+                    <StatsChart
+                      type="line"
+                      labels={defaultMetrics}
+                      {...getChartData(defaultMetrics)}
+                      vName={visitorName} lName={localName}
+                    />
                   </div>
                 </div>
 
-                <div className="mb-4">
-                  <label className="text-xs text-white/50 font-bold uppercase mb-2 block">Métricas a Comparar</label>
-                  <div className="flex flex-wrap gap-2">
-                    {availableMetrics.map(m => (
-                      <button
-                        key={m}
-                        onClick={() => toggleMetric(m)}
-                        className={`px-3 py-1.5 rounded-full text-[10px] font-bold border transition-colors ${selectedMetrics.includes(m) ? 'bg-white text-black border-white' : 'bg-transparent text-white/40 border-white/10'}`}
-                      >
-                        {m}
-                      </button>
-                    ))}
+                {/* --- Custom Charts List --- */}
+                {customCharts.map((chart, idx) => (
+                  <div key={chart.id} className="animate-in slide-in-from-right duration-300">
+                    <div className="flex justify-between items-center mb-2 mt-6">
+                      <h3 className="text-sm font-bold text-white/40 uppercase tracking-widest">Gráfico Personalizado #{idx + 1}</h3>
+                      <button onClick={() => removeChart(chart.id)} className="text-red-400 hover:text-red-300"><Trash2 size={14} /></button>
+                    </div>
+                    <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+                      <StatsChart
+                        type={chart.type}
+                        labels={chart.metrics}
+                        {...getChartData(chart.metrics)}
+                        vName={visitorName} lName={localName}
+                      />
+                    </div>
                   </div>
-                </div>
+                ))}
 
-                <button
-                  onClick={addChart}
-                  className="w-full py-2 bg-gradient-to-r from-purple-500 to-indigo-500 rounded-lg text-white font-bold text-xs shadow-lg active:scale-95 transition-transform"
-                >
-                  Crear Gráfico
-                </button>
+                {/* --- Add Graph Button --- */}
+                {customCharts.length < 3 && !newChartMode && (
+                  <button
+                    onClick={() => setNewChartMode(true)}
+                    className="w-full py-4 rounded-xl border-2 border-dashed border-white/10 hover:border-white/30 text-white/30 hover:text-white transition-all flex flex-col items-center gap-2 group mt-4"
+                  >
+                    <PlusCircle size={24} className="group-hover:scale-110 transition-transform" />
+                    <span className="font-bold text-xs uppercase tracking-widest">Añadir Gráfico</span>
+                  </button>
+                )}
+
+                {/* --- New Chart Wizard --- */}
+                {newChartMode && (
+                  <div className="bg-white/5 rounded-xl p-4 border border-white/10 mt-4 animate-in fade-in zoom-in-95">
+                    <h3 className="font-bold text-white mb-4 flex justify-between items-center">
+                      Nuevo Gráfico
+                      <button onClick={() => setNewChartMode(false)}><X size={16} className="text-white/50" /></button>
+                    </h3>
+
+                    <div className="mb-4">
+                      <label className="text-xs text-white/50 font-bold uppercase mb-2 block">Tipo de Gráfico</label>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => setNewChartType('bar')}
+                          className={`flex-1 py-2 rounded border text-xs font-bold transition-colors ${newChartType === 'bar' ? 'bg-purple-500 border-purple-400 text-white' : 'bg-transparent border-white/20 text-white/50'}`}
+                        >
+                          <BarChart size={14} className="inline mr-1" /> Barras
+                        </button>
+                        <button
+                          onClick={() => setNewChartType('line')}
+                          className={`flex-1 py-2 rounded border text-xs font-bold transition-colors ${newChartType === 'line' ? 'bg-purple-500 border-purple-400 text-white' : 'bg-transparent border-white/20 text-white/50'}`}
+                        >
+                          <LineChart size={14} className="inline mr-1" /> Líneas
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="mb-4">
+                      <label className="text-xs text-white/50 font-bold uppercase mb-2 block">Métricas a Comparar</label>
+                      <div className="flex flex-wrap gap-2">
+                        {availableMetrics.map(m => (
+                          <button
+                            key={m}
+                            onClick={() => toggleMetric(m)}
+                            className={`px-3 py-1.5 rounded-full text-[10px] font-bold border transition-colors ${selectedMetrics.includes(m) ? 'bg-white text-black border-white' : 'bg-transparent text-white/40 border-white/10'}`}
+                          >
+                            {m}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={addChart}
+                      className="w-full py-2 bg-gradient-to-r from-purple-500 to-indigo-500 rounded-lg text-white font-bold text-xs shadow-lg active:scale-95 transition-transform"
+                    >
+                      Crear Gráfico
+                    </button>
+                  </div>
+
+                )}
               </div>
             )}
 
           </div>
-        </div>
-      </div>
+        </div >
+      </div >
     </>
   );
 };
 
-export const ScoreCard: React.FC = () => {
+const SingleSetScoreCard: React.FC<{
+  setNum: number;
+  onWinnerUpdate: (winner: { name: string; score: string; isVisitor: boolean } | null) => void;
+}> = ({ setNum, onWinnerUpdate }) => {
   const [state, setState] = useState<ScoreCardState>(initialState);
   const [loaded, setLoaded] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showStats, setShowStats] = useState(false);
   const [showAdvancedStats, setShowAdvancedStats] = useState(false);
+
   const [fullScreenMode, setFullScreenMode] = useState<'visitor' | 'local' | null>(null);
+  const [subscriptionTier, setSubscriptionTier] = useState<string>('basic');
 
   useEffect(() => {
-    const saved = localStorage.getItem('b5tools_game_state_v7');
+    supabase.auth.getUser().then(async ({ data }) => {
+      if (data.user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('subscription_tier')
+          .eq('id', data.user.id)
+          .single();
+
+        if (profile?.subscription_tier) {
+          setSubscriptionTier(profile.subscription_tier);
+        }
+      }
+    });
+
+    const handleSubscriptionUpdate = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: profile } = await supabase.from('profiles').select('subscription_tier').eq('id', user.id).single();
+        if (profile) setSubscriptionTier(profile.subscription_tier);
+      }
+    };
+    window.addEventListener('subscription-updated', handleSubscriptionUpdate);
+    return () => window.removeEventListener('subscription-updated', handleSubscriptionUpdate);
+  }, []);
+
+  useEffect(() => {
+    const saved = localStorage.getItem(`b5_scorekeeper_set_${setNum}`);
     if (saved) {
       try { setState(JSON.parse(saved)); } catch (e) { console.error(e); }
     }
@@ -1671,9 +1747,13 @@ export const ScoreCard: React.FC = () => {
 
   useEffect(() => {
     if (loaded) {
-      localStorage.setItem('b5tools_game_state_v7', JSON.stringify(state));
+      localStorage.setItem(`b5_scorekeeper_set_${setNum}`, JSON.stringify(state));
     }
-  }, [state, loaded]);
+  }, [state, loaded, setNum]);
+
+  useEffect(() => {
+    onWinnerUpdate(state.winner);
+  }, [state.winner]);
 
   useEffect(() => {
     if (fullScreenMode) {
@@ -1912,6 +1992,24 @@ export const ScoreCard: React.FC = () => {
           const targetScores = [...nextInningScores[isVisitor ? 'visitor' : 'local']];
           targetScores[inningIndex] = (currentSummary + 1).toString();
           nextInningScores[isVisitor ? 'visitor' : 'local'] = targetScores;
+
+          // --- WALK-OFF LOGIC (Walk-off) ---
+          if (!isVisitor && inningIndex >= 4) { // Bottom of 5th or later (Index 4 = 5th Inning)
+            // Need to check total scores with this new run
+            const tempState = { ...prev, [team]: newTeam }; // newTeam has the run
+            const vRuns = calculateRunsFromGrid(tempState.visitorTeam) + (prev.scoreAdjustments?.visitor || 0);
+            const lRuns = calculateRunsFromGrid(tempState.localTeam) + (prev.scoreAdjustments?.local || 0);
+
+            if (lRuns > vRuns) {
+              foundWinner = { name: prev.gameInfo.home || 'LOCAL', score: `${lRuns} - ${vRuns}`, isVisitor: false };
+            }
+          }
+        } else if (hadRun && !hasRun) {
+          const isVisitor = team === 'visitorTeam';
+          const currentSummary = parseInt(prev.inningScores[isVisitor ? 'visitor' : 'local'][inningIndex] || '0');
+          const targetScores = [...nextInningScores[isVisitor ? 'visitor' : 'local']];
+          targetScores[inningIndex] = Math.max(0, currentSummary - 1).toString();
+          nextInningScores[isVisitor ? 'visitor' : 'local'] = targetScores;
         }
 
         const hadError = prevValue.includes('S');
@@ -1946,11 +2044,29 @@ export const ScoreCard: React.FC = () => {
           // Simplified: If inning >= 9 (index 8) or whatever "game end" is. 
           // For now, let's just use the existing logic but FIX THE SCORE calculation.
 
-          if (inningIndex >= 6 && !isVisitorUpdate) { // End of a full inning (Local finished)
-            if (finalL > finalV) foundWinner = { name: prev.gameInfo.home || 'LOCAL', score: `${finalL} - ${finalV}`, isVisitor: false };
-            else if (finalV > finalL) foundWinner = { name: prev.gameInfo.visitor || 'VISITANTE', score: `${finalV} - ${finalL}`, isVisitor: true };
+          // --- WIN CONDITION LOGIC (Reglas B5: 5 innings) ---
+
+          // inningIndex 4 = 5th Inning
+          if (inningIndex >= 4) {
+            if (isVisitorUpdate) {
+              // Top of the inning just ended (Visitor 3rd out)
+              // If Local is ALREADY winning, they don't need to bat in bottom of 5th (or later). Game Over.
+              if (finalL > finalV) {
+                foundWinner = { name: prev.gameInfo.home || 'LOCAL', score: `${finalL} - ${finalV}`, isVisitor: false };
+              }
+            } else {
+              // Bottom of the inning just ended (Local 3rd out)
+              // Inning is complete.
+              // If Visitor is winning, Game Over.
+              // If Local is winning, Game Over (This case is rare to reach here due to Walk-off logic above, but possible if they were already ahead and didn't score this inning, or scored runs but not "walk-off" style - wait, if they are ahead at any point in bottom 5, walk-off triggers. So this is mostly for "Visitor Wins" or "Tie -> Next Inning")
+              if (finalV > finalL) {
+                foundWinner = { name: prev.gameInfo.visitor || 'VISITANTE', score: `${finalV} - ${finalL}`, isVisitor: true };
+              } else if (finalL > finalV) {
+                // Should have been caught by walk-off or previous state, but safe to declare.
+                foundWinner = { name: prev.gameInfo.home || 'LOCAL', score: `${finalL} - ${finalV}`, isVisitor: false };
+              }
+            }
           }
-          // Walk-off logic: If Local scores correctly in bottom inning? (Handled differently usually)
         }
 
       } else {
@@ -2095,7 +2211,7 @@ export const ScoreCard: React.FC = () => {
         }
       `}</style>
 
-      <WinnerModal winner={state.winner} onClose={() => setShowResetConfirm(true)} />
+      <WinnerModal winner={state.winner} onClose={() => setState(prev => ({ ...prev, winner: null }))} />
       <ResetConfirmModal isOpen={showResetConfirm} onConfirm={confirmReset} onCancel={() => setShowResetConfirm(false)} />
 
       <LiveGameStatus
@@ -2111,6 +2227,11 @@ export const ScoreCard: React.FC = () => {
         onSwap={swapTeams}
         onAdjustVisitor={(delta) => handleScoreAdjustment('visitor', delta)}
         onAdjustLocal={(delta) => handleScoreAdjustment('local', delta)}
+        visitorHits={visitorHits}
+        localHits={localHits}
+        visitorErrors={parseInt(state.errors.visitor)}
+        localErrors={parseInt(state.errors.local)}
+        inningScores={state.inningScores}
       />
 
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4 pb-6 border-b border-white/10 mt-20 md:mt-10 no-print">
@@ -2175,6 +2296,7 @@ export const ScoreCard: React.FC = () => {
         local={state.localTeam}
         visitorName={state.gameInfo.visitor}
         localName={state.gameInfo.home}
+        plan={subscriptionTier}
       />
 
       <div className={`gap-8 transition-all duration-500 ease-in-out ${showSidebar ? 'flex flex-col xl:grid xl:grid-cols-4' : 'grid grid-cols-1'}`}>
@@ -2271,7 +2393,7 @@ export const ScoreCard: React.FC = () => {
               ))}
               <div className="w-12 p-2 font-black text-center bg-white/5 border-l border-white/5 text-white">{visitorRunsTotal}</div>
               <div className="w-12 p-2 font-bold text-center bg-white/5 border-l border-white/5 text-white/70">{visitorHits}</div>
-              <div className="w-12 p-2 font-bold text-center bg-white/5 border-l border-white/5 text-white/70">{state.errors.visitor}</div>
+              <div className="w-12 p-2 font-bold text-center bg-white/5 border-l border-white/5 text-white/70">{state.errors.visitor || '0'}</div>
             </div>
 
             <div className="flex items-center hover:bg-white/5 transition-colors">
@@ -2291,7 +2413,7 @@ export const ScoreCard: React.FC = () => {
               ))}
               <div className="w-12 p-2 font-black text-center bg-white/5 border-l border-white/5 text-white">{localRunsTotal}</div>
               <div className="w-12 p-2 font-bold text-center bg-white/5 border-l border-white/5 text-white/70">{localHits}</div>
-              <div className="w-12 p-2 font-bold text-center bg-white/5 border-l border-white/5 text-white/70">{state.errors.local}</div>
+              <div className="w-12 p-2 font-bold text-center bg-white/5 border-l border-white/5 text-white/70">{state.errors.local || '0'}</div>
             </div>
           </div>
         </div>
@@ -2477,6 +2599,412 @@ export const ScoreCard: React.FC = () => {
           </div>
         </div>
       </div>
+    </div>
+  );
+};
+
+// --- Multi-Set Wrapper ---
+
+const MatchWinnerModal: React.FC<{
+  matchWinner: { name: string; score: string; setsWon: number } | null;
+  onClose: () => void;
+}> = ({ matchWinner, onClose }) => {
+  if (!matchWinner) return null;
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+      <div className="bg-gradient-to-br from-indigo-900 via-purple-900 to-slate-900 border border-indigo-500/50 p-8 rounded-3xl shadow-[0_0_50px_rgba(99,102,241,0.3)] max-w-md w-full text-center relative overflow-hidden no-print animate-in zoom-in duration-300">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-indigo-500/10 via-transparent to-transparent animate-pulse"></div>
+
+        <div className="relative z-10 flex flex-col items-center">
+          <div className="relative">
+            <Trophy size={80} className="text-yellow-400 mb-6 drop-shadow-[0_0_20px_rgba(250,204,21,0.6)] animate-bounce" />
+            <div className="absolute top-0 right-0 -mr-4 -mt-2 bg-red-600 text-white font-bold text-xs px-2 py-1 rounded-full animate-pulse border border-red-400">GANADOR</div>
+          </div>
+
+          <h1 className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-200 via-yellow-400 to-yellow-600 mb-2 filter drop-shadow-xl uppercase tracking-tighter">
+            {matchWinner.name}
+          </h1>
+          <p className="text-indigo-200 text-lg font-mono mb-8 tracking-widest uppercase">Ganador del Partido</p>
+
+          <div className="bg-white/10 rounded-2xl px-8 py-4 border border-white/10 mb-8 backdrop-blur-md">
+            <span className="text-6xl font-black text-white drop-shadow-[0_4px_0_rgba(0,0,0,0.5)]">2 - {3 - matchWinner.setsWon === 2 ? 0 : 1}</span>
+            <p className="text-xs text-white/40 uppercase tracking-widest mt-2">Sets Ganados</p>
+          </div>
+
+          <button
+            onClick={onClose}
+            className="px-10 py-4 bg-white text-indigo-900 font-black text-lg rounded-full hover:bg-indigo-50 transition-all shadow-xl hover:shadow-2xl hover:-translate-y-1 transform active:scale-95"
+          >
+            Continuar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// --- General Stats Logic ---
+const GeneralStatsModal: React.FC<{ isOpen: boolean, onClose: () => void }> = ({ isOpen, onClose }) => {
+  const [stats, setStats] = useState<{ visitor: any, local: any } | null>(null);
+  const [matchSummary, setMatchSummary] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const sets = [1, 2, 3].map(i => {
+      try { return JSON.parse(localStorage.getItem(`b5_scorekeeper_set_${i}`) || 'null'); }
+      catch { return null; }
+    }).filter(Boolean);
+
+    if (sets.length === 0) return;
+
+    // Names from Set 1
+    const vName = sets[0].gameInfo.visitor;
+    const lName = sets[0].gameInfo.home;
+
+    const aggregate = (teamKey: 'visitorTeam' | 'localTeam') => {
+      const playerMap = new Map<string, any>();
+
+      sets.forEach(set => {
+        set[teamKey].slots.forEach((slot: any) => {
+          [slot.starter, slot.sub].forEach((p: PlayerStats) => {
+            if (!p.scores || !Array.isArray(p.scores)) return;
+            // Key by name + number (or just name if consistent)
+            const key = `${p.number}-${p.name}`;
+            if (!playerMap.has(key)) playerMap.set(key, { name: p.name || 'J' + p.number, no: p.number, vb: 0, h: 0, ca: 0, e: 0 });
+
+            const data = playerMap.get(key);
+            p.scores.flat().forEach(val => {
+              const v = val.toUpperCase();
+              if (v.includes('H')) data.h++;
+              if (v.includes('●')) data.ca++;
+              if (v.includes('S')) data.e++;
+              if (v.includes('H') || v.includes('X') || v.includes('S')) data.vb++;
+            });
+          });
+        });
+      });
+
+      return Array.from(playerMap.values()).map(p => ({
+        ...p,
+        ave: p.vb > 0 ? (p.h / p.vb).toFixed(3) : '.000'
+      }));
+    };
+
+    setStats({
+      visitor: { name: vName, players: aggregate('visitorTeam') },
+      local: { name: lName, players: aggregate('localTeam') }
+    });
+
+    // --- Match Summary Aggregation ---
+    // We want to show a summary row FOR EACH SET played
+    const summaryData = sets.map((set, idx) => {
+      const vRuns = set.inningScores.visitor.reduce((sum: number, val: string) => sum + (parseInt(val) || 0), 0) + (set.scoreAdjustments?.visitor || 0);
+      const lRuns = set.inningScores.local.reduce((sum: number, val: string) => sum + (parseInt(val) || 0), 0) + (set.scoreAdjustments?.local || 0);
+
+      // Calculate Hits & Errors for the set
+      let vHits = 0; let lHits = 0;
+      let vErrors = 0; let lErrors = 0;
+      set.visitorTeam.slots.forEach((slot: any) => {
+        [slot.starter, slot.sub].forEach((p: any) => {
+          p.scores.flat().forEach((val: string) => {
+            if (val.toUpperCase().includes('H')) vHits++;
+            if (val.toUpperCase().includes('S')) vErrors++; // Assuming S is Error on Base? Or just check set.errors if reliable?
+            // Actually set.errors might be string "0" in state, let's trust set.errors if available, but for players stats we counted manually.
+            // Let's use the explicit counters from the set state if available for consistency with top bar
+          });
+        });
+      });
+      set.localTeam.slots.forEach((slot: any) => {
+        [slot.starter, slot.sub].forEach((p: any) => {
+          p.scores.flat().forEach((val: string) => {
+            if (val.toUpperCase().includes('H')) lHits++;
+            if (val.toUpperCase().includes('S')) lErrors++;
+          });
+        });
+      });
+
+      // Use stored errors if simple count is preferred or if logic matches LiveGameStatus
+      // In LiveGameStatus we use state.errors.visitor directly.
+      // Let's rely on set.errors from the saved state
+      const vE = parseInt(set.errors?.visitor || '0');
+      const lE = parseInt(set.errors?.local || '0');
+
+      // Hits need to be counted from players as they aren't stored in simple state
+      // Recalculating Hits properly:
+      const countHits = (teamData: any) => {
+        let h = 0;
+        teamData.slots.forEach((slot: any) => {
+          [slot.starter, slot.sub].forEach((p: any) => {
+            p.scores.flat().forEach((val: string) => { if (val?.toUpperCase().includes('H')) h++; });
+          });
+        });
+        return h;
+      };
+      const vH = countHits(set.visitorTeam);
+      const lH = countHits(set.localTeam);
+
+      return {
+        set: idx + 1,
+        visitor: { runs: vRuns, hits: vH, errors: vE, inningScores: set.inningScores.visitor },
+        local: { runs: lRuns, hits: lH, errors: lE, inningScores: set.inningScores.local }
+      };
+    });
+
+    setMatchSummary(summaryData);
+
+  }, [isOpen]);
+
+  if (!isOpen || !stats) return null;
+
+  const RenderTable = ({ teamName, players, color }: any) => {
+    // Check if we want to show player details or just a team summary
+    // User requested: "quita la columna No y Jugador ya que eso va asociado a cada equipo"
+    // This implies they just want the numbers "Total stats of all sets"
+    // To do this right, we should probably Aggregate all player stats into ONE row?
+    // "la tabla que muestra los totales de todos los set de VB H CA y E"
+    // Let's create a single aggregate object for the team
+    const totalStats = players.reduce((acc: any, p: any) => ({
+      vb: acc.vb + p.vb,
+      h: acc.h + p.h,
+      ca: acc.ca + p.ca,
+      e: acc.e + p.e,
+      // Average is calculated from total H / Total VB
+      h_total: (acc.h_total || 0) + p.h,
+      vb_total: (acc.vb_total || 0) + p.vb
+    }), { vb: 0, h: 0, ca: 0, e: 0, h_total: 0, vb_total: 0 });
+
+    totalStats.ave = totalStats.vb_total > 0 ? (totalStats.h_total / totalStats.vb_total).toFixed(3) : '.000';
+
+    return (
+      <div className="mb-8">
+        <h3 className={`text-lg font-bold mb-2 uppercase tracking-wide ${color}`}>{teamName}</h3>
+        <div className="overflow-x-auto rounded-lg border border-white/10">
+          <table className="w-full text-left text-xs text-white/70">
+            <thead className="bg-white/5 uppercase font-bold text-white/50">
+              <tr>
+                {/* Removed No and Jugador columns as requested */}
+                <th className="p-2 text-center">VB</th>
+                <th className="p-2 text-center">H</th>
+                <th className="p-2 text-center">CA</th>
+                <th className="p-2 text-center">E</th>
+                <th className="p-2 text-center">AVE</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              <tr className="hover:bg-white/5">
+                <td className="p-2 text-center font-bold text-white">{totalStats.vb}</td>
+                <td className="p-2 text-center font-bold text-white">{totalStats.h}</td>
+                <td className="p-2 text-center font-bold text-white">{totalStats.ca}</td>
+                <td className="p-2 text-center font-bold text-white">{totalStats.e}</td>
+                <td className="p-2 text-center font-bold text-yellow-400">{totalStats.ave}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    )
+  };
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
+      <div className="bg-[#1e1e24] w-full max-w-4xl max-h-[90vh] flex flex-col rounded-2xl border border-white/10 shadow-2xl relative">
+        <div className="p-4 border-b border-white/10 flex justify-between items-center">
+          <h2 className="text-xl font-bold text-white flex items-center gap-2">
+            <BarChart className="text-purple-400" /> Estadísticas Generales (Acumulado)
+          </h2>
+          <button onClick={onClose} className="text-white/50 hover:text-white"><X size={24} /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-6">
+
+          {/* Match Summary Table */}
+          <div className="mb-8 p-4 bg-black/20 rounded-xl border border-white/5">
+            <h3 className="text-sm font-bold text-white/70 uppercase tracking-widest mb-4 flex items-center gap-2">
+              <Trophy size={14} className="text-yellow-500" /> Resumen del Partido
+            </h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-[10px] md:text-xs text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-white/10 text-white/40 uppercase tracking-wider bg-white/5">
+                    <th className="p-3 text-left w-[50px]">Set</th>
+                    <th className="p-3 text-left w-[120px]">Equipo</th>
+
+                    {(() => {
+                      // Find max innings across all sets to render correct headers
+                      const maxInnings = Math.max(5, ...matchSummary.map(m => Math.max(m.visitor.inningScores.length, m.local.inningScores.length)));
+                      const headers = Array.from({ length: maxInnings }, (_, i) => i + 1);
+                      return headers.map(i => (
+                        <th key={i} className="p-2 text-center w-[40px] border-l border-white/5">{i}</th>
+                      ));
+                    })()}
+
+                    <th className="p-3 text-center text-white/70 font-bold bg-white/5 border-l border-white/5 w-[50px]">C</th>
+                    <th className="p-3 text-center text-green-400/70 font-bold bg-white/5 border-l border-white/5 w-[50px]">H</th>
+                    <th className="p-3 text-center text-yellow-400/70 font-bold bg-white/5 border-l border-white/5 w-[50px]">E</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {matchSummary.map((item) => {
+                    // Calculate how many cells we need to fill to match the header max
+                    const globalMax = Math.max(5, ...matchSummary.map(m => Math.max(m.visitor.inningScores.length, m.local.inningScores.length)));
+                    const fillCount = globalMax;
+
+                    return (
+                      <React.Fragment key={item.set}>
+                        {/* Visitor Row */}
+                        <tr className="bg-white/[0.02] hover:bg-white/5 transition-colors">
+                          <td rowSpan={2} className="p-3 font-bold text-white border-r border-white/5 text-center bg-white/5">{item.set}</td>
+                          <td className="p-3 font-bold text-purple-300 border-r border-white/5">{stats.visitor.name}</td>
+
+                          {Array.from({ length: fillCount }).map((_, i) => (
+                            <td key={i} className="p-2 text-center border-r border-white/5 text-white/80 font-mono">
+                              {item.visitor.inningScores[i] || (i < 5 ? '0' : '-')}
+                            </td>
+                          ))}
+
+                          <td className="p-3 text-center font-black text-white text-sm bg-white/5 border-l border-white/5">{item.visitor.runs}</td>
+                          <td className="p-3 text-center font-bold text-white/60 bg-white/5 border-l border-white/5">{item.visitor.hits}</td>
+                          <td className="p-3 text-center font-bold text-white/60 bg-white/5 border-l border-white/5">{item.visitor.errors}</td>
+                        </tr>
+                        {/* Local Row */}
+                        <tr className="bg-white/[0.02] hover:bg-white/5 transition-colors">
+                          <td className="p-3 font-bold text-orange-300 border-r border-white/5">{stats.local.name}</td>
+
+                          {Array.from({ length: fillCount }).map((_, i) => (
+                            <td key={i} className="p-2 text-center border-r border-white/5 text-white/80 font-mono">
+                              {item.local.inningScores[i] || (i < 5 ? '0' : '-')}
+                            </td>
+                          ))}
+
+                          <td className="p-3 text-center font-black text-white text-sm bg-white/5 border-l border-white/5">{item.local.runs}</td>
+                          <td className="p-3 text-center font-bold text-white/60 bg-white/5 border-l border-white/5">{item.local.hits}</td>
+                          <td className="p-3 text-center font-bold text-white/60 bg-white/5 border-l border-white/5">{item.local.errors}</td>
+                        </tr>
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <RenderTable teamName={stats.visitor.name} players={stats.visitor.players} color="text-purple-400" />
+          <RenderTable teamName={stats.local.name} players={stats.local.players} color="text-orange-400" />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
+export const ScoreCard: React.FC = () => {
+  const [currentSet, setCurrentSet] = useState(1);
+  const [matchWinner, setMatchWinner] = useState<{ name: string; score: string; setsWon: number } | null>(null);
+  const [generalStatsOpen, setGeneralStatsOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  // Track winners of each set
+  const [setWinners, setSetWinners] = useState<(any | null)[]>([null, null, null]);
+
+  // Force re-render of child when switching to ensure fresh state load
+  const handleSetChange = (set: number) => {
+    setLoading(true);
+    setCurrentSet(set);
+    setTimeout(() => setLoading(false), 50);
+  };
+
+  // Check Match Winner
+  const handleWinnerUpdate = (winner: any) => {
+    // Update local tracking
+    const newWinners = [...setWinners];
+    newWinners[currentSet - 1] = winner;
+    setSetWinners(newWinners);
+
+    // Check overall
+    let vWins = 0;
+    let lWins = 0;
+    let vName = 'Visitante';
+    let lName = 'Local';
+
+    // Runtime tracking `handleWinnerUpdate` only fires for CURRENT set.
+    // We should scan localStorage on mount/update.
+    for (let i = 1; i <= 3; i++) {
+      const saved = localStorage.getItem(`b5_scorekeeper_set_${i}`);
+      if (saved) {
+        const p = JSON.parse(saved);
+        if (p.winner) {
+          if (p.winner.isVisitor) vWins++; else lWins++;
+          // Capture names
+          if (i === 1) { vName = p.gameInfo.visitor; lName = p.gameInfo.home; }
+        }
+      }
+    }
+
+    if (vWins >= 2) setMatchWinner({ name: vName, score: `${vWins}-${lWins}`, setsWon: vWins });
+    else if (lWins >= 2) setMatchWinner({ name: lName, score: `${lWins}-${vWins}`, setsWon: lWins });
+  };
+
+  return (
+    <div className="min-h-screen bg-transparent pb-20">
+      {/* --- Sticky Tab Navigation --- */}
+      <div className="sticky top-0 z-[50] bg-slate-900/80 backdrop-blur-md border-b border-white/10 shadow-lg no-print">
+        <div className="max-w-[1920px] mx-auto px-4 py-2 flex items-center justify-between">
+          <div className="flex bg-black/20 p-1 rounded-full border border-white/5 h-[36px] items-center">
+            {[1, 2, 3].map(setNum => {
+              const winner = setWinners[setNum - 1]; // Array is 0-indexed, setNum is 1-3
+              let label = `Set ${setNum}`;
+              let winnerClass = '';
+              // If there is a winner, append name
+              if (winner) {
+                // winner object: { name: "Team Name", isVisitor: boolean... }
+                // Let's use simplified logic: if winner exists, show name
+                // Wait, setWinners stores whatever handleWinnerUpdate passes
+                // handleWinnerUpdate in SingleSetScoreCard passes { name, score, isVisitor }
+                // But we need to make sure we are capturing it correctly.
+                // For now, let's just append the name if available.
+                if (winner.name) {
+                  label = `S${setNum}: ${winner.name}`; // Shorten Set to S to save space? User said "Tag del Set ocupara el nombre del equipo ganador"
+                  // Maybe "Set 1 - VISITANTE"
+                  label = `Set ${setNum} - ${winner.name}`;
+                }
+              }
+
+              return (
+                <button
+                  key={setNum}
+                  onClick={() => handleSetChange(setNum)}
+                  className={`px-3 md:px-6 py-1 rounded-full text-[10px] md:text-xs font-bold uppercase tracking-wider transition-all whitespace-nowrap
+                                     ${currentSet === setNum
+                      ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-900/40 ring-1 ring-white/20'
+                      : 'text-white/40 hover:text-white hover:bg-white/5'
+                    }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+
+          <button
+            onClick={() => setGeneralStatsOpen(true)}
+            className="flex items-center gap-2 px-4 py-1.5 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 rounded-full border border-indigo-500/20 text-xs font-bold transition-all"
+          >
+            <BarChart size={14} /> Estadísticas Generales
+          </button>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="h-[50vh] flex items-center justify-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-500"></div>
+        </div>
+      ) : (
+        <SingleSetScoreCard key={currentSet} setNum={currentSet} onWinnerUpdate={handleWinnerUpdate} />
+      )}
+
+      <MatchWinnerModal matchWinner={matchWinner} onClose={() => setMatchWinner(null)} />
+      <GeneralStatsModal isOpen={generalStatsOpen} onClose={() => setGeneralStatsOpen(false)} />
     </div>
   );
 };

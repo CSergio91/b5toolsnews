@@ -1,0 +1,146 @@
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
+import { useNavigate } from 'react-router-dom';
+import { UserNavbar } from '../components/UserNavbar';
+import { ParticlesBackground } from '../components/ParticlesBackground';
+import { SubscriptionModal } from '../components/SubscriptionModal';
+import { FeatureComingSoonModal } from '../components/FeatureComingSoonModal';
+import { PlayCircle, Trophy, Users, Video } from 'lucide-react';
+
+export const DashboardPage: React.FC = () => {
+    const navigate = useNavigate();
+    const [isSubscriptionModalOpen, setIsSubscriptionModalOpen] = useState(false);
+    const [isComingSoonModalOpen, setIsComingSoonModalOpen] = useState(false);
+    const [selectedFeature, setSelectedFeature] = useState('');
+    const [subscriptionTier, setSubscriptionTier] = useState<string>('basic');
+
+    useEffect(() => {
+        fetchSubscription();
+
+        const handleSubscriptionUpdate = () => {
+            fetchSubscription();
+        };
+
+        window.addEventListener('subscription-updated', handleSubscriptionUpdate);
+        return () => window.removeEventListener('subscription-updated', handleSubscriptionUpdate);
+    }, []);
+
+    const fetchSubscription = async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+            const { data } = await supabase
+                .from('profiles')
+                .select('subscription_tier')
+                .eq('id', user.id)
+                .single();
+            if (data) setSubscriptionTier(data.subscription_tier);
+        }
+    };
+
+    const isPremium = subscriptionTier === 'pro' || subscriptionTier === 'ultra';
+
+    const handleFeatureClick = (featureName: string) => {
+        if (!isPremium) {
+            setIsSubscriptionModalOpen(true);
+        } else {
+            setSelectedFeature(featureName);
+            setIsComingSoonModalOpen(true);
+        }
+    };
+
+    return (
+        <div className="min-h-screen w-full bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-slate-900 via-purple-950 to-black text-white selection:bg-purple-500 selection:text-white flex flex-col relative overflow-hidden">
+            {/* Reuse Particles for consistency */}
+            <ParticlesBackground />
+            <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                <div className="absolute top-[-10%] left-[20%] w-[600px] h-[600px] bg-purple-600/10 rounded-full blur-[120px] animate-pulse"></div>
+                <div className="absolute bottom-[-10%] right-[10%] w-[500px] h-[500px] bg-indigo-600/10 rounded-full blur-[100px]"></div>
+            </div>
+
+            <UserNavbar />
+
+            <main className="flex-1 relative z-10 p-6 md:p-12 max-w-7xl mx-auto w-full pt-24 md:pt-32">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 relative z-10">
+                    <DashboardCard
+                        title="Juego Rápido"
+                        icon={PlayCircle}
+                        description="Inicia un partido amistoso sin guardar estadísticas a largo plazo."
+                        color="purple"
+                        onClick={() => navigate('/dashboard/game')}
+                    />
+                    <DashboardCard
+                        title="Mis Torneos"
+                        icon={Trophy}
+                        description="Gestiona tus competiciones y ligas."
+                        color="blue"
+                        badge={!isPremium ? "Mejorar Plan" : undefined}
+                        onClick={() => handleFeatureClick("Mis Torneos")}
+                    />
+                    <DashboardCard
+                        title="Administrar Club"
+                        icon={Users}
+                        description="Gestiona jugadores y equipos."
+                        color="indigo"
+                        badge={!isPremium ? "Mejorar Plan" : undefined}
+                        onClick={() => handleFeatureClick("Administrar Club")}
+                    />
+                    <DashboardCard
+                        title="Transmitir en Vivo"
+                        icon={Video}
+                        description="Conecta con tus fans en tiempo real"
+                        color="indigo"
+                        badge={!isPremium ? "Mejorar Plan" : undefined}
+                        onClick={() => handleFeatureClick("Transmitir en Vivo")}
+                    />
+                </div>
+            </main>
+
+            <SubscriptionModal
+                isOpen={isSubscriptionModalOpen}
+                onClose={() => setIsSubscriptionModalOpen(false)}
+            />
+
+            <FeatureComingSoonModal
+                isOpen={isComingSoonModalOpen}
+                onClose={() => setIsComingSoonModalOpen(false)}
+                plan={subscriptionTier}
+                featureName={selectedFeature}
+            />
+        </div>
+    );
+};
+
+interface DashboardCardProps {
+    title: string;
+    icon: any;
+    description: string;
+    color: 'purple' | 'blue' | 'indigo';
+    onClick?: () => void;
+    badge?: string;
+}
+
+const DashboardCard: React.FC<DashboardCardProps> = ({ title, icon: Icon, description, color, onClick, badge }) => {
+    const colorClasses = {
+        purple: 'bg-purple-600/20 text-purple-400 group-hover:bg-purple-600/30',
+        blue: 'bg-blue-600/20 text-blue-400 group-hover:bg-blue-600/30',
+        indigo: 'bg-indigo-600/20 text-indigo-400 group-hover:bg-indigo-600/30'
+    };
+
+    return (
+        <div
+            onClick={onClick}
+            className="relative p-6 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all cursor-pointer group hover:-translate-y-1 hover:shadow-xl"
+        >
+            {badge && (
+                <div className="absolute top-4 right-4 bg-orange-500 text-white text-[10px] font-bold px-2 py-1 rounded shadow-lg animate-pulse">
+                    {badge}
+                </div>
+            )}
+            <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-4 transition-transform group-hover:scale-110 ${colorClasses[color]}`}>
+                <Icon size={24} />
+            </div>
+            <h3 className="text-lg font-bold mb-1 text-white">{title}</h3>
+            <p className="text-sm text-white/40">{description}</p>
+        </div>
+    );
+};
