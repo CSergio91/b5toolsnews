@@ -2249,6 +2249,14 @@ const SingleSetScoreCard: React.FC<{
           </button>
 
           <button
+            onClick={swapTeams}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 rounded-lg border border-blue-500/20 text-xs font-bold transition-all hover:shadow-lg hover:shadow-blue-500/10"
+            title="Alternar Visitante / Local"
+          >
+            <ArrowRightLeft size={14} /> ALTERNAR
+          </button>
+
+          <button
             onClick={() => setShowStats(!showStats)}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg border text-xs font-bold transition-all ${showStats ? 'bg-amber-500/20 text-amber-200 border-amber-500/30' : 'bg-white/5 text-white/60 border-white/10 hover:bg-white/10'}`}
           >
@@ -2455,7 +2463,7 @@ const SingleSetScoreCard: React.FC<{
           </div>
 
           <div className="bg-white/5 p-5 rounded-xl border border-white/10 shadow-lg print-panel order-1 xl:order-none">
-            <GlassTitle className="text-sm">Datos Generales</GlassTitle>
+            <GlassTitle className="text-sm">Datos del Partido</GlassTitle>
             <div className="space-y-3">
               <GlassInput label="Competencia" value={state.gameInfo.competition} onChange={e => updateGameInfo('competition', e.target.value)} />
               <GlassInput label="Lugar" value={state.gameInfo.place} onChange={e => updateGameInfo('place', e.target.value)} />
@@ -2613,18 +2621,25 @@ const GeneralStatsModal: React.FC<{ isOpen: boolean, onClose: () => void }> = ({
 
     if (sets.length === 0) return;
 
-    // Names from Set 1
-    const vName = sets[0].gameInfo.visitor;
-    const lName = sets[0].gameInfo.home;
+    // Use names from the LATEST set to reflect current team positions (swapped or not)
+    const latestSet = sets[sets.length - 1];
+    const vName = latestSet.gameInfo.visitor;
+    const lName = latestSet.gameInfo.home;
 
-    const aggregate = (teamKey: 'visitorTeam' | 'localTeam') => {
+    const aggregate = (targetTeamName: string) => {
       const playerMap = new Map<string, any>();
 
       sets.forEach(set => {
-        set[teamKey].slots.forEach((slot: any) => {
+        // Find which side the target team is on in this set
+        let side: 'visitorTeam' | 'localTeam' | null = null;
+        if (set.gameInfo.visitor === targetTeamName) side = 'visitorTeam';
+        else if (set.gameInfo.home === targetTeamName) side = 'localTeam';
+
+        if (!side) return; // Team name mismatch in this set? Skip.
+
+        set[side].slots.forEach((slot: any) => {
           [slot.starter, slot.sub].forEach((p: PlayerStats) => {
             if (!p.scores || !Array.isArray(p.scores)) return;
-            // Key by name + number (or just name if consistent)
             const key = `${p.number}-${p.name}`;
             if (!playerMap.has(key)) playerMap.set(key, { name: p.name || 'J' + p.number, no: p.number, vb: 0, h: 0, ca: 0, e: 0 });
 
@@ -2647,8 +2662,8 @@ const GeneralStatsModal: React.FC<{ isOpen: boolean, onClose: () => void }> = ({
     };
 
     setStats({
-      visitor: { name: vName, players: aggregate('visitorTeam') },
-      local: { name: lName, players: aggregate('localTeam') }
+      visitor: { name: vName, players: aggregate(vName) },
+      local: { name: lName, players: aggregate(lName) }
     });
 
     // --- Match Summary Aggregation ---
@@ -2701,6 +2716,8 @@ const GeneralStatsModal: React.FC<{ isOpen: boolean, onClose: () => void }> = ({
 
       return {
         set: idx + 1,
+        visitorName: set.gameInfo.visitor,
+        localName: set.gameInfo.home,
         visitor: { runs: vRuns, hits: vH, errors: vE, inningScores: set.inningScores.visitor },
         local: { runs: lRuns, hits: lH, errors: lE, inningScores: set.inningScores.local }
       };
@@ -2815,7 +2832,7 @@ const MatchStatsView: React.FC<{ stats: { visitor: any, local: any }, matchSumma
                     {/* Visitor Row */}
                     <tr className="bg-white/[0.02] hover:bg-white/5 transition-colors print:bg-transparent">
                       <td rowSpan={2} className="p-3 font-bold text-white border-r border-white/5 text-center bg-white/5 print:text-black print:border-black">{item.set}</td>
-                      <td className="p-3 font-bold text-purple-300 border-r border-white/5 print:text-black print:border-black">{stats.visitor.name}</td>
+                      <td className="p-3 font-bold text-purple-300 border-r border-white/5 print:text-black print:border-black">{item.visitorName}</td>
 
                       {Array.from({ length: fillCount }).map((_, i) => (
                         <td key={i} className="p-2 text-center border-r border-white/5 text-white/80 font-mono print:text-black print:border-black">
@@ -2829,7 +2846,7 @@ const MatchStatsView: React.FC<{ stats: { visitor: any, local: any }, matchSumma
                     </tr>
                     {/* Local Row */}
                     <tr className="bg-white/[0.02] hover:bg-white/5 transition-colors print:bg-transparent">
-                      <td className="p-3 font-bold text-orange-300 border-r border-white/5 print:text-black print:border-black">{stats.local.name}</td>
+                      <td className="p-3 font-bold text-orange-300 border-r border-white/5 print:text-black print:border-black">{item.localName}</td>
 
                       {Array.from({ length: fillCount }).map((_, i) => (
                         <td key={i} className="p-2 text-center border-r border-white/5 text-white/80 font-mono print:text-black print:border-black">
@@ -2870,13 +2887,21 @@ const PrintableMatchStats: React.FC = () => {
 
     if (sets.length === 0) return;
 
-    const vName = sets[0].gameInfo.visitor;
-    const lName = sets[0].gameInfo.home;
+    // Use names from the LATEST set to reflect current team positions
+    const latestSet = sets[sets.length - 1];
+    const vName = latestSet.gameInfo.visitor;
+    const lName = latestSet.gameInfo.home;
 
-    const aggregate = (teamKey: 'visitorTeam' | 'localTeam') => {
+    const aggregate = (targetTeamName: string) => {
       const playerMap = new Map<string, any>();
       sets.forEach(set => {
-        set[teamKey].slots.forEach((slot: any) => {
+        let side: 'visitorTeam' | 'localTeam' | null = null;
+        if (set.gameInfo.visitor === targetTeamName) side = 'visitorTeam';
+        else if (set.gameInfo.home === targetTeamName) side = 'localTeam';
+
+        if (!side) return;
+
+        set[side].slots.forEach((slot: any) => {
           [slot.starter, slot.sub].forEach((p: PlayerStats) => {
             if (!p.scores || !Array.isArray(p.scores)) return;
             const key = `${p.number}-${p.name}`;
@@ -2895,7 +2920,7 @@ const PrintableMatchStats: React.FC = () => {
       return Array.from(playerMap.values()).map(p => ({ ...p, ave: p.vb > 0 ? (p.h / p.vb).toFixed(3) : '.000' }));
     };
 
-    setStats({ visitor: { name: vName, players: aggregate('visitorTeam') }, local: { name: lName, players: aggregate('localTeam') } });
+    setStats({ visitor: { name: vName, players: aggregate(vName) }, local: { name: lName, players: aggregate(lName) } });
 
     const summaryData = sets.map((set, idx) => {
       const vRuns = set.inningScores.visitor.reduce((sum: number, val: string) => sum + (parseInt(val) || 0), 0) + (set.scoreAdjustments?.visitor || 0);
@@ -2920,7 +2945,13 @@ const PrintableMatchStats: React.FC = () => {
       const vE = parseInt(set.errors?.visitor || '0');
       const lE = parseInt(set.errors?.local || '0');
 
-      return { set: idx + 1, visitor: { runs: vRuns, hits: vH, errors: vE, inningScores: set.inningScores.visitor }, local: { runs: lRuns, hits: lH, errors: lE, inningScores: set.inningScores.local } };
+      return {
+        set: idx + 1,
+        visitorName: set.gameInfo.visitor,
+        localName: set.gameInfo.home,
+        visitor: { runs: vRuns, hits: vH, errors: vE, inningScores: set.inningScores.visitor },
+        local: { runs: lRuns, hits: lH, errors: lE, inningScores: set.inningScores.local }
+      };
     });
     setMatchSummary(summaryData);
   }, []);
