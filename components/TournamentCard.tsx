@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { MapPin, Calendar, Clock, PlayCircle, Bell, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { Tournament, ReminderType } from '../types/tournament';
 import { supabase } from '../lib/supabase';
@@ -10,6 +11,7 @@ interface TournamentCardProps {
 }
 
 export const TournamentCard: React.FC<TournamentCardProps> = ({ tournament, onEdit, onDelete }) => {
+    const navigate = useNavigate();
     const [reminders, setReminders] = useState<ReminderType[]>([]);
     const [loadingReminders, setLoadingReminders] = useState<Record<string, boolean>>({});
 
@@ -139,9 +141,17 @@ export const TournamentCard: React.FC<TournamentCardProps> = ({ tournament, onEd
                 </div>
 
                 <div className="flex items-center gap-2">
-                    <button className="flex-1 py-1.5 bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white font-bold rounded shadow-lg shadow-orange-500/20 active:scale-95 transition-all flex items-center justify-center gap-1 text-[10px]">
+                    <button
+                        onClick={() => {
+                            // Store ID in local context or pass via state if preferred, 
+                            // but context/route param is safer for refresh.
+                            localStorage.setItem('b5_builder_current_id', tournament.id);
+                            navigate('/B5ToolsBuilder');
+                        }}
+                        className="flex-1 py-1.5 bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white font-bold rounded shadow-lg shadow-orange-500/20 active:scale-95 transition-all flex items-center justify-center gap-1 text-[10px]"
+                    >
                         <PlayCircle size={12} />
-                        Generar
+                        B5 Builder
                     </button>
 
                     {/* Reminders - Compact */}
