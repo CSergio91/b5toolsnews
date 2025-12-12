@@ -440,6 +440,7 @@ const ScoringModal: React.FC<{
   );
 };
 
+
 const ScoreCell: React.FC<{
   value: string;
   onChange: (val: string) => void;
@@ -1193,9 +1194,7 @@ const StatsTable: React.FC<{
           <button onClick={exportToCSV} className="p-1.5 bg-green-600/20 hover:bg-green-600/30 text-green-400 rounded border border-green-600/30 transition-colors" title="Exportar Excel/CSV">
             <FileSpreadsheet size={14} />
           </button>
-          <button onClick={printStats} className="p-1.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 rounded border border-blue-600/30 transition-colors" title="Imprimir PDF (Solo Tabla)">
-            <FileDown size={14} />
-          </button>
+
         </div>
       </div>
       <div className="overflow-x-auto">
@@ -1793,7 +1792,6 @@ const SingleSetScoreCard: React.FC<{
       slot.starter.scores.flat().forEach(val => { if (val.trim()) plays++; });
       // Subs share the slot, so their plays count towards the slot's turn usually, 
       // but simple logic: count all non-empty cells in the grid to determine rotation is standard.
-      // However, standard baseball scorecard rotation is simply "Who is next".
       // Better logic: Find the LAST non-empty cell across the whole team history.
       // Simplified Logic for "Next Batter": Total Plays % 9 (or roster size).
       slot.sub.scores.flat().forEach(val => { if (val.trim()) plays++; });
@@ -2249,12 +2247,7 @@ const SingleSetScoreCard: React.FC<{
           >
             <RotateCcw size={14} /> REINICIAR
           </button>
-          <button
-            onClick={handlePrint}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 rounded-lg border border-blue-500/20 text-xs font-bold transition-all hover:shadow-lg hover:shadow-blue-500/10"
-          >
-            <Printer size={14} /> HOJA
-          </button>
+
           <button
             onClick={() => setShowStats(!showStats)}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg border text-xs font-bold transition-all ${showStats ? 'bg-amber-500/20 text-amber-200 border-amber-500/30' : 'bg-white/5 text-white/60 border-white/10 hover:bg-white/10'}`}
@@ -2348,7 +2341,7 @@ const SingleSetScoreCard: React.FC<{
                   >
                     <ArrowRightLeft size={isEnd ? 28 : 24} />
                     {isEnd && (
-                      <span className="absolute -top-2 -right-2 bg-red-600 text-white text-[9px] font-bold px-2 py-0.5 rounded-full shadow border border-white/20 animate-pulse">
+                      <span className="absolute -top-2 -right-2 bg-red-600 text-white text-[9px] font-bold px-2 py-0.5 rounded-full animate-pulse border border-white/20 animate-pulse">
                         CAMBIO
                       </span>
                     )}
@@ -2603,46 +2596,7 @@ const SingleSetScoreCard: React.FC<{
   );
 };
 
-// --- Multi-Set Wrapper ---
 
-const MatchWinnerModal: React.FC<{
-  matchWinner: { name: string; score: string; setsWon: number } | null;
-  onClose: () => void;
-}> = ({ matchWinner, onClose }) => {
-  if (!matchWinner) return null;
-
-  return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-      <div className="bg-gradient-to-br from-indigo-900 via-purple-900 to-slate-900 border border-indigo-500/50 p-8 rounded-3xl shadow-[0_0_50px_rgba(99,102,241,0.3)] max-w-md w-full text-center relative overflow-hidden no-print animate-in zoom-in duration-300">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-indigo-500/10 via-transparent to-transparent animate-pulse"></div>
-
-        <div className="relative z-10 flex flex-col items-center">
-          <div className="relative">
-            <Trophy size={80} className="text-yellow-400 mb-6 drop-shadow-[0_0_20px_rgba(250,204,21,0.6)] animate-bounce" />
-            <div className="absolute top-0 right-0 -mr-4 -mt-2 bg-red-600 text-white font-bold text-xs px-2 py-1 rounded-full animate-pulse border border-red-400">GANADOR</div>
-          </div>
-
-          <h1 className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-200 via-yellow-400 to-yellow-600 mb-2 filter drop-shadow-xl uppercase tracking-tighter">
-            {matchWinner.name}
-          </h1>
-          <p className="text-indigo-200 text-lg font-mono mb-8 tracking-widest uppercase">Ganador del Partido</p>
-
-          <div className="bg-white/10 rounded-2xl px-8 py-4 border border-white/10 mb-8 backdrop-blur-md">
-            <span className="text-6xl font-black text-white drop-shadow-[0_4px_0_rgba(0,0,0,0.5)]">2 - {3 - matchWinner.setsWon === 2 ? 0 : 1}</span>
-            <p className="text-xs text-white/40 uppercase tracking-widest mt-2">Sets Ganados</p>
-          </div>
-
-          <button
-            onClick={onClose}
-            className="px-10 py-4 bg-white text-indigo-900 font-black text-lg rounded-full hover:bg-indigo-50 transition-all shadow-xl hover:shadow-2xl hover:-translate-y-1 transform active:scale-95"
-          >
-            Continuar
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
 
 // --- General Stats Logic ---
 const GeneralStatsModal: React.FC<{ isOpen: boolean, onClose: () => void }> = ({ isOpen, onClose }) => {
@@ -2756,56 +2710,12 @@ const GeneralStatsModal: React.FC<{ isOpen: boolean, onClose: () => void }> = ({
 
   }, [isOpen]);
 
+  // --- Print Handling: Render directly if isOpen=true OR if we are printing and configured to show stats? 
+  // Wait, GeneralStatsModal is a MODAL. We can't reuse it easily for print if we want it embedded in the page flow.
+  // Instead, let's extract the Table Rendering to a component we can use in both places.
+  // Done in MatchStatsView below. This component now just wraps it.
+
   if (!isOpen || !stats) return null;
-
-  const RenderTable = ({ teamName, players, color }: any) => {
-    // Check if we want to show player details or just a team summary
-    // User requested: "quita la columna No y Jugador ya que eso va asociado a cada equipo"
-    // This implies they just want the numbers "Total stats of all sets"
-    // To do this right, we should probably Aggregate all player stats into ONE row?
-    // "la tabla que muestra los totales de todos los set de VB H CA y E"
-    // Let's create a single aggregate object for the team
-    const totalStats = players.reduce((acc: any, p: any) => ({
-      vb: acc.vb + p.vb,
-      h: acc.h + p.h,
-      ca: acc.ca + p.ca,
-      e: acc.e + p.e,
-      // Average is calculated from total H / Total VB
-      h_total: (acc.h_total || 0) + p.h,
-      vb_total: (acc.vb_total || 0) + p.vb
-    }), { vb: 0, h: 0, ca: 0, e: 0, h_total: 0, vb_total: 0 });
-
-    totalStats.ave = totalStats.vb_total > 0 ? (totalStats.h_total / totalStats.vb_total).toFixed(3) : '.000';
-
-    return (
-      <div className="mb-8">
-        <h3 className={`text-lg font-bold mb-2 uppercase tracking-wide ${color}`}>{teamName}</h3>
-        <div className="overflow-x-auto rounded-lg border border-white/10">
-          <table className="w-full text-left text-xs text-white/70">
-            <thead className="bg-white/5 uppercase font-bold text-white/50">
-              <tr>
-                {/* Removed No and Jugador columns as requested */}
-                <th className="p-2 text-center">VB</th>
-                <th className="p-2 text-center">H</th>
-                <th className="p-2 text-center">CA</th>
-                <th className="p-2 text-center">E</th>
-                <th className="p-2 text-center">AVE</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/5">
-              <tr className="hover:bg-white/5">
-                <td className="p-2 text-center font-bold text-white">{totalStats.vb}</td>
-                <td className="p-2 text-center font-bold text-white">{totalStats.h}</td>
-                <td className="p-2 text-center font-bold text-white">{totalStats.ca}</td>
-                <td className="p-2 text-center font-bold text-white">{totalStats.e}</td>
-                <td className="p-2 text-center font-bold text-yellow-400">{totalStats.ave}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    )
-  };
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
@@ -2817,86 +2727,311 @@ const GeneralStatsModal: React.FC<{ isOpen: boolean, onClose: () => void }> = ({
           <button onClick={onClose} className="text-white/50 hover:text-white"><X size={24} /></button>
         </div>
         <div className="flex-1 overflow-y-auto p-6">
-
-          {/* Match Summary Table */}
-          <div className="mb-8 p-4 bg-black/20 rounded-xl border border-white/5">
-            <h3 className="text-sm font-bold text-white/70 uppercase tracking-widest mb-4 flex items-center gap-2">
-              <Trophy size={14} className="text-yellow-500" /> Resumen del Partido
-            </h3>
-            <div className="overflow-x-auto">
-              <table className="w-full text-[10px] md:text-xs text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-white/10 text-white/40 uppercase tracking-wider bg-white/5">
-                    <th className="p-3 text-left w-[50px]">Set</th>
-                    <th className="p-3 text-left w-[120px]">Equipo</th>
-
-                    {(() => {
-                      // Find max innings across all sets to render correct headers
-                      const maxInnings = Math.max(5, ...matchSummary.map(m => Math.max(m.visitor.inningScores.length, m.local.inningScores.length)));
-                      const headers = Array.from({ length: maxInnings }, (_, i) => i + 1);
-                      return headers.map(i => (
-                        <th key={i} className="p-2 text-center w-[40px] border-l border-white/5">{i}</th>
-                      ));
-                    })()}
-
-                    <th className="p-3 text-center text-white/70 font-bold bg-white/5 border-l border-white/5 w-[50px]">C</th>
-                    <th className="p-3 text-center text-green-400/70 font-bold bg-white/5 border-l border-white/5 w-[50px]">H</th>
-                    <th className="p-3 text-center text-yellow-400/70 font-bold bg-white/5 border-l border-white/5 w-[50px]">E</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5">
-                  {matchSummary.map((item) => {
-                    // Calculate how many cells we need to fill to match the header max
-                    const globalMax = Math.max(5, ...matchSummary.map(m => Math.max(m.visitor.inningScores.length, m.local.inningScores.length)));
-                    const fillCount = globalMax;
-
-                    return (
-                      <React.Fragment key={item.set}>
-                        {/* Visitor Row */}
-                        <tr className="bg-white/[0.02] hover:bg-white/5 transition-colors">
-                          <td rowSpan={2} className="p-3 font-bold text-white border-r border-white/5 text-center bg-white/5">{item.set}</td>
-                          <td className="p-3 font-bold text-purple-300 border-r border-white/5">{stats.visitor.name}</td>
-
-                          {Array.from({ length: fillCount }).map((_, i) => (
-                            <td key={i} className="p-2 text-center border-r border-white/5 text-white/80 font-mono">
-                              {item.visitor.inningScores[i] || (i < 5 ? '0' : '-')}
-                            </td>
-                          ))}
-
-                          <td className="p-3 text-center font-black text-white text-sm bg-white/5 border-l border-white/5">{item.visitor.runs}</td>
-                          <td className="p-3 text-center font-bold text-white/60 bg-white/5 border-l border-white/5">{item.visitor.hits}</td>
-                          <td className="p-3 text-center font-bold text-white/60 bg-white/5 border-l border-white/5">{item.visitor.errors}</td>
-                        </tr>
-                        {/* Local Row */}
-                        <tr className="bg-white/[0.02] hover:bg-white/5 transition-colors">
-                          <td className="p-3 font-bold text-orange-300 border-r border-white/5">{stats.local.name}</td>
-
-                          {Array.from({ length: fillCount }).map((_, i) => (
-                            <td key={i} className="p-2 text-center border-r border-white/5 text-white/80 font-mono">
-                              {item.local.inningScores[i] || (i < 5 ? '0' : '-')}
-                            </td>
-                          ))}
-
-                          <td className="p-3 text-center font-black text-white text-sm bg-white/5 border-l border-white/5">{item.local.runs}</td>
-                          <td className="p-3 text-center font-bold text-white/60 bg-white/5 border-l border-white/5">{item.local.hits}</td>
-                          <td className="p-3 text-center font-bold text-white/60 bg-white/5 border-l border-white/5">{item.local.errors}</td>
-                        </tr>
-                      </React.Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <RenderTable teamName={stats.visitor.name} players={stats.visitor.players} color="text-purple-400" />
-          <RenderTable teamName={stats.local.name} players={stats.local.players} color="text-orange-400" />
+          <MatchStatsView stats={stats} matchSummary={matchSummary} />
         </div>
       </div>
     </div>
   );
 };
 
+// --- Extracted Stats View for Reusability (Modal & Print) ---
+const MatchStatsView: React.FC<{ stats: { visitor: any, local: any }, matchSummary: any[] }> = ({ stats, matchSummary }) => {
+
+  const RenderTable = ({ teamName, players, color }: any) => {
+    const totalStats = players.reduce((acc: any, p: any) => ({
+      vb: acc.vb + p.vb,
+      h: acc.h + p.h,
+      ca: acc.ca + p.ca,
+      e: acc.e + p.e,
+      h_total: (acc.h_total || 0) + p.h,
+      vb_total: (acc.vb_total || 0) + p.vb
+    }), { vb: 0, h: 0, ca: 0, e: 0, h_total: 0, vb_total: 0 });
+
+    totalStats.ave = totalStats.vb_total > 0 ? (totalStats.h_total / totalStats.vb_total).toFixed(3) : '.000';
+
+    return (
+      <div className="mb-8 break-inside-avoid">
+        <h3 className={`text-lg font-bold mb-2 uppercase tracking-wide ${color} text-black print:text-black`}>{teamName}</h3>
+        <div className="overflow-x-auto rounded-lg border border-white/10 print:border-black/20">
+          <table className="w-full text-left text-xs text-white/70 print:text-black">
+            <thead className="bg-white/5 uppercase font-bold text-white/50 print:text-black print:bg-gray-100">
+              <tr>
+                <th className="p-2 text-center text-black print:text-black">VB</th>
+                <th className="p-2 text-center text-black print:text-black">H</th>
+                <th className="p-2 text-center text-black print:text-black">CA</th>
+                <th className="p-2 text-center text-black print:text-black">E</th>
+                <th className="p-2 text-center text-black print:text-black">AVE</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5 print:divide-black/20">
+              <tr className="hover:bg-white/5 print:hover:bg-transparent">
+                <td className="p-2 text-center font-bold text-white print:text-black">{totalStats.vb}</td>
+                <td className="p-2 text-center font-bold text-white print:text-black">{totalStats.h}</td>
+                <td className="p-2 text-center font-bold text-white print:text-black">{totalStats.ca}</td>
+                <td className="p-2 text-center font-bold text-white print:text-black">{totalStats.e}</td>
+                <td className="p-2 text-center font-bold text-yellow-400 print:text-black font-mono">{totalStats.ave}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    )
+  };
+
+  return (
+    <div>
+      {/* Match Summary Table */}
+      <div className="mb-8 p-4 bg-black/20 rounded-xl border border-white/5 print:bg-transparent print:border-none print:p-0 break-inside-avoid">
+        <h3 className="text-sm font-bold text-white/70 uppercase tracking-widest mb-4 flex items-center gap-2 print:text-black">
+          <Trophy size={14} className="text-yellow-500 print:text-black" /> Resumen del Partido
+        </h3>
+        <div className="overflow-x-auto">
+          <table className="w-full text-[10px] md:text-xs text-left border-collapse">
+            <thead>
+              <tr className="border-b border-white/10 text-white/40 uppercase tracking-wider bg-white/5 print:text-black print:bg-gray-100 print:border-black">
+                <th className="p-3 text-left w-[50px] text-black print:text-black">Set</th>
+                <th className="p-3 text-left w-[120px] text-black print:text-black">Equipo</th>
+
+                {(() => {
+                  const maxInnings = Math.max(5, ...matchSummary.map(m => Math.max(m.visitor.inningScores.length, m.local.inningScores.length)));
+                  const headers = Array.from({ length: maxInnings }, (_, i) => i + 1);
+                  return headers.map(i => (
+                    <th key={i} className="p-2 text-center w-[40px] border-l border-white/5 print:border-black text-black print:text-black">{i}</th>
+                  ));
+                })()}
+
+                <th className="p-3 text-center text-white/70 font-bold bg-white/5 border-l border-white/5 w-[50px] text-black print:text-black">C</th>
+                <th className="p-3 text-center text-green-400/70 font-bold bg-white/5 border-l border-white/5 w-[50px] text-black print:text-black">H</th>
+                <th className="p-3 text-center text-yellow-400/70 font-bold bg-white/5 border-l border-white/5 w-[50px] text-black print:text-black">E</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5 print:divide-black">
+              {matchSummary.map((item) => {
+                const globalMax = Math.max(5, ...matchSummary.map(m => Math.max(m.visitor.inningScores.length, m.local.inningScores.length)));
+                const fillCount = globalMax;
+
+                return (
+                  <React.Fragment key={item.set}>
+                    {/* Visitor Row */}
+                    <tr className="bg-white/[0.02] hover:bg-white/5 transition-colors print:bg-transparent">
+                      <td rowSpan={2} className="p-3 font-bold text-white border-r border-white/5 text-center bg-white/5 print:text-black print:border-black">{item.set}</td>
+                      <td className="p-3 font-bold text-purple-300 border-r border-white/5 print:text-black print:border-black">{stats.visitor.name}</td>
+
+                      {Array.from({ length: fillCount }).map((_, i) => (
+                        <td key={i} className="p-2 text-center border-r border-white/5 text-white/80 font-mono print:text-black print:border-black">
+                          {item.visitor.inningScores[i] || (i < 5 ? '0' : '-')}
+                        </td>
+                      ))}
+
+                      <td className="p-3 text-center font-black text-white text-sm bg-white/5 border-l border-white/5 print:text-black print:border-black">{item.visitor.runs}</td>
+                      <td className="p-3 text-center font-bold text-white/60 bg-white/5 border-l border-white/5 print:text-black print:border-black">{item.visitor.hits}</td>
+                      <td className="p-3 text-center font-bold text-white/60 bg-white/5 border-l border-white/5 print:text-black print:border-black">{item.visitor.errors}</td>
+                    </tr>
+                    {/* Local Row */}
+                    <tr className="bg-white/[0.02] hover:bg-white/5 transition-colors print:bg-transparent">
+                      <td className="p-3 font-bold text-orange-300 border-r border-white/5 print:text-black print:border-black">{stats.local.name}</td>
+
+                      {Array.from({ length: fillCount }).map((_, i) => (
+                        <td key={i} className="p-2 text-center border-r border-white/5 text-white/80 font-mono print:text-black print:border-black">
+                          {item.local.inningScores[i] || (i < 5 ? '0' : '-')}
+                        </td>
+                      ))}
+
+                      <td className="p-3 text-center font-black text-white text-sm bg-white/5 border-l border-white/5 print:text-black print:border-black">{item.local.runs}</td>
+                      <td className="p-3 text-center font-bold text-white/60 bg-white/5 border-l border-white/5 print:text-black print:border-black">{item.local.hits}</td>
+                      <td className="p-3 text-center font-bold text-white/60 bg-white/5 border-l border-white/5 print:text-black print:border-black">{item.local.errors}</td>
+                    </tr>
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <RenderTable teamName={stats.visitor.name} players={stats.visitor.players} color="text-purple-400" />
+      <RenderTable teamName={stats.local.name} players={stats.local.players} color="text-orange-400" />
+    </div>
+  );
+}
+
+// --- Printable Stats Utility Wrapper ---
+// This component aggregates the data JUST like GeneralStatsModal but is mounted in the main DOM for printing
+const PrintableMatchStats: React.FC = () => {
+  const [stats, setStats] = useState<{ visitor: any, local: any } | null>(null);
+  const [matchSummary, setMatchSummary] = useState<any[]>([]);
+
+  useEffect(() => {
+    // Identical logic to GeneralStatsModal but runs once on mount/update
+    const sets = [1, 2, 3].map(i => {
+      try { return JSON.parse(localStorage.getItem(`b5_scorekeeper_set_${i}`) || 'null'); }
+      catch { return null; }
+    }).filter(Boolean);
+
+    if (sets.length === 0) return;
+
+    const vName = sets[0].gameInfo.visitor;
+    const lName = sets[0].gameInfo.home;
+
+    const aggregate = (teamKey: 'visitorTeam' | 'localTeam') => {
+      const playerMap = new Map<string, any>();
+      sets.forEach(set => {
+        set[teamKey].slots.forEach((slot: any) => {
+          [slot.starter, slot.sub].forEach((p: PlayerStats) => {
+            if (!p.scores || !Array.isArray(p.scores)) return;
+            const key = `${p.number}-${p.name}`;
+            if (!playerMap.has(key)) playerMap.set(key, { name: p.name || 'J' + p.number, no: p.number, vb: 0, h: 0, ca: 0, e: 0 });
+            const data = playerMap.get(key);
+            p.scores.flat().forEach(val => {
+              const v = val.toUpperCase();
+              if (v.includes('H')) data.h++;
+              if (v.includes('●')) data.ca++;
+              if (v.includes('S')) data.e++;
+              if (v.includes('H') || v.includes('X') || v.includes('S')) data.vb++;
+            });
+          });
+        });
+      });
+      return Array.from(playerMap.values()).map(p => ({ ...p, ave: p.vb > 0 ? (p.h / p.vb).toFixed(3) : '.000' }));
+    };
+
+    setStats({ visitor: { name: vName, players: aggregate('visitorTeam') }, local: { name: lName, players: aggregate('localTeam') } });
+
+    const summaryData = sets.map((set, idx) => {
+      const vRuns = set.inningScores.visitor.reduce((sum: number, val: string) => sum + (parseInt(val) || 0), 0) + (set.scoreAdjustments?.visitor || 0);
+      const lRuns = set.inningScores.local.reduce((sum: number, val: string) => sum + (parseInt(val) || 0), 0) + (set.scoreAdjustments?.local || 0);
+      let vHits = 0; let lHits = 0; let vErrors = 0; let lErrors = 0;
+
+      const countHits = (teamData: any) => {
+        let h = 0;
+        teamData.slots.forEach((slot: any) => {
+          [slot.starter, slot.sub].forEach((p: any) => {
+            p.scores.flat().forEach((val: string) => { if (val?.toUpperCase().includes('H')) h++; });
+          });
+        });
+        return h;
+      };
+
+      set.visitorTeam.slots.forEach((slot: any) => { [slot.starter, slot.sub].forEach((p: any) => { p.scores.flat().forEach((val: string) => { if (val.toUpperCase().includes('S')) vErrors++; }); }); });
+      set.localTeam.slots.forEach((slot: any) => { [slot.starter, slot.sub].forEach((p: any) => { p.scores.flat().forEach((val: string) => { if (val.toUpperCase().includes('S')) lErrors++; }); }); });
+
+      const vH = countHits(set.visitorTeam);
+      const lH = countHits(set.localTeam);
+      const vE = parseInt(set.errors?.visitor || '0');
+      const lE = parseInt(set.errors?.local || '0');
+
+      return { set: idx + 1, visitor: { runs: vRuns, hits: vH, errors: vE, inningScores: set.inningScores.visitor }, local: { runs: lRuns, hits: lH, errors: lE, inningScores: set.inningScores.local } };
+    });
+    setMatchSummary(summaryData);
+  }, []);
+
+  if (!stats) return null;
+  return <MatchStatsView stats={stats} matchSummary={matchSummary} />;
+};
+
+
+interface PrintConfig {
+  showInfo: boolean;
+  showStats: boolean;
+}
+
+const PrintConfigModal: React.FC<{
+  isOpen: boolean;
+  onClose: () => void;
+  onConfirm: (config: PrintConfig) => void;
+}> = ({ isOpen, onClose, onConfirm }) => {
+  const [showInfo, setShowInfo] = useState(true);
+  const [showStats, setShowStats] = useState(false);
+
+  if (!isOpen) return null;
+
+  return (
+    <ModalBackdrop zIndex="z-[300]">
+      <div className="bg-slate-900 border border-white/10 p-6 rounded-2xl shadow-2xl max-w-sm w-full no-print">
+        <div className="flex justify-between items-center mb-6">
+          <h3 className="text-xl font-bold text-white flex items-center gap-2">
+            <Printer className="text-purple-400" /> Descargar PDF
+          </h3>
+          <button onClick={onClose} className="text-white/50 hover:text-white"><X size={20} /></button>
+        </div>
+
+        <div className="space-y-4 mb-6">
+          <p className="text-sm text-white/60 mb-2">Selecciona qué deseas incluir:</p>
+
+          <label className="flex items-center gap-3 p-3 rounded-lg border border-white/10 bg-white/5 cursor-pointer hover:bg-white/10 transition-colors">
+            <input
+              type="checkbox"
+              checked={showInfo}
+              onChange={(e) => setShowInfo(e.target.checked)}
+              className="w-5 h-5 rounded border-gray-600 bg-gray-700 text-purple-600 focus:ring-purple-500"
+            />
+            <span className="text-white font-medium">Datos del Torneo y Anotación</span>
+          </label>
+
+          <label className="flex items-center gap-3 p-3 rounded-lg border border-white/10 bg-white/5 cursor-pointer hover:bg-white/10 transition-colors">
+            <input
+              type="checkbox"
+              checked={showStats}
+              onChange={(e) => setShowStats(e.target.checked)}
+              className="w-5 h-5 rounded border-gray-600 bg-gray-700 text-purple-600 focus:ring-purple-500"
+            />
+            <span className="text-white font-medium">Estadísticas</span>
+          </label>
+
+          <button
+            onClick={() => { setShowInfo(true); setShowStats(true); }}
+            className="text-xs text-purple-300 hover:text-purple-200 underline pl-1"
+          >
+            Marcar Todo
+          </button>
+        </div>
+
+        <button
+          onClick={() => onConfirm({ showInfo, showStats })}
+          className="w-full py-3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold rounded-xl shadow-lg shadow-purple-900/20 transition-all active:scale-95 flex items-center justify-center gap-2"
+        >
+          <FileDown size={20} />
+          Generar y Descargar
+        </button>
+      </div>
+    </ModalBackdrop>
+  );
+};
+
+export const MatchWinnerModal: React.FC<{
+  matchWinner: { name: string; score: string; setsWon: number } | null;
+  onClose: () => void;
+}> = ({ matchWinner, onClose }) => {
+  if (!matchWinner) return null;
+
+  return (
+    <ModalBackdrop>
+      <div className="bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 border border-amber-500/50 p-8 rounded-3xl shadow-[0_0_50px_rgba(245,158,11,0.3)] max-w-md w-full text-center relative overflow-hidden no-print">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-amber-500/10 via-transparent to-transparent animate-pulse"></div>
+
+        <div className="relative z-10 flex flex-col items-center">
+          <Trophy size={64} className="text-amber-400 mb-4 drop-shadow-[0_0_15px_rgba(251,191,36,0.5)] animate-bounce-slow" />
+
+          <h1 className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-yellow-400 to-amber-600 mb-2 filter drop-shadow-lg">
+            {matchWinner.name}
+          </h1>
+          <p className="text-white/60 text-lg font-mono mb-8">GANADOR DEL PARTIDO</p>
+
+          <div className="bg-white/10 rounded-xl px-6 py-3 border border-white/10 mb-8">
+            <span className="text-2xl font-bold text-white">Sets: {matchWinner.score}</span>
+          </div>
+
+          <button
+            onClick={onClose}
+            className="px-8 py-3 bg-white text-purple-900 font-bold rounded-full hover:bg-gray-100 transition-colors shadow-lg cursor-pointer active:scale-95 transform"
+          >
+            Cerrar
+          </button>
+        </div>
+      </div>
+    </ModalBackdrop>
+  );
+};
 
 export const ScoreCard: React.FC = () => {
   const [currentSet, setCurrentSet] = useState(1);
@@ -2906,6 +3041,30 @@ export const ScoreCard: React.FC = () => {
 
   // Track winners of each set
   const [setWinners, setSetWinners] = useState<(any | null)[]>([null, null, null]);
+
+  // --- Print Handling ---
+  const [printConfigModalOpen, setPrintConfigModalOpen] = useState(false);
+  const [printConfig, setPrintConfig] = useState<PrintConfig | null>(null);
+
+  const handlePrintRequest = () => {
+    setPrintConfigModalOpen(true);
+  };
+
+  const executePrint = (config: PrintConfig) => {
+    setPrintConfigModalOpen(false);
+    setPrintConfig(config);
+
+    // Give React time to render the print view
+    setTimeout(() => {
+      window.print();
+    }, 100);
+  };
+
+  useEffect(() => {
+    const cleanup = () => setPrintConfig(null);
+    window.addEventListener('afterprint', cleanup);
+    return () => window.removeEventListener('afterprint', cleanup);
+  }, []);
 
   // Force re-render of child when switching to ensure fresh state load
   const handleSetChange = (set: number) => {
@@ -2946,7 +3105,51 @@ export const ScoreCard: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-transparent pb-20">
+    <div className={`min-h-screen bg-transparent pb-20 ${printConfig ? 'printing-mode' : ''}`}>
+
+      {/* GLOBAL PRINT STYLES */}
+      <style>{`
+        @media print {
+          @page { size: landscape; margin: 5mm; }
+          body { 
+            background: white !important; 
+            color: black !important; 
+            -webkit-print-color-adjust: exact !important; 
+            print-color-adjust: exact !important; 
+          }
+          .no-print { display: none !important; }
+          .printing-mode { background: white !important; overflow: visible !important; height: auto !important; }
+          
+          /* Force colors for print - STRICT BLACK MODE */
+          * { color: black !important; text-shadow: none !important; box-shadow: none !important; }
+          
+          .border-white\\/10, .border-white\\/20, .border-white\\/5 { border-color: #000 !important; }
+          .bg-white\\/5, .bg-white\\/10 { background: transparent !important; }
+          .text-white, .text-white\\/70, .text-white\\/40, .text-white\\/50 { color: black !important; }
+          .text-purple-200, .text-orange-200 { color: black !important; font-weight: bold !important; }
+          .bg-slate-900, .bg-[#1e1b4b], .bg-[#2a1205] { background: transparent !important; }
+          
+          /* Visibility Control based on Config */
+          .print-section-info { display: ${printConfig?.showInfo ? 'block' : 'none'} !important; }
+          .print-section-stats { display: ${printConfig?.showStats ? 'block' : 'none'} !important; width: 100% !important; margin-top: 20px !important; }  /* Ensure this class exists */
+
+          /* Header Logo */
+          .print-logo-header { display: flex !important; width: 100%; justify-content: space-between; align-items: center; border-bottom: 2px solid black; padding-bottom: 10px; margin-bottom: 20px; }
+          
+          /* Ensure table text is black */
+          table, th, td { color: black !important; border-color: black !important; }
+          
+          /* Hide button inside printable stats if any left */
+          .print-section-stats button { display: none !important; }
+        }
+      `}</style>
+
+      <PrintConfigModal
+        isOpen={printConfigModalOpen}
+        onClose={() => setPrintConfigModalOpen(false)}
+        onConfirm={executePrint}
+      />
+
       {/* --- Sticky Tab Navigation --- */}
       <div className="sticky top-0 z-[50] bg-slate-900/80 backdrop-blur-md border-b border-white/10 shadow-lg no-print">
         <div className="max-w-[1920px] mx-auto px-4 py-2 flex items-center justify-between">
@@ -2954,20 +3157,9 @@ export const ScoreCard: React.FC = () => {
             {[1, 2, 3].map(setNum => {
               const winner = setWinners[setNum - 1]; // Array is 0-indexed, setNum is 1-3
               let label = `Set ${setNum}`;
-              let winnerClass = '';
-              // If there is a winner, append name
-              if (winner) {
-                // winner object: { name: "Team Name", isVisitor: boolean... }
-                // Let's use simplified logic: if winner exists, show name
-                // Wait, setWinners stores whatever handleWinnerUpdate passes
-                // handleWinnerUpdate in SingleSetScoreCard passes { name, score, isVisitor }
-                // But we need to make sure we are capturing it correctly.
-                // For now, let's just append the name if available.
-                if (winner.name) {
-                  label = `S${setNum}: ${winner.name}`; // Shorten Set to S to save space? User said "Tag del Set ocupara el nombre del equipo ganador"
-                  // Maybe "Set 1 - VISITANTE"
-                  label = `Set ${setNum} - ${winner.name}`;
-                }
+
+              if (winner && winner.name) {
+                label = `Set ${setNum} - ${winner.name}`; // Original requirement
               }
 
               return (
@@ -2975,7 +3167,7 @@ export const ScoreCard: React.FC = () => {
                   key={setNum}
                   onClick={() => handleSetChange(setNum)}
                   className={`px-3 md:px-6 py-1 rounded-full text-[10px] md:text-xs font-bold uppercase tracking-wider transition-all whitespace-nowrap
-                                     ${currentSet === setNum
+                                                 ${currentSet === setNum
                       ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-900/40 ring-1 ring-white/20'
                       : 'text-white/40 hover:text-white hover:bg-white/5'
                     }`}
@@ -2986,12 +3178,21 @@ export const ScoreCard: React.FC = () => {
             })}
           </div>
 
-          <button
-            onClick={() => setGeneralStatsOpen(true)}
-            className="flex items-center gap-2 px-4 py-1.5 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 rounded-full border border-indigo-500/20 text-xs font-bold transition-all"
-          >
-            <BarChart size={14} /> Estadísticas Generales
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handlePrintRequest}
+              className="flex items-center gap-2 px-4 py-1.5 bg-green-500/10 hover:bg-green-500/20 text-green-300 rounded-full border border-green-500/20 text-xs font-bold transition-all"
+            >
+              <Printer size={14} /> PDF
+            </button>
+
+            <button
+              onClick={() => setGeneralStatsOpen(true)}
+              className="flex items-center gap-2 px-4 py-1.5 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 rounded-full border border-indigo-500/20 text-xs font-bold transition-all"
+            >
+              <BarChart size={14} /> Estadísticas Generales
+            </button>
+          </div>
         </div>
       </div>
 
@@ -3000,11 +3201,20 @@ export const ScoreCard: React.FC = () => {
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-500"></div>
         </div>
       ) : (
-        <SingleSetScoreCard key={currentSet} setNum={currentSet} onWinnerUpdate={handleWinnerUpdate} />
+        <>
+          <div className="print-section-info">
+            <SingleSetScoreCard key={currentSet} setNum={currentSet} onWinnerUpdate={handleWinnerUpdate} />
+          </div>
+
+          <div className="print-section-stats hidden print:block">
+            <h2 className="text-2xl font-bold uppercase mb-4 text-black border-b-2 border-black pb-2 mt-8">Estadísticas Generales</h2>
+            <PrintableMatchStats />
+          </div>
+        </>
       )}
 
       <MatchWinnerModal matchWinner={matchWinner} onClose={() => setMatchWinner(null)} />
       <GeneralStatsModal isOpen={generalStatsOpen} onClose={() => setGeneralStatsOpen(false)} />
-    </div>
+    </div >
   );
 };
