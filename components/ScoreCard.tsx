@@ -441,6 +441,74 @@ const ScoringModal: React.FC<{
 };
 
 
+const AdvanceInningModal: React.FC<{
+  isOpen: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+  visitorOuts: number;
+  localOuts: number;
+  nextInning: number;
+}> = ({ isOpen, onConfirm, onCancel, visitorOuts, localOuts, nextInning }) => {
+  if (!isOpen) return null;
+
+  const incompleteVisitor = visitorOuts < 3;
+  const incompleteLocal = localOuts < 3;
+  const isIncomplete = incompleteVisitor || incompleteLocal;
+
+  return (
+    <ModalBackdrop zIndex="z-[250]">
+      <div className="bg-slate-900 border border-white/20 p-6 rounded-2xl shadow-2xl max-w-sm w-full text-center relative no-print animate-in zoom-in-95 duration-200">
+
+        {isIncomplete ? (
+          <div className="w-16 h-16 bg-yellow-500/10 rounded-full flex items-center justify-center mb-4 mx-auto border border-yellow-500/20">
+            <AlertTriangle size={32} className="text-yellow-500" />
+          </div>
+        ) : (
+          <div className="w-16 h-16 bg-blue-500/10 rounded-full flex items-center justify-center mb-4 mx-auto border border-blue-500/20">
+            <ArrowRightLeft size={32} className="text-blue-500" />
+          </div>
+        )}
+
+        <h3 className="text-xl font-bold text-white mb-2">
+          {isIncomplete ? '¿Entrada Incompleta?' : `¿Iniciar Entrada ${nextInning}?`}
+        </h3>
+
+        <div className="text-white/60 mb-6 text-sm text-left bg-white/5 p-3 rounded-lg border border-white/10">
+          {isIncomplete ? (
+            <>
+              <p className="mb-2 text-yellow-400 font-bold">¡Atención! Faltan outs para cerrar:</p>
+              <ul className="list-disc list-inside space-y-1 ml-1">
+                {incompleteVisitor && <li>Visitante: <span className="text-white font-bold">{visitorOuts}</span> outs (Faltan {3 - visitorOuts})</li>}
+                {incompleteLocal && <li>Local: <span className="text-white font-bold">{localOuts}</span> outs (Faltan {3 - localOuts})</li>}
+              </ul>
+              <p className="mt-3 text-xs italic opacity-70">¿Deseas avanzar de todos modos?</p>
+            </>
+          ) : (
+            <p className="text-center">Ambos equipos han completado sus 3 outs. Se bloqueará la entrada actual y se abrirá la siguiente.</p>
+          )}
+        </div>
+
+        <div className="flex gap-3 justify-center">
+          <button
+            onClick={onCancel}
+            className="flex-1 px-4 py-2 bg-white/5 hover:bg-white/10 text-white rounded-lg border border-white/10 font-semibold transition-colors text-sm"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={onConfirm}
+            className={`flex-1 px-4 py-2 text-white rounded-lg font-semibold transition-colors shadow-lg text-sm flex items-center justify-center gap-2
+              ${isIncomplete ? 'bg-yellow-600 hover:bg-yellow-500 shadow-yellow-900/20' : 'bg-blue-600 hover:bg-blue-500 shadow-blue-900/20'}`}
+          >
+            {isIncomplete ? 'Avanzar Igual' : 'Iniciar Entrada'} <ArrowRightLeft size={16} />
+          </button>
+        </div>
+      </div>
+    </ModalBackdrop>
+  );
+};
+
+
 const ScoreCell: React.FC<{
   value: string;
   onChange: (val: string) => void;
@@ -511,7 +579,8 @@ const LineupGrid: React.FC<{
 
   isFullScreen?: boolean;
   onToggleFullScreen?: () => void;
-}> = ({ title, teamNameValue, onTeamNameChange, teamData, onUpdate, onAddColumn, theme, currentInningIdx, nextBatterIdx, opposingTeam, isFullScreen, onToggleFullScreen }) => {
+  onAdvanceInning?: () => void;
+}> = ({ title, teamNameValue, onTeamNameChange, teamData, onUpdate, onAddColumn, theme, currentInningIdx, nextBatterIdx, opposingTeam, isFullScreen, onToggleFullScreen, onAdvanceInning }) => {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [activeCell, setActiveCell] = useState<{
@@ -692,12 +761,29 @@ const LineupGrid: React.FC<{
                         {isUnlockedManually ? <LockOpen size={10} strokeWidth={3} /> : <Pencil size={10} />}
                       </button>
                     ) : (
-                      <button
-                        onClick={() => onAddColumn(iIdx)}
-                        className={`p-0.5 rounded transition-colors no-print hover:bg-white/20 text-white/50 hover:text-white`}
-                      >
-                        <Plus size={8} />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        {/* Add Column (Batting Around) */}
+                        <button
+                          onClick={() => onAddColumn(iIdx)}
+                          className={`p-0.5 rounded transition-colors no-print hover:bg-white/20 text-white/50 hover:text-white`}
+                          title="Añadir columna (Bateo corrido)"
+                        >
+                          <Plus size={8} />
+                        </button>
+
+                        {/* Advance Inning - Only for Current Inning */}
+                        {iIdx === currentInningIdx && onAdvanceInning && (
+                          <button
+                            onClick={onAdvanceInning}
+                            className={`ml-1 p-1 rounded-full transition-all duration-300 animate-pulse hover:animate-none 
+                               ${theme === 'purple' ? 'bg-indigo-500 hover:bg-indigo-400 text-white' : 'bg-orange-500 hover:bg-orange-400 text-white'} 
+                               shadow-lg border border-white/20`}
+                            title="Cerrar Entrada / Avanzar"
+                          >
+                            <Plus size={14} strokeWidth={4} />
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>
@@ -839,7 +925,7 @@ const LineupGrid: React.FC<{
             })}
           </div>
         </div>
-      </div>
+      </div >
     </>
   );
 };
@@ -1706,6 +1792,7 @@ const SingleSetScoreCard: React.FC<{
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showStats, setShowStats] = useState(false);
   const [showAdvancedStats, setShowAdvancedStats] = useState(false);
+  const [showAdvanceModal, setShowAdvanceModal] = useState(false);
 
   const [fullScreenMode, setFullScreenMode] = useState<'visitor' | 'local' | null>(null);
   const [subscriptionTier, setSubscriptionTier] = useState<string>('basic');
@@ -1826,45 +1913,73 @@ const SingleSetScoreCard: React.FC<{
   const visitorOuts = countOutsForInning(state.visitorTeam, currentInningIdx);
   const localOuts = countOutsForInning(state.localTeam, currentInningIdx);
 
-  useEffect(() => {
-    if (!loaded) return;
-    if (state.winner) return;
+  // Auto-advance disabled manually
+  // useEffect(() => {
+  //   if (!loaded) return;
+  //   if (state.winner) return;
+  //
+  //   const countOuts = (team: TeamData) => {
+  //     const lastInningIdx = team.slots[0].starter.scores.length - 1;
+  //     let outs = 0;
+  //     team.slots.forEach(slot => {
+  //       slot.starter.scores[lastInningIdx].forEach(val => {
+  //         if (val.trim().toUpperCase().includes('X')) outs++;
+  //       });
+  //       slot.sub.scores[lastInningIdx].forEach(val => {
+  //         if (val.trim().toUpperCase().includes('X')) outs++;
+  //       });
+  //     });
+  //     return outs;
+  //   };
+  //
+  //   const vOuts = countOuts(state.visitorTeam);
+  //   const lOuts = countOuts(state.localTeam);
+  //   const currentInningCount = state.visitorTeam.slots[0].starter.scores.length;
+  //
+  //   if (vOuts >= 3 && lOuts >= 3) {
+  //     setState(prev => {
+  //       if (prev.visitorTeam.slots[0].starter.scores.length > currentInningCount) return prev;
+  //       const newVisitorTeam = { ...prev.visitorTeam };
+  //       newVisitorTeam.slots.forEach(slot => { slot.starter.scores.push(['']); slot.sub.scores.push(['']); });
+  //       const newLocalTeam = { ...prev.localTeam };
+  //       newLocalTeam.slots.forEach(slot => { slot.starter.scores.push(['']); slot.sub.scores.push(['']); });
+  //       return {
+  //         ...prev,
+  //         visitorTeam: newVisitorTeam,
+  //         localTeam: newLocalTeam,
+  //         inningScores: { visitor: [...prev.inningScores.visitor, ''], local: [...prev.inningScores.local, ''] }
+  //       };
+  //     });
+  //   }
+  //
+  // }, [state.visitorTeam, state.localTeam, loaded, state.winner]);
 
-    const countOuts = (team: TeamData) => {
-      const lastInningIdx = team.slots[0].starter.scores.length - 1;
-      let outs = 0;
-      team.slots.forEach(slot => {
-        slot.starter.scores[lastInningIdx].forEach(val => {
-          if (val.trim().toUpperCase().includes('X')) outs++;
-        });
-        slot.sub.scores[lastInningIdx].forEach(val => {
-          if (val.trim().toUpperCase().includes('X')) outs++;
-        });
+  const confirmAdvanceInning = () => {
+    setState(prev => {
+      const addInningToTeam = (team: TeamData) => ({
+        ...team,
+        slots: team.slots.map(slot => ({
+          ...slot,
+          starter: {
+            ...slot.starter,
+            scores: [...slot.starter.scores, ['']]
+          },
+          sub: {
+            ...slot.sub,
+            scores: [...slot.sub.scores, ['']]
+          }
+        }))
       });
-      return outs;
-    };
 
-    const vOuts = countOuts(state.visitorTeam);
-    const lOuts = countOuts(state.localTeam);
-    const currentInningCount = state.visitorTeam.slots[0].starter.scores.length;
-
-    if (vOuts >= 3 && lOuts >= 3) {
-      setState(prev => {
-        if (prev.visitorTeam.slots[0].starter.scores.length > currentInningCount) return prev;
-        const newVisitorTeam = { ...prev.visitorTeam };
-        newVisitorTeam.slots.forEach(slot => { slot.starter.scores.push(['']); slot.sub.scores.push(['']); });
-        const newLocalTeam = { ...prev.localTeam };
-        newLocalTeam.slots.forEach(slot => { slot.starter.scores.push(['']); slot.sub.scores.push(['']); });
-        return {
-          ...prev,
-          visitorTeam: newVisitorTeam,
-          localTeam: newLocalTeam,
-          inningScores: { visitor: [...prev.inningScores.visitor, ''], local: [...prev.inningScores.local, ''] }
-        };
-      });
-    }
-
-  }, [state.visitorTeam, state.localTeam, loaded, state.winner]);
+      return {
+        ...prev,
+        visitorTeam: addInningToTeam(prev.visitorTeam),
+        localTeam: addInningToTeam(prev.localTeam),
+        inningScores: { visitor: [...prev.inningScores.visitor, ''], local: [...prev.inningScores.local, ''] }
+      };
+    });
+    setShowAdvanceModal(false);
+  };
 
 
 
@@ -2211,6 +2326,14 @@ const SingleSetScoreCard: React.FC<{
 
       <WinnerModal winner={state.winner} onClose={() => setState(prev => ({ ...prev, winner: null }))} />
       <ResetConfirmModal isOpen={showResetConfirm} onConfirm={confirmReset} onCancel={() => setShowResetConfirm(false)} />
+      <AdvanceInningModal
+        isOpen={showAdvanceModal}
+        onConfirm={confirmAdvanceInning}
+        onCancel={() => setShowAdvanceModal(false)}
+        visitorOuts={visitorOuts}
+        localOuts={localOuts}
+        nextInning={currentInning + 1}
+      />
 
       <LiveGameStatus
         visitorRuns={visitorRunsTotal}
@@ -2315,6 +2438,7 @@ const SingleSetScoreCard: React.FC<{
             opposingTeam={state.localTeam}
             isFullScreen={fullScreenMode === 'visitor'}
             onToggleFullScreen={() => setFullScreenMode(fullScreenMode === 'visitor' ? null : 'visitor')}
+            onAdvanceInning={() => setShowAdvanceModal(true)}
           />
           <LineupGrid
             title="Alineación Local"
@@ -2329,6 +2453,7 @@ const SingleSetScoreCard: React.FC<{
             opposingTeam={state.visitorTeam}
             isFullScreen={fullScreenMode === 'local'}
             onToggleFullScreen={() => setFullScreenMode(fullScreenMode === 'local' ? null : 'local')}
+            onAdvanceInning={() => setShowAdvanceModal(true)}
           />
 
           {/* Floating Controls for Full Screen Mode */}
