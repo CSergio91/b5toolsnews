@@ -368,34 +368,26 @@ const ScoringModal: React.FC<{
               ))}
             </div>
 
-            <div className="border-t border-white/10 pt-3">
-              <div className="flex gap-2">
-                <button
-                  onClick={() => { onSelect('', true); onClose(); }}
-                  className="px-2 py-1 bg-red-500/20 border border-red-500/30 rounded-md text-red-200 hover:bg-red-500/30 transition-colors"
-                  title="Borrar Contenido"
-                >
-                  <Trash2 size={16} />
-                </button>
-                <input
-                  className="flex-1 bg-white/5 border border-white/10 rounded-md px-2 py-1 text-white text-xs focus:outline-none focus:border-purple-500 placeholder-white/20"
-                  placeholder="Manual..."
-                  value={manualValue}
-                  onChange={(e) => setManualValue(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      onSelect(manualValue, true); // True = replace completely
-                      onClose();
-                    }
-                  }}
-                />
-                <button
-                  onClick={() => { onSelect(manualValue, true); onClose(); }}
-                  className="px-3 py-1 bg-purple-500/20 border border-purple-500/30 rounded-md text-purple-200 font-bold text-xs hover:bg-purple-500/30"
-                >
-                  OK
-                </button>
+            <div className="border-t border-white/10 pt-3 flex flex-col gap-2">
+              <div className="grid grid-cols-3 gap-2">
+                {['Ex1B', 'Ex2B', 'Ex3B'].map((val) => (
+                  <button
+                    key={val}
+                    onClick={() => { onSelect(val, true); onClose(); }}
+                    className="px-2 py-1.5 bg-blue-500/20 border border-blue-500/30 rounded-md text-blue-200 hover:bg-blue-500/30 transition-colors text-[10px] font-bold uppercase"
+                    title={`Extra Base (${val}) - No es turno al bate`}
+                  >
+                    {val}
+                  </button>
+                ))}
               </div>
+              <button
+                onClick={() => { onSelect('', true); onClose(); }}
+                className="w-full py-2 bg-red-500/20 border border-red-500/30 rounded-md text-red-200 hover:bg-red-500/30 transition-colors flex items-center justify-center gap-2 font-bold text-xs"
+                title="Borrar Contenido"
+              >
+                <Trash2 size={16} /> BORRAR
+              </button>
             </div>
           </div>
         )}
@@ -1130,7 +1122,8 @@ const StatsTable: React.FC<{
 
       // Calculating VB: Hit + Out + Error 
       // Note: This is a simplified logic for B5 based on provided nomenclature
-      if (v.includes('H') || v.includes('X') || v.includes('S')) vb++;
+      // Exclude 'EX' from VB
+      if ((v.includes('H') || v.includes('X') || v.includes('S')) && !v.includes('EX')) vb++;
     });
 
     const ave = vb > 0 ? (h / vb).toFixed(3) : '.000';
@@ -1540,7 +1533,8 @@ const AdvancedStatsPanel: React.FC<{
         const v = val.toUpperCase();
         if (v.includes('H')) h++;
         if (v.includes('●')) ca++;
-        if (v.includes('H') || v.includes('X') || v.includes('S')) vb++;
+        // Exclude 'EX' (Extra Inning Runner) from VB. 'EX' contains 'X', so we must check !v.includes('EX')
+        if ((v.includes('H') || v.includes('X') || v.includes('S')) && !v.includes('EX')) vb++;
       });
       const ave = vb > 0 ? (h / vb) : 0;
       const score = (h * 3) + (ca * 2) + (ave * 10);
@@ -1571,7 +1565,8 @@ const AdvancedStatsPanel: React.FC<{
           if (v.includes('H')) h++;
           if (v.includes('●')) ca++;
           if (v.includes('S')) e++;
-          if (v.includes('H') || v.includes('X') || v.includes('S')) vb++;
+          // Exclude 'EX' from VB
+          if ((v.includes('H') || v.includes('X') || v.includes('S')) && !v.includes('EX')) vb++;
         });
       });
     });
@@ -1904,8 +1899,8 @@ const SingleSetScoreCard: React.FC<{
   const countOutsForInning = (team: TeamData, iIdx: number) => {
     let outs = 0;
     team.slots.forEach(slot => {
-      slot.starter.scores[iIdx].forEach(val => { if (val.trim().toUpperCase().includes('X')) outs++; });
-      slot.sub.scores[iIdx].forEach(val => { if (val.trim().toUpperCase().includes('X')) outs++; });
+      slot.starter.scores[iIdx].forEach(val => { if (val.trim().toUpperCase().includes('X') && !val.includes('Ex')) outs++; });
+      slot.sub.scores[iIdx].forEach(val => { if (val.trim().toUpperCase().includes('X') && !val.includes('Ex')) outs++; });
     });
     return Math.min(outs, 3);
   };
@@ -2055,6 +2050,9 @@ const SingleSetScoreCard: React.FC<{
         if (vUpper.includes('H')) actionDesc = 'HIT';
         if (vUpper.includes('S')) actionDesc = 'ERROR (Salvado)';
         if (vUpper.includes('●')) actionDesc = actionDesc ? actionDesc + ' + CARRERA' : 'CARRERA';
+        if (value === 'Ex1B') actionDesc = 'Corredor en 1B por Extrainning';
+        if (value === 'Ex2B') actionDesc = 'Corredor en 2B por Extrainning';
+        if (value === 'Ex3B') actionDesc = 'Corredor en 3B por Extrainning';
         if (value === '') actionDesc = 'BORRAR / CAMBIO';
 
         if (errorCulprit) {
@@ -2078,11 +2076,12 @@ const SingleSetScoreCard: React.FC<{
           if (nextHistory.length > 50) nextHistory = nextHistory.slice(0, 50);
         }
 
-        if (value.toUpperCase().includes('X') && !value.includes('■')) {
+        // Check if it's an OUT (contains X) but NOT an Extra Inning Runner (Ex...)
+        if (value.toUpperCase().includes('X') && !value.includes('Ex') && !value.includes('■')) {
           let existingOuts = 0;
           prev[team].slots.forEach((s, sIdx) => {
-            s.starter.scores[inningIndex].forEach((v, vIdx) => { if (sIdx === index && type === 'starter' && vIdx === atBatIndex) return; if (v.toUpperCase().includes('X')) existingOuts++; });
-            s.sub.scores[inningIndex].forEach((v, vIdx) => { if (sIdx === index && type === 'sub' && vIdx === atBatIndex) return; if (v.toUpperCase().includes('X')) existingOuts++; });
+            s.starter.scores[inningIndex].forEach((v, vIdx) => { if (sIdx === index && type === 'starter' && vIdx === atBatIndex) return; if (v.toUpperCase().includes('X') && !v.includes('Ex')) existingOuts++; });
+            s.sub.scores[inningIndex].forEach((v, vIdx) => { if (sIdx === index && type === 'sub' && vIdx === atBatIndex) return; if (v.toUpperCase().includes('X') && !v.includes('Ex')) existingOuts++; });
           });
 
           if (existingOuts === 2) {
@@ -2660,6 +2659,9 @@ const SingleSetScoreCard: React.FC<{
               <div className="flex items-center gap-2 col-span-2">
                 <Circle size={14} className="text-red-500 fill-red-500" /> <span className="text-white/80">Carrera Anotada</span>
               </div>
+              <div className="flex items-center gap-2 col-span-2 border-t border-white/5 pt-2 mt-1">
+                <span className="font-bold text-blue-300 text-[10px] uppercase">Ex(1-3)B</span> <span className="text-white/80 text-xs">Corredor en Base (Extrainning)</span>
+              </div>
             </div>
           </div>
 
@@ -2774,7 +2776,8 @@ const GeneralStatsModal: React.FC<{ isOpen: boolean, onClose: () => void }> = ({
               if (v.includes('H')) data.h++;
               if (v.includes('●')) data.ca++;
               if (v.includes('S')) data.e++;
-              if (v.includes('H') || v.includes('X') || v.includes('S')) data.vb++;
+              // Exclude 'EX' from VB
+              if ((v.includes('H') || v.includes('X') || v.includes('S')) && !v.includes('EX')) data.vb++;
             });
           });
         });
