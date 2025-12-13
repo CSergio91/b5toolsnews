@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Trophy, MapPin, Calendar, Clock, Loader2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useLoading } from '../context/LoadingContext';
 import { Tournament } from '../types/tournament';
@@ -12,6 +13,7 @@ interface CreateTournamentModalProps {
 }
 
 export const CreateTournamentModal: React.FC<CreateTournamentModalProps> = ({ isOpen, onClose, onTournamentSaved, initialData }) => {
+    const navigate = useNavigate();
     const { startLoading, stopLoading } = useLoading();
     const [formData, setFormData] = useState({
         name: '',
@@ -83,7 +85,7 @@ export const CreateTournamentModal: React.FC<CreateTournamentModalProps> = ({ is
 
             } else {
                 // INSERT
-                const { error: insertError } = await supabase
+                const { data: newTournament, error: insertError } = await supabase
                     .from('tournaments')
                     .insert([{
                         user_id: user.id,
@@ -93,14 +95,24 @@ export const CreateTournamentModal: React.FC<CreateTournamentModalProps> = ({ is
                         end_date: formData.end_date,
                         start_time: formData.start_time,
                         status: 'active'
-                    }]);
+                    }])
+                    .select()
+                    .single();
 
                 if (insertError) throw insertError;
+
+                // Create Mode: Just close and refresh
+                onTournamentSaved();
+                onClose();
             }
 
-            // Success
-            onTournamentSaved();
-            onClose();
+            // Note: If Updating (Edit mode), we might just close, 
+            // but currently the Edit action from list creates direct navigation anyway.
+            // This modal handles Create mostly now.
+            if (initialData) {
+                onTournamentSaved();
+                onClose();
+            }
 
         } catch (err: any) {
             console.error('Error saving tournament:', err);

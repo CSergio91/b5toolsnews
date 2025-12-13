@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { BuilderProvider, useBuilder } from '../context/BuilderContext';
 import { Save, XCircle, ArrowRight, Settings, Users, Trophy, GitBranch, User, LogOut, ChevronUp, Menu, X } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { ConfigStep } from '../components/Builder/ConfigStep';
 import { TeamManagementStep } from '../components/Builder/TeamManagementStep';
 import { FormatStep } from '../components/Builder/FormatStep';
@@ -266,8 +266,9 @@ const BuilderWizard = () => {
 };
 
 export const B5ToolsBuilderPage: React.FC = () => {
+    const { id } = useParams<{ id: string }>();
     return (
-        <BuilderProvider>
+        <BuilderProvider initialId={id}>
             <BuilderWizard />
         </BuilderProvider>
     );

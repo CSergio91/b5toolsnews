@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     User, ChevronDown, Award, Settings, Users,
-    Trophy, PlayCircle, LogOut, LayoutDashboard, Video
+    Trophy, PlayCircle, LogOut, LayoutDashboard, Video, MessageCircle
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -290,6 +290,21 @@ export const UserNavbar: React.FC<UserNavbarProps> = ({ showGameControls = false
                                         </span>
                                     )}
                                 </div>
+
+                                <div className="h-px bg-white/5 my-2 mx-3"></div>
+
+                                <a
+                                    href="https://wa.me/34683367026"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-green-400 hover:bg-green-500/10 hover:text-green-300 mb-1"
+                                >
+                                    <MessageCircle size={16} className="shrink-0" />
+                                    <div className="flex flex-col leading-tight">
+                                        <span className="opacity-80">¿Tienes Dudas?</span>
+                                        <span className="font-bold">Contáctanos (WhatsApp)</span>
+                                    </div>
+                                </a>
 
                                 <div className="h-px bg-white/5 my-2 mx-3"></div>
                                 <MenuItem icon={LogOut} label="Cerrar Sesión" onClick={handleLogout} danger />

@@ -143,10 +143,7 @@ export const TournamentCard: React.FC<TournamentCardProps> = ({ tournament, onEd
                 <div className="flex items-center gap-2">
                     <button
                         onClick={() => {
-                            // Store ID in local context or pass via state if preferred, 
-                            // but context/route param is safer for refresh.
-                            localStorage.setItem('b5_builder_current_id', tournament.id);
-                            navigate('/B5ToolsBuilder');
+                            navigate(`/torneos/B5ToolsBuilder/${tournament.id}`);
                         }}
                         className="flex-1 py-1.5 bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white font-bold rounded shadow-lg shadow-orange-500/20 active:scale-95 transition-all flex items-center justify-center gap-1 text-[10px]"
                     >

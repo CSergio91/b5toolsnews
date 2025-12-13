@@ -29,13 +29,20 @@ interface BuilderContextType {
 
 const BuilderContext = createContext<BuilderContextType | undefined>(undefined);
 
-export const BuilderProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string }> = ({ children, initialId }) => {
     const [state, setState] = useState<BuilderState>(initialBuilderState);
 
     // Initial Load: Fetch Tournament Data if ID is present
     React.useEffect(() => {
         const loadInitialData = async () => {
-            const currentId = localStorage.getItem('b5_builder_current_id');
+            // Prioritize ID passed via Prop (URL), fallback to localStorage only if no prop
+            const currentId = initialId || localStorage.getItem('b5_builder_current_id');
+
+            if (currentId === 'new') {
+                setState(initialBuilderState);
+                return;
+            }
+
             if (currentId) {
                 const { data: t, error } = await supabase
                     .from('tournaments')
@@ -71,7 +78,7 @@ export const BuilderProvider: React.FC<{ children: ReactNode }> = ({ children })
             }
         };
         loadInitialData();
-    }, []);
+    }, [initialId]);
 
     const updateConfig = (key: string, value: any) => {
         setState(prev => ({

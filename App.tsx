@@ -27,7 +27,10 @@ const App: React.FC = () => {
             <Route path="/dashboard/game" element={<DashboardGamePage />} />
             <Route path="/dashboard/game" element={<DashboardGamePage />} />
             <Route path="/torneos" element={<TournamentsPage />} />
-            <Route path="/B5ToolsBuilder" element={<B5ToolsBuilderPage />} />
+            {/* Direct Create/Edit Route for Builder */}
+            <Route path="/torneos/B5ToolsBuilder/:id" element={<B5ToolsBuilderPage />} />
+            {/* Fallback Legacy Route - can be removed eventually or redirected */}
+            <Route path="/B5ToolsBuilder" element={<Navigate to="/torneos/B5ToolsBuilder/new" replace />} />
           </Route>
 
           {/* Redirect generic 404s to Error Page */}
