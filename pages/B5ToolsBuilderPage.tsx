@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BuilderProvider, useBuilder } from '../context/BuilderContext';
-import { Save, XCircle, ArrowRight, Settings, Users, Trophy, GitBranch, User, LogOut, ChevronUp, Menu, X } from 'lucide-react';
+import { Save, XCircle, ArrowRight, Settings, Users, Trophy, GitBranch, User, LogOut, ChevronUp, Menu, X, Calendar as CalendarIcon } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ConfigStep } from '../components/Builder/ConfigStep';
 import { TeamManagementStep } from '../components/Builder/TeamManagementStep';
@@ -9,6 +9,7 @@ import { FixtureStep } from '../components/Builder/FixtureStep';
 import { RefereesStep } from '../components/Builder/RefereesStep';
 import { AdminsStep } from '../components/Builder/AdminsStep';
 import { PlayerManagementStep } from '../components/Builder/PlayerManagementStep';
+import { CalendarStep } from '../components/Builder/CalendarStep';
 import { CustomSpinner } from '../components/CustomSpinner';
 import { ParticleBackground } from '../components/ParticleBackground';
 import { supabase } from '../lib/supabase';
@@ -64,6 +65,7 @@ const BuilderWizard = () => {
         },
         { id: 2, label: 'Formato', icon: <Trophy size={18} /> },
         { id: 3, label: 'Bracket / Fixture', icon: <GitBranch size={18} /> },
+        { id: 4, label: 'Calendario', icon: <CalendarIcon size={18} /> },
     ];
 
     const handleSave = async () => {
@@ -258,6 +260,7 @@ const BuilderWizard = () => {
                         {state.currentStep === 13 && <AdminsStep />}
                         {state.currentStep === 2 && <FormatStep />}
                         {state.currentStep === 3 && <FixtureStep />}
+                        {state.currentStep === 4 && <CalendarStep />}
                     </div>
                 </main>
             </div>

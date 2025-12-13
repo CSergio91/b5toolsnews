@@ -115,6 +115,14 @@ export interface TournamentAdmin {
     email: string;
     role: 'admin' | 'moderator';
     avatar_url?: string;
+    permissions?: {
+        general_management: boolean;
+        manage_players: boolean;
+        manage_standings: boolean;
+        manage_schedule: boolean;
+        manage_public: boolean;
+        manage_results: boolean;
+    };
 }
 
 export interface TournamentInscription {

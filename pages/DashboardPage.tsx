@@ -5,7 +5,7 @@ import { UserNavbar } from '../components/UserNavbar';
 import { ParticlesBackground } from '../components/ParticlesBackground';
 import { SubscriptionModal } from '../components/SubscriptionModal';
 import { FeatureComingSoonModal } from '../components/FeatureComingSoonModal';
-import { PlayCircle, Trophy, Users, Video } from 'lucide-react';
+import { PlayCircle, Trophy, Users, Video, ShieldCheck } from 'lucide-react';
 
 export const DashboardPage: React.FC = () => {
     const navigate = useNavigate();
@@ -13,9 +13,11 @@ export const DashboardPage: React.FC = () => {
     const [isComingSoonModalOpen, setIsComingSoonModalOpen] = useState(false);
     const [selectedFeature, setSelectedFeature] = useState('');
     const [subscriptionTier, setSubscriptionTier] = useState<string>('basic');
+    const [invitationCount, setInvitationCount] = useState(0);
 
     useEffect(() => {
         fetchSubscription();
+        fetchInvitationsCount();
 
         const handleSubscriptionUpdate = () => {
             fetchSubscription();
@@ -38,7 +40,41 @@ export const DashboardPage: React.FC = () => {
     };
 
     const isPremium = subscriptionTier === 'pro' || subscriptionTier === 'ultra';
+
     const isUltra = subscriptionTier === 'ultra';
+
+    const fetchInvitationsCount = async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const userEmail = user.email || user.user_metadata?.email;
+        if (!userEmail) return;
+
+        // Count Admin Invites
+        const { count: adminCount } = await supabase
+            .from('tournament_admins')
+            .select('*', { count: 'exact', head: true })
+            .eq('email', userEmail);
+
+        // Count Referee Invites
+        // Need to find referee profile first
+        const { data: refProfile } = await supabase
+            .from('referee_profiles')
+            .select('id')
+            .eq('email', userEmail)
+            .single();
+
+        let refCount = 0;
+        if (refProfile) {
+            const { count } = await supabase
+                .from('tournament_referees')
+                .select('*', { count: 'exact', head: true })
+                .eq('referee_id', refProfile.id);
+            refCount = count || 0;
+        }
+
+        setInvitationCount((adminCount || 0) + refCount);
+    };
 
     const handleFeatureClick = (featureName: string) => {
         // Special restriction for Live Stream
@@ -106,6 +142,14 @@ export const DashboardPage: React.FC = () => {
                         badge={!isUltra ? "Mejorar Plan" : undefined} // Only Ultra
                         onClick={() => handleFeatureClick("Transmitir en Vivo")}
                     />
+                    <DashboardCard
+                        title="Torneos Invitados"
+                        icon={ShieldCheck}
+                        description="Participa como Administrador o Árbitro."
+                        color="blue"
+                        bubbleCount={invitationCount}
+                        onClick={() => navigate('/torneosinvitados')}
+                    />
                 </div>
             </main>
 
@@ -131,9 +175,10 @@ interface DashboardCardProps {
     color: 'purple' | 'blue' | 'indigo';
     onClick?: () => void;
     badge?: string;
+    bubbleCount?: number;
 }
 
-const DashboardCard: React.FC<DashboardCardProps> = ({ title, icon: Icon, description, color, onClick, badge }) => {
+const DashboardCard: React.FC<DashboardCardProps> = ({ title, icon: Icon, description, color, onClick, badge, bubbleCount }) => {
     const colorClasses = {
         purple: 'bg-purple-600/20 text-purple-400 group-hover:bg-purple-600/30',
         blue: 'bg-blue-600/20 text-blue-400 group-hover:bg-blue-600/30',
@@ -148,6 +193,11 @@ const DashboardCard: React.FC<DashboardCardProps> = ({ title, icon: Icon, descri
             {badge && (
                 <div className="absolute top-4 right-4 bg-orange-500 text-white text-[10px] font-bold px-2 py-1 rounded shadow-lg animate-pulse">
                     {badge}
+                </div>
+            )}
+            {bubbleCount !== undefined && bubbleCount > 0 && (
+                <div className="absolute top-4 right-4 bg-red-500 text-white text-xs font-bold w-6 h-6 rounded-full flex items-center justify-center shadow-lg animate-bounce">
+                    {bubbleCount}
                 </div>
             )}
             <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-4 transition-transform group-hover:scale-110 ${colorClasses[color]}`}>

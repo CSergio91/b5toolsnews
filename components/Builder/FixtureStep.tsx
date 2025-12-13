@@ -5,22 +5,165 @@ import { BracketStep } from './BracketStep';
 import { LayoutGrid, List, Calendar, Move } from 'lucide-react';
 
 export const FixtureStep: React.FC = () => {
-    const { state, teams } = useBuilder();
+    const { state, teams, updateStructure } = useBuilder();
     const [viewMode, setViewMode] = useState<'groups' | 'bracket'>('groups');
     const [generatedGroups, setGeneratedGroups] = useState<GroupStructure[]>([]);
 
     const isGroupFormat = (state.config as any).tournament_type === 'group_stage';
 
+    const [unassignedTeams, setUnassignedTeams] = useState<string[]>([]);
+
+    // Initialize Empty Groups
     useEffect(() => {
-        if (isGroupFormat && generatedGroups.length === 0 && teams.length > 0) {
+        if (isGroupFormat && generatedGroups.length === 0) {
             const groupsCount = (state.config as any).number_of_groups || 4;
-            const groups = generateGroupStage(teams as any[], groupsCount);
+            const groups: GroupStructure[] = Array.from({ length: groupsCount }, (_, i) => ({
+                name: String.fromCharCode(65 + i),
+                teams: [],
+                matches: []
+            }));
             setGeneratedGroups(groups);
+            // Initially all teams are unassigned
+            setUnassignedTeams(teams.map(t => t.id));
             setViewMode('groups');
         } else if (!isGroupFormat) {
             setViewMode('bracket');
         }
-    }, [isGroupFormat, teams, state.config.number_of_groups]);
+    }, [isGroupFormat, state.config.number_of_groups]); // Removed teams from dependency to avoid auto-reset
+
+    // Update unassigned teams whenever groups change
+    useEffect(() => {
+        const assigned = new Set(generatedGroups.flatMap(g => g.teams));
+        setUnassignedTeams(teams.map(t => t.id).filter(id => !assigned.has(id)));
+
+        // Sync to Global Structure
+        // Find existing 'group' phase or create one
+        let existingStructure = state.structure || { phases: [], globalMatchCount: 0 };
+        const phaseIndex = existingStructure.phases.findIndex(p => p.type === 'group');
+
+        const groupPhase: any = {
+            id: phaseIndex >= 0 ? existingStructure.phases[phaseIndex].id : crypto.randomUUID(),
+            type: 'group',
+            name: 'Fase de Grupos',
+            order: 0,
+            groups: generatedGroups.map(g => ({
+                name: g.name,
+                teams: g.teams,
+                matches: g.matches.map(m => ({
+                    id: m.id,
+                    globalId: 0, // Placeholder, engine should numbering
+                    name: `G${g.name} - Match`,
+                    phaseId: 'group-phase',
+                    // ... map other fields if needed
+                    roundIndex: 0
+                } as any))
+            }))
+        };
+
+        let newPhases = [...existingStructure.phases];
+        if (phaseIndex >= 0) {
+            newPhases[phaseIndex] = groupPhase;
+        } else {
+            // Insert at start
+            newPhases = [groupPhase, ...newPhases];
+        }
+
+        // Ideally we only update if changed deep? 
+        // For now let's only update if we are in viewMode groups to avoid loop with BracketStep
+        if (viewMode === 'groups') {
+            updateStructure({ ...existingStructure, phases: newPhases });
+        }
+    }, [generatedGroups, teams]);
+
+    // Explicit Sync when switching to Bracket
+    useEffect(() => {
+        if (viewMode === 'bracket') {
+            let existingStructure = state.structure || { phases: [], globalMatchCount: 0 };
+            const phaseIndex = existingStructure.phases.findIndex(p => p.type === 'group');
+
+            const groupPhase: any = {
+                id: phaseIndex >= 0 ? existingStructure.phases[phaseIndex].id : crypto.randomUUID(),
+                type: 'group',
+                name: 'Fase de Grupos',
+                order: 0,
+                groups: generatedGroups.map(g => ({
+                    name: g.name,
+                    teams: g.teams,
+                    matches: g.matches.map(m => ({
+                        id: m.id || crypto.randomUUID(),
+                        globalId: 0,
+                        name: `${m.home} vs ${m.away}`,
+                        phaseId: 'group-phase',
+                        // Map TempMatch to RoundMatch
+                        sourceHome: { type: 'group.pos', id: g.name, index: -1 }, // TODO better map
+                        roundIndex: 0
+                    }))
+                }))
+            };
+
+            let newPhases = [...existingStructure.phases];
+            if (phaseIndex >= 0) {
+                newPhases[phaseIndex] = groupPhase;
+            } else {
+                newPhases = [groupPhase, ...newPhases];
+            }
+
+            updateStructure({ ...existingStructure, phases: newPhases });
+        }
+    }, [viewMode]);
+
+    // Actions
+    const handleAssignTeam = (teamId: string, groupName: string) => {
+        if (!teamId) return;
+        setGeneratedGroups(prev => {
+            const newGroups = prev.map(g => ({ ...g, teams: [...g.teams], matches: [...g.matches] }));
+            // Actually we need to regenerate matches if we change teams? 
+            // The requirement implies we setup groups THEN generate matches?
+            // "no vas a asignar los equipos a los grupos automaticamente, crearas los grupos y los espacios..."
+            // Usually matches are generated AFTER groups are finalized.
+            // But existing logic generates matches on the fly. Let's keep it consistent.
+
+            const target = newGroups.find(g => g.name === groupName);
+            if (target && !target.teams.includes(teamId)) {
+                target.teams.push(teamId);
+                target.matches = generateMatchesForOneGroup(target.teams, target.name);
+            }
+            return newGroups;
+        });
+    };
+
+    const handleRemoveTeam = (teamId: string, groupName: string) => {
+        setGeneratedGroups(prev => {
+            const newGroups = prev.map(g => ({ ...g, teams: [...g.teams] }));
+            const target = newGroups.find(g => g.name === groupName);
+            if (target) {
+                target.teams = target.teams.filter(t => t !== teamId);
+                target.matches = generateMatchesForOneGroup(target.teams, target.name);
+            }
+            return newGroups;
+        });
+    };
+
+    const handleRandomize = () => {
+        if (confirm("¿Asignar aleatoriamente todos los equipos? Esto sobrescribirá la configuración actual.")) {
+            // Shuffle teams
+            const shuffled = [...teams].sort(() => 0.5 - Math.random());
+            const groupsCount = (state.config as any).number_of_groups || 4;
+            const newGroups = generateGroupStage(shuffled, groupsCount);
+            setGeneratedGroups(newGroups);
+        }
+    };
+
+    const handleUnassignAll = () => {
+        if (confirm("¿Quitar todos los equipos de los grupos?")) {
+            const groupsCount = (state.config as any).number_of_groups || 4;
+            setGeneratedGroups(Array.from({ length: groupsCount }, (_, i) => ({
+                name: String.fromCharCode(65 + i),
+                teams: [],
+                matches: []
+            })));
+        }
+    };
 
     // Drag and Drop Logic
     const handleDragStart = (e: React.DragEvent, teamId: string, sourceGroupName: string) => {
@@ -108,7 +251,21 @@ export const FixtureStep: React.FC = () => {
                 <h2 className="text-xl md:text-2xl font-bold flex items-center gap-2">
                     <LayoutGrid className="text-blue-500" /> Fase de Grupos
                 </h2>
-                <div className="flex gap-2 w-full md:w-auto">
+                <div className="flex flex-wrap gap-2 w-full md:w-auto">
+                    <button
+                        onClick={handleRandomize}
+                        className="px-3 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-xs font-bold text-white transition-colors"
+                        title="Asignar Aleatoriamente"
+                    >
+                        🎲 Aleatorio
+                    </button>
+                    <button
+                        onClick={handleUnassignAll}
+                        className="px-3 py-2 bg-white/5 hover:bg-red-500/20 rounded-lg text-xs font-bold text-red-300 transition-colors"
+                    >
+                        Limpiar
+                    </button>
+                    <div className="h-6 w-px bg-white/10 mx-2 hidden md:block"></div>
                     <button
                         onClick={() => setViewMode('bracket')}
                         className="w-full md:w-auto justify-center px-4 py-3 md:py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-bold flex items-center gap-2 transition-colors"
@@ -118,7 +275,15 @@ export const FixtureStep: React.FC = () => {
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 lg:gap-8 overflow-y-auto pb-32 lg:pb-20 custom-scrollbar mt-2">
+            {/* Unassigned Teams Indicator */}
+            {unassignedTeams.length > 0 && (
+                <div className="mb-4 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg text-yellow-200 text-xs flex items-center gap-2">
+                    <span className="font-bold">⚠ {unassignedTeams.length} equipos sin asignar:</span>
+                    <span className="opacity-70 truncate">{unassignedTeams.map(id => teams.find(t => t.id === id)?.name).join(', ')}</span>
+                </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 lg:gap-8 pb-32 lg:pb-20">
                 {generatedGroups.map((group, groupIdx) => {
                     const gradients = [
                         'from-blue-600/20 to-blue-800/10 hover:shadow-[0_0_30px_rgba(59,130,246,0.25)] border-blue-500/30',
@@ -140,10 +305,24 @@ export const FixtureStep: React.FC = () => {
                             <div className="flex-1 flex flex-col min-h-[50%] border-b sm:border-b-0 sm:border-r border-white/5 order-1">
                                 <div className="bg-white/10 px-4 py-3 border-b border-white/5 flex justify-between items-center">
                                     <span className="font-bold text-white">Grupo {group.name}</span>
-                                    <span className="text-xs text-white/40">{group.teams.length} Equipos</span>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs text-white/40">{group.teams.length} Equipos</span>
+                                        {/* Dropdown for Quick Add */}
+                                        <select
+                                            className="bg-black/50 border border-white/20 rounded text-[10px] text-white px-1 py-1 w-24 outline-none"
+                                            value=""
+                                            onChange={(e) => handleAssignTeam(e.target.value, group.name)}
+                                        >
+                                            <option value="">+ Añadir</option>
+                                            {unassignedTeams.map(id => {
+                                                const t = teams.find(team => team.id === id);
+                                                return <option key={id} value={id}>{t?.name}</option>;
+                                            })}
+                                        </select>
+                                    </div>
                                 </div>
 
-                                <div className="p-2 space-y-1 bg-black/20 flex-1 overflow-y-auto custom-scrollbar h-48 sm:h-auto">
+                                <div className="p-2 space-y-1 bg-black/20 flex-1 h-auto min-h-[120px]">
                                     {group.teams.map((teamId, idx) => {
                                         const team = teams.find(t => t.id === teamId);
                                         return (
@@ -179,6 +358,15 @@ export const FixtureStep: React.FC = () => {
                                                 </div>
 
                                                 <Move size={12} className="text-white/20 group-hover:text-white/50 hidden sm:block" />
+
+                                                {/* Remove Button */}
+                                                <button
+                                                    onClick={() => handleRemoveTeam(teamId, group.name)}
+                                                    className="w-5 h-5 flex items-center justify-center rounded-full hover:bg-white/10 text-white/20 hover:text-red-400 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-all ml-1"
+                                                    title="Quitar del grupo"
+                                                >
+                                                    <span className="text-xs font-bold">×</span>
+                                                </button>
                                             </div>
                                         );
                                     })}
@@ -190,7 +378,7 @@ export const FixtureStep: React.FC = () => {
                                 <h5 className="px-4 py-3 text-[10px] font-bold text-white/50 uppercase tracking-wider flex items-center gap-1 border-b border-white/5 bg-white/5">
                                     <Calendar size={10} /> Partidos ({group.matches.length})
                                 </h5>
-                                <div className="p-2 space-y-2 flex-1 overflow-y-auto custom-scrollbar h-48 sm:h-auto">
+                                <div className="p-2 space-y-2 flex-1 h-auto min-h-[120px]">
                                     {group.matches.length === 0 && (
                                         <div className="p-4 text-xs text-white/20 italic text-center">Esperando equipos...</div>
                                     )}

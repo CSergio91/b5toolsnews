@@ -10,6 +10,7 @@ import { TournamentsPage } from './pages/TournamentsPage';
 import { PrivateRoute } from './components/PrivateRoute';
 import { ErrorPage } from './pages/ErrorPage';
 import { B5ToolsBuilderPage } from './pages/B5ToolsBuilderPage';
+import { InvitedTournamentsPage } from './pages/InvitedTournamentsPage';
 import { supabase } from './lib/supabase';
 
 const App: React.FC = () => {
@@ -26,7 +27,9 @@ const App: React.FC = () => {
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/dashboard/game" element={<DashboardGamePage />} />
             <Route path="/dashboard/game" element={<DashboardGamePage />} />
+            <Route path="/dashboard/game" element={<DashboardGamePage />} />
             <Route path="/torneos" element={<TournamentsPage />} />
+            <Route path="/torneosinvitados" element={<InvitedTournamentsPage />} />
             {/* Direct Create/Edit Route for Builder */}
             <Route path="/torneos/B5ToolsBuilder/:id" element={<B5ToolsBuilderPage />} />
             {/* Fallback Legacy Route - can be removed eventually or redirected */}

@@ -23,6 +23,7 @@ interface BuilderContextType {
     updateAdmin: (id: string, updates: Partial<TournamentAdmin>) => void;
     removeAdmin: (id: string) => void;
     setStep: (step: number) => void;
+    updateStructure: (structure: import('../types/structure').TournamentStructure) => void;
     saveTournament: () => Promise<string | null>;
     resetBuilder: () => void;
 }
@@ -321,7 +322,8 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
                     last_name: a.last_name,
                     email: a.email,
                     role: a.role,
-                    avatar_url: a.avatar_url
+                    avatar_url: a.avatar_url,
+                    permissions: a.permissions
                 })));
 
             if (adminError) console.error("Error saving admins", adminError);
@@ -334,6 +336,14 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
             console.error("Error saving tournament:", error);
             return null;
         }
+    };
+
+    const updateStructure = (structure: import('../types/structure').TournamentStructure) => {
+        setState(prev => ({
+            ...prev,
+            structure,
+            isDirty: true
+        }));
     };
 
     return (
@@ -357,6 +367,7 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
             updateAdmin,
             removeAdmin,
             setStep,
+            updateStructure,
             saveTournament,
             resetBuilder
         }}>

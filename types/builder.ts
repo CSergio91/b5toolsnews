@@ -1,4 +1,5 @@
 import { Tournament, TournamentStage, TournamentTeam, TournamentMatch, TournamentReferee, TournamentRoster, RefereeProfile, TournamentAdmin } from './tournament';
+import { TournamentStructure } from './structure';
 
 export interface BuilderState {
     config: Partial<Tournament>;
@@ -8,6 +9,7 @@ export interface BuilderState {
     matches: Partial<TournamentMatch>[];
     referees: Partial<RefereeProfile>[]; // Changed from TournamentReferee to Profile for Draft Creation
     admins: Partial<TournamentAdmin>[];
+    structure?: TournamentStructure;
 
     // Wizard UI State
     currentStep: number;

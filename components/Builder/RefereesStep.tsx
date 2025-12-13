@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useBuilder } from '../../context/BuilderContext';
 import { supabase } from '../../lib/supabase';
-import { User, Plus, Trash2, Edit2, CheckCircle, XCircle, ChevronDown, ChevronUp, Search, Loader2, Link as LinkIcon } from 'lucide-react';
+import { User, Plus, Trash2, Edit2, CheckCircle, XCircle, ChevronDown, ChevronUp, Search, Loader2, Link as LinkIcon, AlertTriangle, X, Copy, Check } from 'lucide-react';
 import { RefereeProfile } from '../../types/tournament';
 
 export const RefereesStep = () => {
@@ -14,16 +14,27 @@ export const RefereesStep = () => {
     // Lookup States
     const [isSearching, setIsSearching] = useState(false);
     const [foundProfile, setFoundProfile] = useState<{ id: string, avatar_url?: string } | null>(null);
+    const [showEmailError, setShowEmailError] = useState(false);
+    const [showWarning, setShowWarning] = useState(true);
+    const [copied, setCopied] = useState(false);
+
+    const handleCopyLink = () => {
+        navigator.clipboard.writeText(window.location.origin);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+    };
 
     // Debounced Search Effect
     useEffect(() => {
         const lookupUser = async () => {
             if (!email.trim() || !email.includes('@')) {
                 setFoundProfile(null);
+                setShowEmailError(false);
                 return;
             }
 
             setIsSearching(true);
+            setShowEmailError(false);
             try {
                 // Search in public profiles
                 // Assuming 'profiles' table has 'email' column exposed or manageable
@@ -40,6 +51,7 @@ export const RefereesStep = () => {
                     if (foundName) setFullName(foundName);
                 } else {
                     setFoundProfile(null);
+                    setShowEmailError(true);
                 }
             } catch (err) {
                 console.error("Error looking up user:", err);
@@ -128,6 +140,22 @@ export const RefereesStep = () => {
                     {/* Form Content */}
                     <div className={`px-4 pb-4 lg:px-6 lg:pb-6 space-y-5 ${isFormOpen ? 'block' : 'hidden lg:block'}`}>
 
+                        {/* Warning Box */}
+                        {showWarning && (
+                            <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3 flex items-start gap-3 relative animate-in fade-in slide-in-from-top-2">
+                                <AlertTriangle className="text-yellow-500 flex-shrink-0 mt-0.5" size={16} />
+                                <p className="text-xs text-yellow-200/80 pr-4">
+                                    Solo puedes añadir usuarios que ya estén registrados en <span className="font-bold text-yellow-200">B5Tools</span>.
+                                </p>
+                                <button
+                                    onClick={() => setShowWarning(false)}
+                                    className="absolute top-2 right-2 text-yellow-500/50 hover:text-yellow-500 transition-colors"
+                                >
+                                    <X size={14} />
+                                </button>
+                            </div>
+                        )}
+
                         {/* Email Input First (Logic Flow) */}
                         <div className="space-y-2">
                             <label className="text-xs text-white/50 uppercase font-bold pl-1 block tracking-wider flex items-center justify-between">
@@ -145,12 +173,32 @@ export const RefereesStep = () => {
                                 />
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" size={18} />
                             </div>
-                            <p className="text-[10px] text-white/30 px-1">
+                            <div className="text-[10px] text-white/30 px-1">
                                 {foundProfile
                                     ? "Usuario encontrado en la base de datos. Se enviará una notificación."
-                                    : "Se enviará una invitación para que se una a tu torneo como Arbitro."
+                                    : (
+                                        showEmailError ? (
+                                            <div className="mt-2 text-red-400 space-y-2">
+                                                <p>No encontramos el correo escrito. Por favor verifica que esté bien escrito.</p>
+                                                <p>Si no tiene cuenta, envíale este enlace para que se registre. Una vez registrado, inténtalo de nuevo:</p>
+
+                                                <div className="flex items-center gap-2 bg-black/40 border border-red-500/30 rounded-lg p-2 mt-1 group hover:border-red-500/50 transition-colors">
+                                                    <div className="flex-1 font-mono text-blue-400 truncate text-xs select-all">
+                                                        {window.location.origin}
+                                                    </div>
+                                                    <button
+                                                        onClick={handleCopyLink}
+                                                        className="p-1.5 bg-white/5 hover:bg-white/10 rounded-md text-white/50 hover:text-white transition-colors flex-shrink-0 relative"
+                                                        title="Copiar enlace"
+                                                    >
+                                                        {copied ? <Check size={14} className="text-green-400" /> : <Copy size={14} />}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : "Se enviará una invitación para que se una a tu torneo como Arbitro."
+                                    )
                                 }
-                            </p>
+                            </div>
                         </div>
 
                         {/* Name Input (Auto-filled) */}
