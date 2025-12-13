@@ -97,6 +97,7 @@ export interface RefereeProfile {
     email?: string;
     level?: string;
     rating: number;
+    avatar_url?: string;
 }
 
 export interface TournamentReferee {
@@ -105,6 +106,15 @@ export interface TournamentReferee {
     referee_id: string;
     role: 'umpire' | 'scorer' | 'supervisor';
     status: 'invited' | 'accepted' | 'rejected';
+}
+
+export interface TournamentAdmin {
+    id: string;
+    first_name: string;
+    last_name: string;
+    email: string;
+    role: 'admin' | 'moderator';
+    avatar_url?: string;
 }
 
 export interface TournamentInscription {

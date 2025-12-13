@@ -1,15 +1,16 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { BuilderProvider, useBuilder } from '../context/BuilderContext';
-import { Save, XCircle, ArrowRight, Settings, Users, Trophy, GitBranch, User, LogOut, ChevronUp } from 'lucide-react';
+import { Save, XCircle, ArrowRight, Settings, Users, Trophy, GitBranch, User, LogOut, ChevronUp, Menu, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { ConfigStep } from '../components/Builder/ConfigStep';
 import { TeamManagementStep } from '../components/Builder/TeamManagementStep';
 import { FormatStep } from '../components/Builder/FormatStep';
 import { FixtureStep } from '../components/Builder/FixtureStep';
+import { RefereesStep } from '../components/Builder/RefereesStep';
+import { AdminsStep } from '../components/Builder/AdminsStep';
 import { PlayerManagementStep } from '../components/Builder/PlayerManagementStep';
 import { CustomSpinner } from '../components/CustomSpinner';
 import { ParticleBackground } from '../components/ParticleBackground';
-import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 
 const BuilderWizard = () => {
@@ -20,6 +21,12 @@ const BuilderWizard = () => {
     // User State for Sidebar
     const [user, setUser] = useState<any>(null);
     const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+
+    // Mobile State
+    const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+    // Collapsible State
+    const [expandedSteps, setExpandedSteps] = useState<number[]>([]);
 
     useEffect(() => {
         // Fetch User
@@ -34,14 +41,25 @@ const BuilderWizard = () => {
         return () => clearTimeout(timer);
     }, []);
 
+    // Effect: Auto-expand parent if child is active
+    useEffect(() => {
+        const activeParent = steps.find(s => s.subItems?.some(sub => sub.id === state.currentStep));
+        if (activeParent && !expandedSteps.includes(activeParent.id)) {
+            setExpandedSteps(prev => [...prev, activeParent.id]);
+        }
+    }, [state.currentStep]);
+
     const steps = [
         { id: 0, label: 'Configuración', icon: <Settings size={18} /> },
         {
             id: 1,
-            label: 'Equipos',
+            label: 'Participantes', // Renamed from Equipos
             icon: <Users size={18} />,
             subItems: [
-                { id: 11, label: 'Gestionar Jugadores' }
+                { id: 10, label: 'Gestionar Equipos' }, // Moved Logic from ID 1 to 10
+                { id: 11, label: 'Gestionar Jugadores' },
+                { id: 12, label: 'Árbitros' }, // New
+                { id: 13, label: 'Administradores' } // New
             ]
         },
         { id: 2, label: 'Formato', icon: <Trophy size={18} /> },
@@ -65,6 +83,18 @@ const BuilderWizard = () => {
         navigate('/');
     };
 
+    const handleStepClick = (stepId: number, hasSubItems: boolean = false) => {
+        if (hasSubItems) {
+            // Toggle Expansion only
+            setExpandedSteps(prev =>
+                prev.includes(stepId) ? prev.filter(id => id !== stepId) : [...prev, stepId]
+            );
+            return;
+        }
+        setStep(stepId);
+        setIsMobileMenuOpen(false); // Close mobile menu on navigate
+    };
+
     return (
         <div className="h-screen w-full bg-[#0a0a0a] text-white flex flex-col overflow-hidden">
             {/* Loading Overlay */}
@@ -75,50 +105,92 @@ const BuilderWizard = () => {
             )}
 
             {/* Header */}
-            <header className="h-16 border-b border-white/10 flex items-center justify-between px-6 bg-[#111]">
+            <header className="h-16 border-b border-white/10 flex items-center justify-between px-4 lg:px-6 bg-[#111] z-20 relative">
                 <div className="flex items-center gap-3">
+                    {/* Mobile Hamburger */}
+                    <button
+                        onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+                        className="lg:hidden p-2 -ml-2 text-white/60 hover:text-white"
+                    >
+                        {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+                    </button>
+
                     <img src="/logo.png" alt="B5Tools" className="w-8 h-8 object-contain" />
-                    <span className="font-bold text-lg tracking-tight">B5Tools Builder <span className="text-xs text-white/30 uppercase ml-2 border border-white/10 px-1 rounded">Enterprise</span></span>
+                    <div className="flex flex-col">
+                        <span className="font-bold text-lg tracking-tight leading-none">B5Tools</span>
+                        <span className="text-[10px] text-white/40 uppercase tracking-widest hidden md:block">Builder Enterprise</span>
+                    </div>
                 </div>
 
-                <div className="flex items-center gap-3">
-                    <button onClick={handleExit} className="px-4 py-2 text-sm text-white/60 hover:text-white flex items-center gap-2 transition-colors">
+                <div className="flex items-center gap-2 lg:gap-3">
+                    <button
+                        onClick={handleExit}
+                        className="px-3 py-2 text-sm text-white/60 hover:text-white flex items-center gap-2 transition-colors hidden md:flex"
+                    >
                         <XCircle size={16} /> Cancelar
                     </button>
-                    <button onClick={handleSave} className="px-6 py-2 bg-white text-black font-bold text-sm rounded-full hover:bg-gray-200 transition-colors flex items-center gap-2">
-                        <Save size={16} /> Guardar Borrador
+                    {/* Mobile Cancel Icon Only */}
+                    <button
+                        onClick={handleExit}
+                        className="p-2 text-white/60 hover:text-white md:hidden"
+                    >
+                        <XCircle size={20} />
+                    </button>
+
+                    <button
+                        onClick={handleSave}
+                        className="px-4 lg:px-6 py-2 bg-white text-black font-bold text-sm rounded-full hover:bg-gray-200 transition-colors flex items-center gap-2"
+                    >
+                        <Save size={16} /> <span className="hidden md:inline">Guardar Borrador</span><span className="md:hidden">Guardar</span>
                     </button>
                 </div>
             </header>
 
-            <div className="flex-1 flex overflow-hidden">
+            <div className="flex-1 flex overflow-hidden relative">
+                {/* Mobile Backdrop */}
+                {isMobileMenuOpen && (
+                    <div
+                        className="fixed inset-0 z-30 bg-black/60 backdrop-blur-sm lg:hidden animate-in fade-in"
+                        onClick={() => setIsMobileMenuOpen(false)}
+                    />
+                )}
+
                 {/* Sidebar Navigation */}
-                <aside className="w-64 bg-[#111] border-r border-white/5 flex flex-col py-6">
-                    <nav className="space-y-1 px-3 flex-1">
+                <aside className={`
+                    fixed lg:static inset-y-0 left-0 z-40 w-64 bg-[#111] border-r border-white/5 flex flex-col py-6
+                    transform transition-transform duration-300 ease-in-out
+                    ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+                    mt-16 lg:mt-0 h-[calc(100vh-64px)] lg:h-auto
+                `}>
+                    <nav className="space-y-1 px-3 flex-1 overflow-y-auto custom-scrollbar">
                         {steps.map((step, idx) => (
                             <div key={step.id} className="mb-1">
                                 <button
-                                    onClick={() => setStep(step.id)}
+                                    onClick={() => handleStepClick(step.id, !!step.subItems)}
                                     className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${state.currentStep === step.id || (step.subItems && step.subItems.some(s => s.id === state.currentStep))
                                         ? 'bg-blue-600/10 text-blue-400 border border-blue-600/20'
                                         : 'text-white/40 hover:bg-white/5 hover:text-white'
                                         }`}
                                 >
-                                    <div className={`${state.currentStep === step.id ? 'text-blue-400' : 'text-white/30'}`}>{step.icon}</div>
+                                    <div className={`${(state.currentStep === step.id || (step.subItems && step.subItems.some(s => s.id === state.currentStep))) ? 'text-blue-400' : 'text-white/30'}`}>{step.icon}</div>
                                     {step.label}
-                                    {state.currentStep === step.id && <ArrowRight size={14} className="ml-auto opacity-50" />}
+                                    {step.subItems ? (
+                                        <ChevronUp size={14} className={`ml-auto opacity-50 transition-transform ${expandedSteps.includes(step.id) ? '' : 'rotate-180'}`} />
+                                    ) : (
+                                        state.currentStep === step.id && <ArrowRight size={14} className="ml-auto opacity-50" />
+                                    )}
                                 </button>
 
                                 {/* Sub Items */}
-                                {step.subItems && (state.currentStep === step.id || step.subItems.some(s => s.id === state.currentStep)) && (
+                                {step.subItems && expandedSteps.includes(step.id) && (
                                     <div className="ml-4 pl-4 border-l border-white/10 mt-1 space-y-1 animate-in slide-in-from-left-2 fade-in duration-300">
                                         {step.subItems.map(sub => (
                                             <button
                                                 key={sub.id}
-                                                onClick={() => setStep(sub.id)}
+                                                onClick={() => handleStepClick(sub.id)}
                                                 className={`w-full text-left px-4 py-2 text-xs rounded-lg transition-colors ${state.currentStep === sub.id
-                                                        ? 'bg-white/10 text-white font-bold'
-                                                        : 'text-white/40 hover:bg-white/5 hover:text-white'
+                                                    ? 'bg-white/10 text-white font-bold'
+                                                    : 'text-white/40 hover:bg-white/5 hover:text-white'
                                                     }`}
                                             >
                                                 {sub.label}
@@ -131,7 +203,7 @@ const BuilderWizard = () => {
                     </nav>
 
                     {/* User Profile Footer */}
-                    <div className="px-4 pt-4 border-t border-white/5 relative">
+                    <div className="px-4 pt-4 border-t border-white/5 relative bg-[#111]">
                         {isUserMenuOpen && (
                             <div className="absolute bottom-full left-4 right-4 mb-2 bg-[#1a1a20] border border-white/10 rounded-xl shadow-xl overflow-hidden animate-in slide-in-from-bottom-2">
                                 <button
@@ -172,15 +244,18 @@ const BuilderWizard = () => {
                 </aside>
 
                 {/* Main Canvas Area */}
-                <main className="flex-1 overflow-y-auto relative p-8 custom-scrollbar">
+                <main className="flex-1 overflow-y-auto relative p-4 lg:p-8 custom-scrollbar w-full">
                     {/* Background */}
                     <ParticleBackground />
 
                     {/* Content */}
-                    <div className="max-w-5xl mx-auto h-full relative z-10">
+                    <div className="max-w-5xl mx-auto h-full relative z-10 pb-20 lg:pb-0">
                         {state.currentStep === 0 && <ConfigStep />}
-                        {state.currentStep === 1 && <TeamManagementStep />}
+                        {state.currentStep === 10 && <TeamManagementStep />}
                         {state.currentStep === 11 && <PlayerManagementStep />}
+                        {state.currentStep === 12 && <RefereesStep />}
+
+                        {state.currentStep === 13 && <AdminsStep />}
                         {state.currentStep === 2 && <FormatStep />}
                         {state.currentStep === 3 && <FixtureStep />}
                     </div>

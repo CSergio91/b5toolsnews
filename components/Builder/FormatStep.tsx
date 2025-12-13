@@ -10,6 +10,7 @@ export const FormatStep: React.FC = () => {
         const type = state.config.tournament_type;
         if (type === 'group_stage') return 'groups';
         if (type === 'knockout') return 'knockout';
+        if (type === 'double_elimination') return 'double_elimination';
         return null;
     });
 

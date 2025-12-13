@@ -1,12 +1,14 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react';
 import { BuilderState, initialBuilderState } from '../types/builder';
-import { TournamentTeam, TournamentRoster } from '../types/tournament';
+import { TournamentTeam, TournamentRoster, RefereeProfile, TournamentAdmin } from '../types/tournament';
 import { supabase } from '../lib/supabase';
 
 interface BuilderContextType {
     state: BuilderState;
     teams: Partial<TournamentTeam>[];
     rosters: Partial<TournamentRoster>[];
+    referees: Partial<RefereeProfile>[];
+    admins: Partial<TournamentAdmin>[];
     updateConfig: (key: string, value: any) => void;
     addTeam: (team: Partial<TournamentTeam>) => void;
     updateTeam: (id: string, updates: Partial<TournamentTeam>) => void;
@@ -14,6 +16,12 @@ interface BuilderContextType {
     addPlayer: (player: Partial<TournamentRoster>) => void;
     updatePlayer: (id: string, updates: Partial<TournamentRoster>) => void;
     removePlayer: (id: string) => void;
+    addReferee: (referee: Partial<RefereeProfile>) => void;
+    updateReferee: (id: string, updates: Partial<RefereeProfile>) => void;
+    removeReferee: (id: string) => void;
+    addAdmin: (admin: Partial<TournamentAdmin>) => void;
+    updateAdmin: (id: string, updates: Partial<TournamentAdmin>) => void;
+    removeAdmin: (id: string) => void;
     setStep: (step: number) => void;
     saveTournament: () => Promise<string | null>;
     resetBuilder: () => void;
@@ -49,7 +57,14 @@ export const BuilderProvider: React.FC<{ children: ReactNode }> = ({ children })
                             points_for_loss: t.points_for_loss || 0,
                             sets_per_match: t.sets_per_match || 3,
                             cost_per_team: t.cost || 0,
+                            tournament_type: t.tournament_type || 'open'
                         },
+                        // Ensure lists are initialized if not present in previous state
+                        teams: prev.teams || [],
+                        rosters: prev.rosters || [],
+                        matches: prev.matches || [],
+                        referees: prev.referees || [],
+                        admins: prev.admins || [],
                         isDirty: false // Reset dirty flag after initial load
                     }));
                 }
@@ -110,6 +125,54 @@ export const BuilderProvider: React.FC<{ children: ReactNode }> = ({ children })
         setState(prev => ({
             ...prev,
             rosters: prev.rosters.filter(p => p.id !== id),
+            isDirty: true
+        }));
+    };
+
+    const addReferee = (referee: Partial<RefereeProfile>) => {
+        setState(prev => ({
+            ...prev,
+            referees: [...prev.referees, referee],
+            isDirty: true
+        }));
+    };
+
+    const updateReferee = (id: string, updates: Partial<RefereeProfile>) => {
+        setState(prev => ({
+            ...prev,
+            referees: prev.referees.map(r => r.id === id ? { ...r, ...updates } : r),
+            isDirty: true
+        }));
+    };
+
+    const removeReferee = (id: string) => {
+        setState(prev => ({
+            ...prev,
+            referees: prev.referees.filter(r => r.id !== id),
+            isDirty: true
+        }));
+    };
+
+    const addAdmin = (admin: Partial<TournamentAdmin>) => {
+        setState(prev => ({
+            ...prev,
+            admins: [...prev.admins, admin],
+            isDirty: true
+        }));
+    };
+
+    const updateAdmin = (id: string, updates: Partial<TournamentAdmin>) => {
+        setState(prev => ({
+            ...prev,
+            admins: prev.admins.map(a => a.id === id ? { ...a, ...updates } : a),
+            isDirty: true
+        }));
+    };
+
+    const removeAdmin = (id: string) => {
+        setState(prev => ({
+            ...prev,
+            admins: prev.admins.filter(a => a.id !== id),
             isDirty: true
         }));
     };
@@ -224,6 +287,38 @@ export const BuilderProvider: React.FC<{ children: ReactNode }> = ({ children })
             if (rosterError) console.error("Error saving rosters", rosterError);
 
 
+            if (rosterError) console.error("Error saving rosters", rosterError);
+
+            // 4. Save Referees
+            const { error: refError } = await supabase
+                .from('tournament_referees')
+                .upsert(state.referees.map(r => ({
+                    id: r.id,
+                    tournament_id: tournament.id,
+                    first_name: r.first_name,
+                    last_name: r.last_name,
+                    email: r.email,
+                    rating: r.rating,
+                    avatar_url: r.avatar_url
+                })));
+
+            if (refError) console.error("Error saving referees", refError);
+
+            // 5. Save Admins
+            const { error: adminError } = await supabase
+                .from('tournament_admins')
+                .upsert(state.admins.map(a => ({
+                    id: a.id,
+                    tournament_id: tournament.id,
+                    first_name: a.first_name,
+                    last_name: a.last_name,
+                    email: a.email,
+                    role: a.role,
+                    avatar_url: a.avatar_url
+                })));
+
+            if (adminError) console.error("Error saving admins", adminError);
+
             console.log("Tournament Fully Saved:", tournament.id);
 
             setState(prev => ({ ...prev, isDirty: false, lastSaved: new Date() }));
@@ -239,6 +334,7 @@ export const BuilderProvider: React.FC<{ children: ReactNode }> = ({ children })
             state,
             teams: state.teams,
             rosters: state.rosters,
+            referees: state.referees,
             updateConfig,
             addTeam,
             updateTeam,
@@ -246,6 +342,13 @@ export const BuilderProvider: React.FC<{ children: ReactNode }> = ({ children })
             addPlayer,
             updatePlayer,
             removePlayer,
+            addReferee,
+            updateReferee,
+            removeReferee,
+            admins: state.admins,
+            addAdmin,
+            updateAdmin,
+            removeAdmin,
             setStep,
             saveTournament,
             resetBuilder

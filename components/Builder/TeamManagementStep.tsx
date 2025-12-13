@@ -1,31 +1,20 @@
 import React, { useState } from 'react';
 import { useBuilder } from '../../context/BuilderContext';
-import { Users, Plus, Trash2, Upload, Shield } from 'lucide-react';
+import { Users, Plus, Trash2, Upload, Shield, Image as ImageIcon } from 'lucide-react';
 import { TournamentTeam } from '../../types/tournament';
 import { GlobalImageUploader } from '../GlobalImageUploader';
 
 export const TeamManagementStep: React.FC = () => {
-    const { state, teams, addTeam, removeTeam, updateTeam } = useBuilder(); // Note: We need a way to update 'teams' specifically. 
-    // Since 'updateConfig' only targets 'config' object in my previous context implementation, 
-    // I should probably have updated the context to expose a generic 'updateState' or specific 'updateTeams'.
-    // LIMITATION: The current Context only exposes `updateConfig`. I need to fix the Context first or use a hack.
-    // FIX: I will use a local state for the UI and assume the Context will be updated to support specific collection updates.
-    // For now, let's assume I fix the Context in the next step. I'll write the consuming code correctly.
-
-    // RE-READING CONTEXT: `updateConfig` updates `state.config`. 
-    // I need to add `addTeam`, `removeTeam`, `updateTeam` to the Context.
-
-    // TEMPORARY LOCAL MOCK (until Context is patched in next tool call)
-    // In reality, I will patch the Context
+    const { state, teams, addTeam, removeTeam, updateTeam } = useBuilder();
 
     const [teamName, setTeamName] = useState('');
     const [shortName, setShortName] = useState('');
-    const [logoUrl, setLogoUrl] = useState(''); // State for new team logo
+    const [logoUrl, setLogoUrl] = useState('');
 
     const handleAdd = () => {
         if (!teamName.trim()) return;
         addTeam({
-            id: crypto.randomUUID(), // Temp ID for draft
+            id: crypto.randomUUID(),
             name: teamName,
             short_name: shortName || teamName.substring(0, 3).toUpperCase(),
             logo_url: logoUrl,
@@ -41,23 +30,23 @@ export const TeamManagementStep: React.FC = () => {
 
     return (
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 h-full flex flex-col">
-            <div className="flex justify-between items-end mb-6">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-6 gap-2">
                 <div>
-                    <h2 className="text-2xl font-bold flex items-center gap-2">
+                    <h2 className="text-xl md:text-2xl font-bold flex items-center gap-2">
                         <Users className="text-blue-400" /> Gestión de Equipos
                     </h2>
-                    <p className="text-white/50 text-sm mt-1">Añade los equipos que participarán en el torneo.</p>
+                    <p className="text-white/50 text-xs md:text-sm mt-1">Añade los equipos que participarán en el torneo.</p>
                 </div>
-                <div className="px-4 py-2 bg-white/5 rounded-lg border border-white/10 text-sm font-mono">
+                <div className="px-4 py-2 bg-white/5 rounded-lg border border-white/10 text-sm font-mono w-full md:w-auto text-center md:text-left">
                     Total: <span className="font-bold text-white">{teams?.length || 0}</span>
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 h-full min-h-0">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8 h-full min-h-0 overflow-y-auto lg:overflow-visible pb-20 lg:pb-0">
 
                 {/* 1. Add Team Form */}
                 <div className="lg:col-span-1 space-y-6">
-                    <div className="bg-white/5 p-6 rounded-2xl border border-white/10 shadow-lg">
+                    <div className="bg-white/5 p-4 md:p-6 rounded-2xl border border-white/10 shadow-lg">
                         <h3 className="font-bold text-white mb-4 text-sm uppercase tracking-wider">Añadir Nuevo Equipo</h3>
 
                         <div className="flex justify-center mb-4">
@@ -68,7 +57,7 @@ export const TeamManagementStep: React.FC = () => {
                                 label="Logo"
                                 rounded={true}
                                 className="w-20 h-20"
-                                localMode={true} // Use local preview
+                                localMode={true}
                             />
                         </div>
 
@@ -113,15 +102,22 @@ export const TeamManagementStep: React.FC = () => {
                 </div>
 
                 {/* 2. Team List */}
-                <div className="lg:col-span-2 bg-black/20 rounded-2xl border border-white/10 overflow-hidden flex flex-col">
-                    <div className="p-4 bg-white/5 border-b border-white/5 grid grid-cols-12 gap-4 text-xs font-bold text-white/40 uppercase">
-                        <div className="col-span-1 hidden md:block">No.</div>
+                <div className="lg:col-span-2 bg-black/20 rounded-2xl border border-white/10 overflow-hidden flex flex-col h-[500px] lg:h-auto">
+                    {/* Desktop Header - Hidden on Mobile */}
+                    <div className="hidden md:grid grid-cols-12 gap-4 p-4 bg-white/5 border-b border-white/5 text-xs font-bold text-white/40 uppercase">
+                        <div className="col-span-1">No.</div>
                         <div className="col-span-1">Logo</div>
                         <div className="col-span-5">Equipo</div>
                         <div className="col-span-2">Abr</div>
                         <div className="col-span-3 text-right">Acciones</div>
                     </div>
-                    <div className="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar">
+
+                    {/* Header for Mobile only */}
+                    <div className="md:hidden p-4 bg-white/5 border-b border-white/5 text-xs font-bold text-white/40 uppercase">
+                        Lista de Equipos
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto p-2 space-y-2 lg:space-y-1 custom-scrollbar">
                         {teams?.length === 0 && (
                             <div className="flex flex-col items-center justify-center h-40 text-white/20">
                                 <Shield size={40} className="mb-2 opacity-20" />
@@ -129,27 +125,43 @@ export const TeamManagementStep: React.FC = () => {
                             </div>
                         )}
                         {teams?.map((team: TournamentTeam, idx: number) => (
-                            <div key={team.id || idx} className="grid grid-cols-12 gap-4 items-center p-3 rounded-lg hover:bg-white/5 transition-colors group">
-                                <div className="col-span-1 text-white/30 font-mono text-xs hidden md:block">{(idx + 1).toString().padStart(2, '0')}</div>
-                                <div className="col-span-1">
+                            <div key={team.id || idx} className="grid grid-cols-12 gap-4 items-center p-3 rounded-lg hover:bg-white/5 transition-colors group bg-white/[0.02] md:bg-transparent border border-white/5 md:border-transparent">
+
+                                {/* Mobile Layout: Logo + Name takes up everything */}
+                                {/* Desktop Layout: Respects the columns */}
+
+                                <div className="hidden md:block col-span-1 text-white/30 font-mono text-xs">{(idx + 1).toString().padStart(2, '0')}</div>
+
+                                {/* Logo: Always visible, but formatting differs */}
+                                <div className="col-span-3 md:col-span-1 flex justify-center md:justify-start">
                                     <GlobalImageUploader
                                         currentUrl={team.logo_url}
                                         onUpload={(url) => updateTeam(team.id, { logo_url: url })}
                                         bucketName="team-logos"
-                                        label="Logo"
+                                        label=""
                                         rounded={true}
-                                        className="w-10 h-10"
+                                        className="w-12 h-12 md:w-10 md:h-10"
                                         localMode={true}
                                     />
                                 </div>
-                                <div className="col-span-5 font-bold text-white truncate pl-4">{team.name}</div>
-                                <div className="col-span-2 text-xs font-mono text-white/60 bg-white/5 px-2 py-1 rounded w-fit">{team.short_name}</div>
-                                <div className="col-span-3 flex justify-end">
+
+                                {/* Team Name: Stacked on mobile */}
+                                <div className="col-span-7 md:col-span-5 flex flex-col md:flex-row md:items-center pl-0 md:pl-4">
+                                    <span className="font-bold text-white truncate text-sm md:text-base">{team.name}</span>
+                                    {/* Short Name shown below name on mobile */}
+                                    <span className="md:hidden text-xs font-mono text-white/40 bg-white/5 px-2 py-0.5 rounded w-fit mt-1">{team.short_name}</span>
+                                </div>
+
+                                {/* Short Name: Hidden on mobile (moved to above), visible on desktop */}
+                                <div className="hidden md:block col-span-2 text-xs font-mono text-white/60 bg-white/5 px-2 py-1 rounded w-fit">{team.short_name}</div>
+
+                                {/* Actions */}
+                                <div className="col-span-2 md:col-span-3 flex justify-end">
                                     <button
                                         onClick={() => removeTeam(team.id)}
-                                        className="p-2 text-white/20 hover:text-red-400 transition-colors"
+                                        className="p-2 text-white/20 hover:text-red-400 transition-colors bg-white/5 md:bg-transparent rounded-lg md:rounded-none"
                                     >
-                                        <Trash2 size={16} />
+                                        <Trash2 size={18} />
                                     </button>
                                 </div>
                             </div>
@@ -159,6 +171,5 @@ export const TeamManagementStep: React.FC = () => {
 
             </div>
         </div>
-
     );
 };

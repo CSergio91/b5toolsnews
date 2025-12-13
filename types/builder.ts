@@ -1,4 +1,4 @@
-import { Tournament, TournamentStage, TournamentTeam, TournamentMatch, TournamentReferee, TournamentRoster } from './tournament';
+import { Tournament, TournamentStage, TournamentTeam, TournamentMatch, TournamentReferee, TournamentRoster, RefereeProfile, TournamentAdmin } from './tournament';
 
 export interface BuilderState {
     config: Partial<Tournament>;
@@ -6,7 +6,8 @@ export interface BuilderState {
     teams: Partial<TournamentTeam>[];
     rosters: Partial<TournamentRoster>[]; // Added for Player Management
     matches: Partial<TournamentMatch>[];
-    referees: Partial<TournamentReferee>[];
+    referees: Partial<RefereeProfile>[]; // Changed from TournamentReferee to Profile for Draft Creation
+    admins: Partial<TournamentAdmin>[];
 
     // Wizard UI State
     currentStep: number;
@@ -26,8 +27,11 @@ export const initialBuilderState: BuilderState = {
     stages: [],
     teams: [],
     rosters: [],
+    teams: [],
+    rosters: [],
     matches: [],
     referees: [],
+    admins: [],
     currentStep: 0,
     isDirty: false
 };
