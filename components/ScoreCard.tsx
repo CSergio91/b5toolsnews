@@ -941,7 +941,9 @@ const ScoreSheetFullScreen: React.FC<{
   visitorNextBatterIdx: number;
   localNextBatterIdx: number;
   onAdvanceInning: () => void;
-}> = ({ isOpen, onClose, title, setNum, visitorData, localData, gameInfo, updateGameInfo, updateTeam, handleAddColumn, currentInningIdx, visitorNextBatterIdx, localNextBatterIdx, onAdvanceInning }) => {
+  // Live Status Props
+  liveStatusProps: LiveGameStatusProps;
+}> = ({ isOpen, onClose, title, setNum, visitorData, localData, gameInfo, updateGameInfo, updateTeam, handleAddColumn, currentInningIdx, visitorNextBatterIdx, localNextBatterIdx, onAdvanceInning, liveStatusProps }) => {
   const [activeTeam, setActiveTeam] = useState<'visitor' | 'local'>('visitor');
 
   if (!isOpen) return null;
@@ -993,6 +995,19 @@ const ScoreSheetFullScreen: React.FC<{
             <h3 className="text-xl font-bold text-white mb-2">Gira tu dispositivo</h3>
             <p className="text-white/50 text-sm">Para usar la hoja de anotaciones en pantalla completa, por favor usa el modo horizontal.</p>
           </div>
+        </div>
+
+        <div className="absolute inset-0 z-50 bg-[#1e1e24] flex flex-col items-center justify-center gap-6 p-8 text-center md:hidden portrait:flex">
+          <RotateCcw size={48} className="text-indigo-400 animate-spin-slow duration-[3s]" />
+          <div className="max-w-xs">
+            <h3 className="text-xl font-bold text-white mb-2">Gira tu dispositivo</h3>
+            <p className="text-white/50 text-sm">Para usar la hoja de anotaciones en pantalla completa, por favor usa el modo horizontal.</p>
+          </div>
+        </div>
+
+        {/* Live Game Status (Compact) */}
+        <div className="sticky top-0 z-40 w-full bg-[#1e1e24]/90 backdrop-blur-sm border-b border-white/10 hidden md:block landscape:block">
+          <LiveGameStatus {...liveStatusProps} />
         </div>
 
         {/* Lineup Grid Container */}
@@ -1957,7 +1972,10 @@ const AdvancedStatsPanel: React.FC<{
 const SingleSetScoreCard: React.FC<{
   setNum: number;
   onWinnerUpdate: (winner: { name: string; score: string; isVisitor: boolean } | null) => void;
-}> = ({ setNum, onWinnerUpdate }) => {
+  currentSet: number;
+  setWinners: ({ name: string; score: string; isVisitor: boolean } | null)[];
+  onSetChange: (set: number) => void;
+}> = ({ setNum, onWinnerUpdate, currentSet, setWinners, onSetChange }) => {
   const [state, setState] = useState<ScoreCardState>(initialState);
   const [loaded, setLoaded] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true);
@@ -2357,10 +2375,11 @@ const SingleSetScoreCard: React.FC<{
             }
           }
         }
-
       } else {
         (player as any)[field] = value;
       }
+
+
 
       slot[type] = player;
       newSlots[index] = slot;
@@ -2467,12 +2486,135 @@ const SingleSetScoreCard: React.FC<{
     setShowResetConfirm(false);
   };
 
+
+
   const handlePrint = () => {
     window.print();
   };
 
   return (
     <div className="w-full bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-4 md:p-8 shadow-2xl relative transition-all duration-300 mb-20 pt-24 md:pt-16 print-container">
+
+      {/* --- Sticky Tab Navigation (Refactored) --- */}
+      <div className="sticky top-0 z-[50] bg-[#1e1e24] shadow-md no-print w-[calc(100%+2rem)] -ml-4 -mt-24 md:-mt-16 md:w-[calc(100%+4rem)] md:-ml-8 mb-6 border-b border-white/10">
+        <div className="flex flex-row items-center gap-1 md:gap-2 px-2 py-2 w-full overflow-x-auto scrollbar-hide">
+
+          {/* 1. Logo */}
+          <div className="shrink-0 hidden md:block">
+            <img src="/logo.png" alt="B5Tools" className="h-8 w-8 object-contain" />
+          </div>
+
+          {/* 2. Home Button */}
+          <button
+            onClick={() => window.location.href = '/'}
+            className="shrink-0 p-2 rounded-full bg-white/5 text-white/70 hover:text-white"
+            title="Ir al Inicio"
+          >
+            <Home size={18} />
+          </button>
+
+          {/* Separator */}
+          <div className="h-6 w-px bg-white/10 shrink-0 mx-1"></div>
+
+          {/* 3. Restart Button */}
+          <button
+            onClick={handleReset}
+            className="shrink-0 p-2 rounded-md bg-red-500/10 text-red-400 hover:bg-red-500/20 flex items-center gap-2 transition-colors"
+            title="Reiniciar Partido"
+          >
+            <RotateCcw size={18} />
+            <span className="hidden md:inline text-xs font-bold uppercase">Reiniciar</span>
+          </button>
+
+          {/* 4. Full Screen Button */}
+          <button
+            onClick={() => setFullScreenMode(true)}
+            className="shrink-0 p-2 rounded-md bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 flex items-center gap-2 transition-colors"
+            title="Pantalla Completa"
+          >
+            <Maximize2 size={18} />
+            <span className="hidden md:inline text-xs font-bold uppercase">Pantalla Completa</span>
+          </button>
+
+          {/* 5. Sets Tabs */}
+          <div className="flex flex-row gap-1 shrink-0 ml-2">
+            {[1, 2, 3].map(sNum => {
+              const winner = setWinners[sNum - 1];
+              let label = `Set ${sNum}`;
+              let scoreLabel = '';
+              if (winner && winner.name) {
+                label = `S${sNum}`;
+                scoreLabel = winner.score;
+              }
+
+              return (
+                <button
+                  key={sNum}
+                  onClick={() => onSetChange(sNum)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase whitespace-nowrap flex items-center gap-1
+                        ${currentSet === sNum
+                      ? 'bg-purple-600 text-white shadow-sm'
+                      : 'bg-white/5 text-white/50 hover:bg-white/10'
+                    }`}
+                >
+                  <span className={currentSet === sNum ? '' : 'hidden md:inline'}>{label}</span>
+                  <span className={currentSet === sNum ? 'hidden' : 'md:hidden'}>{sNum}</span>
+                  {scoreLabel && <span className="text-[10px] opacity-80 bg-black/20 px-1 rounded">{scoreLabel}</span>}
+                </button>
+              );
+            })}
+          </div>
+
+
+          <div className="flex-1 min-w-[10px]"></div>
+
+          {/* 6. Swap Button */}
+          <button
+            onClick={swapTeams}
+            className="shrink-0 p-2 rounded-full bg-orange-500/10 text-orange-400 hover:bg-orange-500/20"
+            title="Alternar Equipos"
+          >
+            <ArrowRightLeft size={18} />
+          </button>
+
+          {/* 7. Sidebar Toggle */}
+          <button
+            onClick={() => setShowSidebar(!showSidebar)}
+            className="shrink-0 p-2 rounded-full bg-white/5 text-white/70 hover:text-white"
+            title={showSidebar ? "Ocultar Panel" : "Mostrar Panel"}
+          >
+            {showSidebar ? <PanelRightClose size={18} /> : <PanelRightOpen size={18} />}
+          </button>
+
+          {/* 8. Stats Toggle */}
+          <button
+            onClick={() => setShowStats(!showStats)}
+            className={`shrink-0 p-2 rounded-full transition-colors ${showStats ? 'bg-indigo-500 text-white shadow-lg' : 'bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20'}`}
+            title="Estadísticas"
+          >
+            <LineChart size={18} />
+          </button>
+
+          {/* 9. General Stats (Advanced) */}
+          <button
+            onClick={() => setShowAdvancedStats(!showAdvancedStats)}
+            className={`shrink-0 p-2 rounded-full transition-colors ${showAdvancedStats ? 'bg-pink-500 text-white shadow-lg' : 'bg-pink-500/10 text-pink-400 hover:bg-pink-500/20'}`}
+            title="Estadísticas Generales"
+          >
+            <BarChart size={18} />
+          </button>
+
+          {/* 10. Print Button */}
+          <button
+            onClick={handlePrint}
+            className="shrink-0 p-2 rounded-full bg-green-500/10 text-green-300 hover:bg-green-500/20"
+            title="Imprimir"
+          >
+            <Printer size={18} />
+          </button>
+
+        </div>
+      </div>
       <style>{`
         @media print {
           @page { size: landscape; margin: 10mm; }
@@ -2538,49 +2680,6 @@ const SingleSetScoreCard: React.FC<{
           </h2>
           <p className="text-white/40 text-xs mt-1">B5Tools Official Scoring System</p>
         </div>
-
-        <div className="flex flex-wrap gap-2 w-full md:w-auto">
-          <button
-            onClick={handleReset}
-            className="flex items-center gap-2 px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-300 rounded-lg border border-red-500/20 text-xs font-bold transition-all hover:shadow-lg hover:shadow-red-500/10"
-          >
-            <RotateCcw size={14} /> REINICIAR
-          </button>
-
-          <button
-            onClick={() => setFullScreenMode(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 rounded-lg border border-indigo-500/20 text-xs font-bold transition-all hover:shadow-lg hover:shadow-indigo-500/10"
-            title="Pantalla Completa"
-          >
-            <Maximize2 size={14} /> PANTALLA COMPLETA
-          </button>
-
-
-
-          <button
-            onClick={swapTeams}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 rounded-lg border border-blue-500/20 text-xs font-bold transition-all hover:shadow-lg hover:shadow-blue-500/10"
-            title="Alternar Visitante / Local"
-          >
-            <ArrowRightLeft size={14} /> ALTERNAR
-          </button>
-
-
-
-          <button
-            onClick={() => setShowStats(!showStats)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg border text-xs font-bold transition-all ${showStats ? 'bg-amber-500/20 text-amber-200 border-amber-500/30' : 'bg-white/5 text-white/60 border-white/10 hover:bg-white/10'}`}
-          >
-            <Table2 size={14} /> ESTADÍSTICAS
-          </button>
-          <button
-            onClick={() => setShowSidebar(!showSidebar)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg border text-xs font-bold transition-all ${showSidebar ? 'bg-purple-500/20 text-purple-200 border-purple-500/30' : 'bg-white/5 text-white/60 border-white/10 hover:bg-white/10'}`}
-          >
-            {showSidebar ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
-            {showSidebar ? 'PANEL' : 'PANEL'}
-          </button>
-        </div>
       </div>
 
       <div className="flex gap-4 mb-6 print-panel p-4 rounded-xl">
@@ -2591,11 +2690,13 @@ const SingleSetScoreCard: React.FC<{
         </div>
       </div>
 
-      {showStats && (
-        <div className="mb-8 animate-in slide-in-from-top duration-300">
-          <StatsTable visitor={state.visitorTeam} local={state.localTeam} visitorName={state.gameInfo.visitor} localName={state.gameInfo.home} competitionName={state.gameInfo.competition} />
-        </div>
-      )}
+      {
+        showStats && (
+          <div className="mb-8 animate-in slide-in-from-top duration-300">
+            <StatsTable visitor={state.visitorTeam} local={state.localTeam} visitorName={state.gameInfo.visitor} localName={state.gameInfo.home} competitionName={state.gameInfo.competition} />
+          </div>
+        )
+      }
 
       {/* Advanced Stats Toggle Button (Draggable) */}
       <DraggableTrigger onClick={() => setShowAdvancedStats(true)} />
@@ -2892,6 +2993,25 @@ const SingleSetScoreCard: React.FC<{
         visitorNextBatterIdx={visitorNextBatterIdx}
         localNextBatterIdx={localNextBatterIdx}
         onAdvanceInning={() => setShowAdvanceModal(true)}
+        liveStatusProps={{
+          visitorRuns: visitorRunsTotal,
+          localRuns: localRunsTotal,
+          inning: currentInning,
+          visitorOuts: visitorOuts,
+          localOuts: localOuts,
+          visitorName: state.gameInfo.visitor,
+          localName: state.gameInfo.home,
+          visitorLogo: state.gameInfo.visitorLogo,
+          localLogo: state.gameInfo.homeLogo,
+          onSwap: swapTeams,
+          onAdjustVisitor: (delta) => handleScoreAdjustment('visitor', delta),
+          onAdjustLocal: (delta) => handleScoreAdjustment('local', delta),
+          visitorHits: visitorHits,
+          localHits: localHits,
+          visitorErrors: parseInt(state.errors.visitor) || 0,
+          localErrors: parseInt(state.errors.local) || 0,
+          inningScores: state.inningScores
+        }}
       />
     </div>
   );
@@ -3459,79 +3579,6 @@ export const ScoreCard: React.FC = () => {
         onConfirm={executePrint}
       />
 
-      {/* --- Sticky Tab Navigation (Android Mobile Style) --- */}
-      <div className="sticky top-0 z-[50] bg-slate-900 shadow-md no-print w-full overflow-hidden border-b border-white/10">
-        <div className="flex flex-row items-center gap-2 px-2 py-2 w-full overflow-x-auto scrollbar-hide">
-
-          {/* 1. Logo */}
-          <div className="shrink-0">
-            <img src="/logo.png" alt="B5Tools" className="h-8 w-8 object-contain" />
-          </div>
-
-          {/* 2. Home Button */}
-          <button
-            onClick={() => window.location.href = '/'}
-            className="shrink-0 p-2 rounded-full bg-white/5 text-white/70 hover:text-white"
-            title="Ir al Inicio"
-          >
-            <Home size={20} />
-          </button>
-
-          {/* Separator */}
-          <div className="h-6 w-px bg-white/10 shrink-0 mx-1"></div>
-
-          {/* 3. Sets Tabs */}
-          <div className="flex flex-row gap-1 shrink-0">
-            {[1, 2, 3].map(setNum => {
-              const winner = setWinners[setNum - 1];
-              let label = `Set ${setNum}`;
-              let scoreLabel = '';
-              if (winner && winner.name) {
-                label = `S${setNum}`;
-                scoreLabel = winner.score;
-              }
-
-              return (
-                <button
-                  key={setNum}
-                  onClick={() => handleSetChange(setNum)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase whitespace-nowrap flex items-center gap-1
-                        ${currentSet === setNum
-                      ? 'bg-purple-600 text-white shadow-sm'
-                      : 'bg-white/5 text-white/50 hover:bg-white/10'
-                    }`}
-                >
-                  <span>{label}</span>
-                  {scoreLabel && <span className="text-[10px] opacity-80 bg-black/20 px-1 rounded">{scoreLabel}</span>}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Spacer to push actions to right if space permits, or just keep flow */}
-          <div className="flex-1 min-w-[10px]"></div>
-
-          {/* 4. Print Button */}
-          <button
-            onClick={handlePrintRequest}
-            className="shrink-0 p-2 rounded-full bg-green-500/10 text-green-300 hover:bg-green-500/20"
-            title="Imprimir / PDF"
-          >
-            <Printer size={20} />
-          </button>
-
-          {/* 5. Stats Button */}
-          <button
-            onClick={() => setGeneralStatsOpen(true)}
-            className="shrink-0 p-2 rounded-full bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/20"
-            title="Estadísticas Generales"
-          >
-            <BarChart size={20} />
-          </button>
-
-        </div>
-      </div>
-
       {loading ? (
         <div className="h-[50vh] flex items-center justify-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-500"></div>
@@ -3543,6 +3590,9 @@ export const ScoreCard: React.FC = () => {
               key={currentSet}
               setNum={currentSet}
               onWinnerUpdate={handleWinnerUpdate}
+              currentSet={currentSet}
+              setWinners={setWinners}
+              onSetChange={handleSetChange}
             />
           </div>
 
@@ -3553,11 +3603,13 @@ export const ScoreCard: React.FC = () => {
         </>
       )}
 
+
+
       <MatchWinnerModal matchWinner={matchWinner} onClose={() => setMatchWinner(null)} />
       <GeneralStatsModal isOpen={generalStatsOpen} onClose={() => setGeneralStatsOpen(false)} />
 
 
-    </div>
+    </div >
   );
 };
 

@@ -4,6 +4,34 @@ import { useNavigate } from 'react-router-dom';
 import { Home, Zap } from 'lucide-react';
 import { RegistrationModal } from '../components/RegistrationModal';
 
+const ToastNotification: React.FC<{ message: string; isVisible: boolean; onClose: () => void; duration?: number }> = ({ message, isVisible, onClose, duration = 5000 }) => {
+    React.useEffect(() => {
+        if (isVisible) {
+            const timer = setTimeout(onClose, duration);
+            return () => clearTimeout(timer);
+        }
+    }, [isVisible, duration, onClose]);
+
+    if (!isVisible) return null;
+
+    return (
+        <div className="fixed top-20 right-4 z-[9999] max-w-sm animate-in slide-in-from-right fade-in duration-300">
+            <div className="bg-blue-900/90 border border-blue-500/30 p-4 rounded-lg shadow-2xl backdrop-blur-md flex gap-3 text-sm text-blue-100">
+                <div className="shrink-0 mt-0.5 text-blue-400">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>
+                </div>
+                <div className="flex-1">
+                    <p className="font-semibold mb-1">Modo Local</p>
+                    <p className="text-blue-200/80 leading-snug">{message}</p>
+                </div>
+                <button onClick={onClose} className="shrink-0 -mr-1 -mt-1 text-blue-400 hover:text-white transition-colors h-6 w-6 flex items-center justify-center rounded-full hover:bg-blue-500/20">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+                </button>
+            </div>
+        </div>
+    );
+};
+
 export const ScoreKeeperPage: React.FC = () => {
     const navigate = useNavigate();
     const [isConnected, setIsConnected] = React.useState<boolean | null>(null);
@@ -49,19 +77,13 @@ export const ScoreKeeperPage: React.FC = () => {
             <div className="relative z-10 container mx-auto px-2 py-6 max-w-[1400px]">
                 {/* Local Mode Alert */}
                 {/* Local Mode Alert */}
-                {showLocalModeAlert && (
-                    <div className="mb-4 bg-blue-900/40 border border-blue-500/30 p-3 rounded-lg flex items-center justify-between gap-3 text-sm text-blue-200 shadow-lg backdrop-blur-sm no-print mx-12 md:mx-0 animate-in slide-in-from-top-2">
-                        <div className="flex items-center gap-3">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-info flex-shrink-0 text-blue-400"><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>
-                            <p>
-                                <span className="font-bold text-blue-100">Modo Local Activo:</span> Los datos de este partido se almacenan únicamente en tu dispositivo. No hay respaldo en la nube.
-                            </p>
-                        </div>
-                        <button onClick={() => setShowLocalModeAlert(false)} className="bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 p-1 rounded-full transition-colors">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
-                        </button>
-                    </div>
-                )}
+                {/* Local Mode Toast Notification */}
+                <ToastNotification
+                    message="Modo Local Activo: Los datos se almacenan únicamente en tu dispositivo."
+                    isVisible={showLocalModeAlert}
+                    onClose={() => setShowLocalModeAlert(false)}
+                    duration={5000}
+                />
 
 
 
