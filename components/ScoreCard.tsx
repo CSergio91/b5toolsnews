@@ -39,7 +39,8 @@ import {
   BarChart,
   PlusCircle,
   HelpCircle,
-  TrendingUp
+  TrendingUp,
+  Home
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -947,6 +948,7 @@ interface LiveGameStatusProps {
 
 const LiveGameStatus = ({ visitorRuns, localRuns, inning, visitorOuts, localOuts, visitorName, localName, visitorLogo, localLogo, onSwap, onAdjustVisitor, onAdjustLocal, visitorHits, localHits, visitorErrors, localErrors, inningScores }: LiveGameStatusProps) => {
   const [position, setPosition] = useState({ x: 0, y: 10 });
+  const [isCompact, setIsCompact] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1021,79 +1023,135 @@ const LiveGameStatus = ({ visitorRuns, localRuns, inning, visitorOuts, localOuts
       className={`fixed z-[160] pointer-events-auto no-print touch-none select-none`}
       style={{ left: position.x, top: position.y }}
       onMouseDown={handleMouseDown}
+      onMouseDown={handleMouseDown}
       onTouchStart={handleTouchStart}
     >
-      <div className={`bg-[#2e2b44]/95 backdrop-blur-xl border border-white/20 rounded-xl shadow-2xl flex flex-col overflow-hidden w-full max-w-[650px] min-w-[320px] transition-shadow ${isDragging ? 'shadow-purple-500/20 cursor-grabbing' : 'cursor-grab'} ring-1 ring-black/50`}>
+      {isCompact ? (
+        <div className={`bg-[#2e2b44]/95 backdrop-blur-xl border border-white/20 rounded-full shadow-2xl flex items-center px-4 py-2 gap-4 transition-shadow ${isDragging ? 'shadow-purple-500/20 cursor-grabbing' : 'cursor-grab'} ring-1 ring-black/50`}>
+          <GripHorizontal size={14} className="text-white/20" />
 
-        {/* Table Structure */}
-        <div className="flex flex-col text-[10px] md:text-xs">
-          {/* Header */}
-          <div className="flex bg-[#3f3c56] text-white/70 font-bold uppercase tracking-wider border-b border-white/10">
-            <div className="w-24 md:w-32 p-2 pl-3 flex items-center">EQUIPO</div>
-            {frames.map(i => (
-              <div key={i} className="flex-1 min-w-[20px] p-2 text-center border-l border-white/10">{i + 1}</div>
-            ))}
-            <div className="w-8 md:w-10 p-2 text-center border-l border-white/10 text-white font-black bg-white/5">C</div>
-            <div className="w-8 md:w-10 p-2 text-center border-l border-white/10 text-green-400 font-black bg-white/5">H</div>
-            <div className="w-8 md:w-10 p-2 text-center border-l border-white/10 text-yellow-400 font-black bg-white/5">E</div>
-          </div>
+          <div className="flex items-center gap-3">
+            <div className="flex flex-col items-center leading-none relative group cursor-pointer">
+              <span className="text-xl font-black text-purple-300">{visitorRuns}</span>
+              <span className="text-[8px] font-bold text-white/50">{visitorName?.substring(0, 3) || 'VIS'}</span>
+              <div className="absolute inset-0 flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 bg-black/80 transition-opacity rounded backdrop-blur-sm">
+                <button onClick={(e) => { e.stopPropagation(); onAdjustVisitor(-1); }} className="text-white hover:text-red-400 font-bold text-xs px-1">-</button>
+                <button onClick={(e) => { e.stopPropagation(); onAdjustVisitor(1); }} className="text-white hover:text-green-400 font-bold text-xs px-1">+</button>
+              </div>
+            </div>
 
-          {/* Visitor Row */}
-          <div className="flex items-center border-b border-white/5 bg-[#2a1205]/10 relative group hover:bg-white/5 transition-colors">
-            <div className="w-24 md:w-32 p-2 pl-3 flex flex-col justify-center relative">
-              <span className="font-bold text-purple-300 uppercase truncate text-xs md:text-sm">{visitorName || 'VISITANTE'}</span>
-              {/* Visitor Dots */}
-              <div className="flex gap-1 mt-1">
+            <div className="h-8 w-px bg-white/10 mx-1"></div>
+
+            <div className="flex flex-col items-center leading-none min-w-[30px]">
+              <span className="text-xs font-bold text-white">INN {inning}</span>
+              <div className="flex gap-0.5 mt-1">
                 {[...Array(3)].map((_, i) => (
-                  <div key={i} className={`w-1.5 h-1.5 rounded-full border border-red-500/40 ${i < visitorOuts ? 'bg-red-500 shadow-[0_0_5px_rgba(239,68,68,0.8)]' : 'bg-transparent'}`} />
+                  <div key={i} className={`w-1 h-1 rounded-full ${i < (Math.max(visitorOuts, localOuts)) ? 'bg-red-500' : 'bg-white/20'}`} />
                 ))}
               </div>
             </div>
-            {frames.map(i => (
-              <div key={i} className="flex-1 min-w-[20px] p-2 text-center border-l border-white/5 font-mono font-bold text-white/80">
-                {inningScores.visitor[i] || '0'}
-              </div>
-            ))}
-            <div className="w-8 md:w-10 p-2 text-center border-l border-white/5 font-mono font-black text-white text-sm bg-white/5 flex items-center justify-center relative group/score">
-              {visitorRuns}
-              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/score:opacity-100 bg-black/60 transition-opacity no-drag gap-1">
-                <button onClick={() => onAdjustVisitor(-1)} className="w-4 h-4 bg-white/10 rounded-full flex items-center justify-center hover:bg-white/30 text-xs">-</button>
-                <button onClick={() => onAdjustVisitor(1)} className="w-4 h-4 bg-white/10 rounded-full flex items-center justify-center hover:bg-white/30 text-xs">+</button>
+
+            <div className="h-8 w-px bg-white/10 mx-1"></div>
+
+            <div className="flex flex-col items-center leading-none relative group cursor-pointer">
+              <span className="text-xl font-black text-amber-300">{localRuns}</span>
+              <span className="text-[8px] font-bold text-white/50">{localName?.substring(0, 3) || 'LOC'}</span>
+              <div className="absolute inset-0 flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 bg-black/80 transition-opacity rounded backdrop-blur-sm">
+                <button onClick={(e) => { e.stopPropagation(); onAdjustLocal(-1); }} className="text-white hover:text-red-400 font-bold text-xs px-1">-</button>
+                <button onClick={(e) => { e.stopPropagation(); onAdjustLocal(1); }} className="text-white hover:text-green-400 font-bold text-xs px-1">+</button>
               </div>
             </div>
-            <div className="w-8 md:w-10 p-2 text-center border-l border-white/5 font-mono font-bold text-white/60 bg-white/5">{visitorHits}</div>
-            <div className="w-8 md:w-10 p-2 text-center border-l border-white/5 font-mono font-bold text-white/60 bg-white/5">{visitorErrors}</div>
           </div>
 
-          {/* Local Row */}
-          <div className="flex items-center bg-[#2a1205]/20 relative group hover:bg-white/5 transition-colors">
-            <div className="w-24 md:w-32 p-2 pl-3 flex flex-col justify-center relative">
-              <span className="font-bold text-orange-300 uppercase truncate text-xs md:text-sm">{localName || 'LOCAL'}</span>
-              {/* Local Dots */}
-              <div className="flex gap-1 mt-1">
-                {[...Array(3)].map((_, i) => (
-                  <div key={i} className={`w-1.5 h-1.5 rounded-full border border-amber-500/40 ${i < localOuts ? 'bg-amber-500 shadow-[0_0_5px_rgba(245,158,11,0.8)]' : 'bg-transparent'}`} />
-                ))}
-              </div>
-            </div>
-            {frames.map(i => (
-              <div key={i} className="flex-1 min-w-[20px] p-2 text-center border-l border-white/5 font-mono font-bold text-white/80">
-                {inningScores.local[i] || '0'}
-              </div>
-            ))}
-            <div className="w-8 md:w-10 p-2 text-center border-l border-white/5 font-mono font-black text-white text-sm bg-white/5 flex items-center justify-center relative group/score">
-              {localRuns}
-              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/score:opacity-100 bg-black/60 transition-opacity no-drag gap-1">
-                <button onClick={() => onAdjustLocal(-1)} className="w-4 h-4 bg-white/10 rounded-full flex items-center justify-center hover:bg-white/30 text-xs">-</button>
-                <button onClick={() => onAdjustLocal(1)} className="w-4 h-4 bg-white/10 rounded-full flex items-center justify-center hover:bg-white/30 text-xs">+</button>
-              </div>
-            </div>
-            <div className="w-8 md:w-10 p-2 text-center border-l border-white/5 font-mono font-bold text-white/60 bg-white/5">{localHits}</div>
-            <div className="w-8 md:w-10 p-2 text-center border-l border-white/5 font-mono font-bold text-white/60 bg-white/5">{localErrors}</div>
-          </div>
+          <button
+            onClick={(e) => { e.stopPropagation(); setIsCompact(false); }}
+            className="ml-2 w-6 h-6 rounded-full bg-white/5 hover:bg-white/20 flex items-center justify-center text-white/50 hover:text-white transition-colors border border-white/5"
+          >
+            <Maximize2 size={12} />
+          </button>
         </div>
+      ) : (
+        <div className={`bg-[#2e2b44]/95 backdrop-blur-xl border border-white/20 rounded-xl shadow-2xl flex flex-col overflow-hidden w-full max-w-[650px] min-w-[320px] transition-shadow ${isDragging ? 'shadow-purple-500/20 cursor-grabbing' : 'cursor-grab'} ring-1 ring-black/50`}>
 
-      </div>
+          {/* Table Structure */}
+          <div className="flex flex-col text-[10px] md:text-xs">
+            {/* Header */}
+            <div className="flex bg-[#3f3c56] text-white/70 font-bold uppercase tracking-wider border-b border-white/10">
+              <div className="w-24 md:w-32 p-2 pl-3 flex items-center justify-between">
+                EQUIPO
+                <button
+                  onClick={(e) => { e.stopPropagation(); setIsCompact(true); }}
+                  className="w-5 h-5 rounded hover:bg-white/10 flex items-center justify-center text-white/50 hover:text-white transition-colors"
+                  title="Minimizar"
+                >
+                  <Minimize2 size={12} />
+                </button>
+              </div>
+              {frames.map(i => (
+                <div key={i} className="flex-1 min-w-[20px] p-2 text-center border-l border-white/10">{i + 1}</div>
+              ))}
+              <div className="w-8 md:w-10 p-2 text-center border-l border-white/10 text-white font-black bg-white/5">C</div>
+              <div className="w-8 md:w-10 p-2 text-center border-l border-white/10 text-green-400 font-black bg-white/5">H</div>
+              <div className="w-8 md:w-10 p-2 text-center border-l border-white/10 text-yellow-400 font-black bg-white/5">E</div>
+            </div>
+
+            {/* Visitor Row */}
+            <div className="flex items-center border-b border-white/5 bg-[#2a1205]/10 relative group hover:bg-white/5 transition-colors">
+              <div className="w-24 md:w-32 p-2 pl-3 flex flex-col justify-center relative">
+                <span className="font-bold text-purple-300 uppercase truncate text-xs md:text-sm">{visitorName || 'VISITANTE'}</span>
+                {/* Visitor Dots */}
+                <div className="flex gap-1 mt-1">
+                  {[...Array(3)].map((_, i) => (
+                    <div key={i} className={`w-1.5 h-1.5 rounded-full border border-red-500/40 ${i < visitorOuts ? 'bg-red-500 shadow-[0_0_5px_rgba(239,68,68,0.8)]' : 'bg-transparent'}`} />
+                  ))}
+                </div>
+              </div>
+              {frames.map(i => (
+                <div key={i} className="flex-1 min-w-[20px] p-2 text-center border-l border-white/5 font-mono font-bold text-white/80">
+                  {inningScores.visitor[i] || '0'}
+                </div>
+              ))}
+              <div className="w-8 md:w-10 p-2 text-center border-l border-white/5 font-mono font-black text-white text-sm bg-white/5 flex items-center justify-center relative group/score">
+                {visitorRuns}
+                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/score:opacity-100 bg-black/60 transition-opacity no-drag gap-1">
+                  <button onClick={() => onAdjustVisitor(-1)} className="w-4 h-4 bg-white/10 rounded-full flex items-center justify-center hover:bg-white/30 text-xs">-</button>
+                  <button onClick={() => onAdjustVisitor(1)} className="w-4 h-4 bg-white/10 rounded-full flex items-center justify-center hover:bg-white/30 text-xs">+</button>
+                </div>
+              </div>
+              <div className="w-8 md:w-10 p-2 text-center border-l border-white/5 font-mono font-bold text-white/60 bg-white/5">{visitorHits}</div>
+              <div className="w-8 md:w-10 p-2 text-center border-l border-white/5 font-mono font-bold text-white/60 bg-white/5">{visitorErrors}</div>
+            </div>
+
+            {/* Local Row */}
+            <div className="flex items-center bg-[#2a1205]/20 relative group hover:bg-white/5 transition-colors">
+              <div className="w-24 md:w-32 p-2 pl-3 flex flex-col justify-center relative">
+                <span className="font-bold text-orange-300 uppercase truncate text-xs md:text-sm">{localName || 'LOCAL'}</span>
+                {/* Local Dots */}
+                <div className="flex gap-1 mt-1">
+                  {[...Array(3)].map((_, i) => (
+                    <div key={i} className={`w-1.5 h-1.5 rounded-full border border-amber-500/40 ${i < localOuts ? 'bg-amber-500 shadow-[0_0_5px_rgba(245,158,11,0.8)]' : 'bg-transparent'}`} />
+                  ))}
+                </div>
+              </div>
+              {frames.map(i => (
+                <div key={i} className="flex-1 min-w-[20px] p-2 text-center border-l border-white/5 font-mono font-bold text-white/80">
+                  {inningScores.local[i] || '0'}
+                </div>
+              ))}
+              <div className="w-8 md:w-10 p-2 text-center border-l border-white/5 font-mono font-black text-white text-sm bg-white/5 flex items-center justify-center relative group/score">
+                {localRuns}
+                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/score:opacity-100 bg-black/60 transition-opacity no-drag gap-1">
+                  <button onClick={() => onAdjustLocal(-1)} className="w-4 h-4 bg-white/10 rounded-full flex items-center justify-center hover:bg-white/30 text-xs">-</button>
+                  <button onClick={() => onAdjustLocal(1)} className="w-4 h-4 bg-white/10 rounded-full flex items-center justify-center hover:bg-white/30 text-xs">+</button>
+                </div>
+              </div>
+              <div className="w-8 md:w-10 p-2 text-center border-l border-white/5 font-mono font-bold text-white/60 bg-white/5">{localHits}</div>
+              <div className="w-8 md:w-10 p-2 text-center border-l border-white/5 font-mono font-bold text-white/60 bg-white/5">{localErrors}</div>
+            </div>
+          </div>
+
+        </div>
+      )}
     </div>,
     document.body
   );
@@ -1474,8 +1532,10 @@ const StatsChart: React.FC<{
             <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" /> {lName.substring(0, 3)}: <span className="font-mono font-bold ml-auto">{dataL[hoverIdx].toFixed(labels[hoverIdx] === 'AVE' ? 3 : 0)}</span>
           </div>
         </div>
-      )}
-    </div>
+
+      )
+      }
+    </div >
   );
 };
 
@@ -2301,7 +2361,7 @@ const SingleSetScoreCard: React.FC<{
           @page { size: landscape; margin: 10mm; }
           body { background: white !important; color: black !important; -webkit-print-color-adjust: exact; padding: 0 !important; margin: 0 !important; overflow: visible !important; height: auto !important; }
           #root { height: auto !important; overflow: visible !important; }
-          .no-print, .fixed, button { display: none !important; }
+          .no-print, .fixed:not(.mini-card), button:not(.mini-maximize) { display: none !important; }
           /* Logic for printing ONLY stats table when requested */
           body.print-stats-only > * { display: none !important; }
           body.print-stats-only .print-stats-table { display: block !important; position: absolute; top: 0; left: 0; width: 100%; margin: 0; }
@@ -2370,6 +2430,8 @@ const SingleSetScoreCard: React.FC<{
             <RotateCcw size={14} /> REINICIAR
           </button>
 
+
+
           <button
             onClick={swapTeams}
             className="flex items-center gap-2 px-4 py-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 rounded-lg border border-blue-500/20 text-xs font-bold transition-all hover:shadow-lg hover:shadow-blue-500/10"
@@ -2377,6 +2439,8 @@ const SingleSetScoreCard: React.FC<{
           >
             <ArrowRightLeft size={14} /> ALTERNAR
           </button>
+
+
 
           <button
             onClick={() => setShowStats(!showStats)}
@@ -3193,17 +3257,16 @@ export const MatchWinnerModal: React.FC<{
 };
 
 export const ScoreCard: React.FC = () => {
-  const [currentSet, setCurrentSet] = useState(1);
-  const [matchWinner, setMatchWinner] = useState<{ name: string; score: string; setsWon: number } | null>(null);
-  const [generalStatsOpen, setGeneralStatsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-
-  // Track winners of each set
-  const [setWinners, setSetWinners] = useState<(any | null)[]>([null, null, null]);
-
-  // --- Print Handling ---
+  const [currentSet, setCurrentSet] = useState(1);
+  const [setWinners, setSetWinners] = useState<({ name: string; score: string; isVisitor: boolean } | null)[]>([null, null, null]);
+  const [matchWinner, setMatchWinner] = useState<{ name: string; score: string; setsWon: number } | null>(null);
   const [printConfigModalOpen, setPrintConfigModalOpen] = useState(false);
   const [printConfig, setPrintConfig] = useState<PrintConfig | null>(null);
+  const [generalStatsOpen, setGeneralStatsOpen] = useState(false);
+
+  // New View Mode State for Mobile/Tablet Optimization
+
 
   const handlePrintRequest = () => {
     setPrintConfigModalOpen(true);
@@ -3212,7 +3275,6 @@ export const ScoreCard: React.FC = () => {
   const executePrint = (config: PrintConfig) => {
     setPrintConfigModalOpen(false);
     setPrintConfig(config);
-
     // Give React time to render the print view
     setTimeout(() => {
       window.print();
@@ -3225,37 +3287,36 @@ export const ScoreCard: React.FC = () => {
     return () => window.removeEventListener('afterprint', cleanup);
   }, []);
 
-  // Force re-render of child when switching to ensure fresh state load
   const handleSetChange = (set: number) => {
     setLoading(true);
     setCurrentSet(set);
     setTimeout(() => setLoading(false), 50);
   };
 
-  // Check Match Winner
-  const handleWinnerUpdate = (winner: any) => {
-    // Update local tracking
-    const newWinners = [...setWinners];
-    newWinners[currentSet - 1] = winner;
-    setSetWinners(newWinners);
+  const handleWinnerUpdate = (winner: { name: string; score: string; isVisitor: boolean } | null) => {
+    setSetWinners(prev => {
+      const newWinners = [...prev];
+      newWinners[currentSet - 1] = winner;
+      return newWinners;
+    });
 
-    // Check overall
+    // Check Match Winner Logic (Best of 3)
     let vWins = 0;
     let lWins = 0;
     let vName = 'Visitante';
     let lName = 'Local';
 
-    // Runtime tracking `handleWinnerUpdate` only fires for CURRENT set.
-    // We should scan localStorage on mount/update.
     for (let i = 1; i <= 3; i++) {
+      // We rely on localStorage as the source of truth for completed sets to determine match winner across components/reloads
       const saved = localStorage.getItem(`b5_scorekeeper_set_${i}`);
       if (saved) {
-        const p = JSON.parse(saved);
-        if (p.winner) {
-          if (p.winner.isVisitor) vWins++; else lWins++;
-          // Capture names
-          if (i === 1) { vName = p.gameInfo.visitor; lName = p.gameInfo.home; }
-        }
+        try {
+          const p = JSON.parse(saved);
+          if (p.winner) {
+            if (p.winner.isVisitor) vWins++; else lWins++;
+            if (i === 1) { vName = p.gameInfo.visitor; lName = p.gameInfo.home; }
+          }
+        } catch (e) { console.error("Error reading saved set", e); }
       }
     }
 
@@ -3265,8 +3326,6 @@ export const ScoreCard: React.FC = () => {
 
   return (
     <div className={`min-h-screen bg-transparent pb-20 ${printConfig ? 'printing-mode' : ''}`}>
-
-      {/* GLOBAL PRINT STYLES */}
       <style>{`
         @media print {
           @page { size: landscape; margin: 5mm; }
@@ -3278,27 +3337,16 @@ export const ScoreCard: React.FC = () => {
           }
           .no-print { display: none !important; }
           .printing-mode { background: white !important; overflow: visible !important; height: auto !important; }
-          
-          /* Force colors for print - STRICT BLACK MODE */
           * { color: black !important; text-shadow: none !important; box-shadow: none !important; }
-          
           .border-white\\/10, .border-white\\/20, .border-white\\/5 { border-color: #000 !important; }
           .bg-white\\/5, .bg-white\\/10 { background: transparent !important; }
           .text-white, .text-white\\/70, .text-white\\/40, .text-white\\/50 { color: black !important; }
           .text-purple-200, .text-orange-200 { color: black !important; font-weight: bold !important; }
           .bg-slate-900, .bg-[#1e1b4b], .bg-[#2a1205] { background: transparent !important; }
-          
-          /* Visibility Control based on Config */
           .print-section-info { display: ${printConfig?.showInfo ? 'block' : 'none'} !important; }
-          .print-section-stats { display: ${printConfig?.showStats ? 'block' : 'none'} !important; width: 100% !important; margin-top: 20px !important; }  /* Ensure this class exists */
-
-          /* Header Logo */
+          .print-section-stats { display: ${printConfig?.showStats ? 'block' : 'none'} !important; width: 100% !important; margin-top: 20px !important; }
           .print-logo-header { display: flex !important; width: 100%; justify-content: space-between; align-items: center; border-bottom: 2px solid black; padding-bottom: 10px; margin-bottom: 20px; }
-          
-          /* Ensure table text is black */
           table, th, td { color: black !important; border-color: black !important; }
-          
-          /* Hide button inside printable stats if any left */
           .print-section-stats button { display: none !important; }
         }
       `}</style>
@@ -3309,49 +3357,76 @@ export const ScoreCard: React.FC = () => {
         onConfirm={executePrint}
       />
 
-      {/* --- Sticky Tab Navigation --- */}
-      <div className="sticky top-0 z-[50] bg-slate-900/80 backdrop-blur-md border-b border-white/10 shadow-lg no-print">
-        <div className="max-w-[1920px] mx-auto px-4 py-2 flex items-center justify-between">
-          <div className="flex bg-black/20 p-1 rounded-full border border-white/5 h-[36px] items-center">
-            {[1, 2, 3].map(setNum => {
-              const winner = setWinners[setNum - 1]; // Array is 0-indexed, setNum is 1-3
-              let label = `Set ${setNum}`;
+      {/* --- Sticky Tab Navigation (Android Mobile Style) --- */}
+      <div className="sticky top-0 z-[50] bg-slate-900 shadow-md no-print w-full overflow-hidden border-b border-white/10">
+        <div className="flex flex-row items-center gap-2 px-2 py-2 w-full overflow-x-auto scrollbar-hide">
 
+          {/* 1. Logo */}
+          <div className="shrink-0">
+            <img src="/logo.png" alt="B5Tools" className="h-8 w-8 object-contain" />
+          </div>
+
+          {/* 2. Home Button */}
+          <button
+            onClick={() => window.location.href = '/'}
+            className="shrink-0 p-2 rounded-full bg-white/5 text-white/70 hover:text-white"
+            title="Ir al Inicio"
+          >
+            <Home size={20} />
+          </button>
+
+          {/* Separator */}
+          <div className="h-6 w-px bg-white/10 shrink-0 mx-1"></div>
+
+          {/* 3. Sets Tabs */}
+          <div className="flex flex-row gap-1 shrink-0">
+            {[1, 2, 3].map(setNum => {
+              const winner = setWinners[setNum - 1];
+              let label = `Set ${setNum}`;
+              let scoreLabel = '';
               if (winner && winner.name) {
-                label = `Set ${setNum} - ${winner.name}`; // Original requirement
+                label = `S${setNum}`;
+                scoreLabel = winner.score;
               }
 
               return (
                 <button
                   key={setNum}
                   onClick={() => handleSetChange(setNum)}
-                  className={`px-3 md:px-6 py-1 rounded-full text-[10px] md:text-xs font-bold uppercase tracking-wider transition-all whitespace-nowrap
-                                                 ${currentSet === setNum
-                      ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-900/40 ring-1 ring-white/20'
-                      : 'text-white/40 hover:text-white hover:bg-white/5'
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase whitespace-nowrap flex items-center gap-1
+                        ${currentSet === setNum
+                      ? 'bg-purple-600 text-white shadow-sm'
+                      : 'bg-white/5 text-white/50 hover:bg-white/10'
                     }`}
                 >
-                  {label}
+                  <span>{label}</span>
+                  {scoreLabel && <span className="text-[10px] opacity-80 bg-black/20 px-1 rounded">{scoreLabel}</span>}
                 </button>
               );
             })}
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handlePrintRequest}
-              className="flex items-center gap-2 px-4 py-1.5 bg-green-500/10 hover:bg-green-500/20 text-green-300 rounded-full border border-green-500/20 text-xs font-bold transition-all"
-            >
-              <Printer size={14} /> PDF
-            </button>
+          {/* Spacer to push actions to right if space permits, or just keep flow */}
+          <div className="flex-1 min-w-[10px]"></div>
 
-            <button
-              onClick={() => setGeneralStatsOpen(true)}
-              className="flex items-center gap-2 px-4 py-1.5 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 rounded-full border border-indigo-500/20 text-xs font-bold transition-all"
-            >
-              <BarChart size={14} /> Estadísticas Generales
-            </button>
-          </div>
+          {/* 4. Print Button */}
+          <button
+            onClick={handlePrintRequest}
+            className="shrink-0 p-2 rounded-full bg-green-500/10 text-green-300 hover:bg-green-500/20"
+            title="Imprimir / PDF"
+          >
+            <Printer size={20} />
+          </button>
+
+          {/* 5. Stats Button */}
+          <button
+            onClick={() => setGeneralStatsOpen(true)}
+            className="shrink-0 p-2 rounded-full bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/20"
+            title="Estadísticas Generales"
+          >
+            <BarChart size={20} />
+          </button>
+
         </div>
       </div>
 
@@ -3362,7 +3437,11 @@ export const ScoreCard: React.FC = () => {
       ) : (
         <>
           <div className="print-section-info">
-            <SingleSetScoreCard key={currentSet} setNum={currentSet} onWinnerUpdate={handleWinnerUpdate} />
+            <SingleSetScoreCard
+              key={currentSet}
+              setNum={currentSet}
+              onWinnerUpdate={handleWinnerUpdate}
+            />
           </div>
 
           <div className="print-section-stats hidden print:block">
@@ -3374,6 +3453,6 @@ export const ScoreCard: React.FC = () => {
 
       <MatchWinnerModal matchWinner={matchWinner} onClose={() => setMatchWinner(null)} />
       <GeneralStatsModal isOpen={generalStatsOpen} onClose={() => setGeneralStatsOpen(false)} />
-    </div >
+    </div>
   );
 };

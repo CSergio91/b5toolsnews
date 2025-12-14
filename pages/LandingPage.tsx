@@ -1,14 +1,21 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowRight, LogIn, UserPlus, Zap, Check, Upload, Smartphone, Eye, EyeOff } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { ParticlesBackground } from '../components/ParticlesBackground';
+import { CustomSpinner } from '../components/CustomSpinner';
+import { useLanguage } from '../context/LanguageContext';
+import { LanguageSwitcher } from '../components/LanguageSwitcher';
 
 export const LandingPage: React.FC = () => {
     const navigate = useNavigate();
+    const { t } = useLanguage();
     // isLogin true = showing Front (Login), false = showing Back (Register)
     const [isLogin, setIsLogin] = useState(true);
     const [isForgot, setIsForgot] = useState(false); // New state for forgot password view
+
+    // Page Loading State
+    const [pageLoading, setPageLoading] = useState(true);
 
     // Login State
     const [loginEmail, setLoginEmail] = useState('');
@@ -34,6 +41,14 @@ export const LandingPage: React.FC = () => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+    useEffect(() => {
+        // Simulate initial loading
+        const timer = setTimeout(() => {
+            setPageLoading(false);
+        }, 1200);
+        return () => clearTimeout(timer);
+    }, []);
 
     const handleGoogleLogin = async () => {
         try {
@@ -146,8 +161,21 @@ export const LandingPage: React.FC = () => {
         }
     };
 
+
+
+    if (pageLoading) {
+        return (
+            <div className="h-screen w-full bg-black flex items-center justify-center relative overflow-hidden">
+                <ParticlesBackground />
+                <div className="relative z-10 scale-75 md:scale-100">
+                    <CustomSpinner size="large" />
+                </div>
+            </div>
+        );
+    }
+
     return (
-        <div className="min-h-screen w-full bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-slate-900 via-purple-950 to-black text-white selection:bg-purple-500 selection:text-white flex flex-col relative overflow-hidden">
+        <div className="h-[100dvh] w-full bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-slate-900 via-purple-950 to-black text-white selection:bg-purple-500 selection:text-white flex flex-col relative overflow-hidden">
 
             {/* Background FX */}
             <ParticlesBackground />
@@ -161,32 +189,33 @@ export const LandingPage: React.FC = () => {
                     <img src="/logo.png" alt="B5Tools Logo" className="h-10 w-auto" />
                     <span className="font-bold text-xl tracking-tight">B5Tools</span>
                 </div>
+                <LanguageSwitcher />
             </nav>
 
-            <main className="flex-1 relative z-10 flex flex-col xl:flex-row items-center justify-center p-6 gap-12 max-w-7xl mx-auto w-full">
+            <main className="flex-1 relative z-10 flex flex-col xl:flex-row items-center justify-center p-4 md:p-6 gap-6 md:gap-12 max-w-7xl mx-auto w-full overflow-hidden">
 
-                {/* Hero Section */}
-                <div className="flex-1 text-center xl:text-left space-y-6 max-w-2xl">
-                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-xs font-medium text-purple-300 mb-2 mx-auto xl:mx-0">
+                {/* Hero Section - Visible on all devices, scaled for mobile */}
+                <div className="flex flex-col flex-1 text-center xl:text-left space-y-4 md:space-y-6 max-w-2xl justify-center z-20 xl:mb-0 mb-4 h-auto shrink-0 md:shrink-1">
+                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-[10px] md:text-xs font-medium text-purple-300 mb-0 md:mb-2 mx-auto xl:mx-0">
                         <span className="relative flex h-2 w-2">
                             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75"></span>
                             <span className="relative inline-flex rounded-full h-2 w-2 bg-purple-500"></span>
                         </span>
-                        La Herramienta del Momento para Beisbol Five
+                        {t('landing.hero_tag')}
                     </div>
 
-                    <h1 className="text-5xl md:text-7xl font-black tracking-tight leading-tight">
+                    <h1 className="text-3xl md:text-5xl lg:text-7xl font-black tracking-tight leading-tight">
                         <span className="bg-clip-text text-transparent bg-gradient-to-r from-white via-purple-200 to-indigo-200">
-                            Lleva tu juego
+                            {t('landing.hero_title_1')} <br />
                         </span>
-                        <br />
-                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-500 to-indigo-500">
-                            al siguiente nivel.
+                        <br className="hidden md:block" />
+                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-500 to-indigo-500 md:ml-2">
+                            {t('landing.hero_title_2')}
                         </span>
                     </h1>
 
-                    <p className="text-lg text-white/60 max-w-xl mx-auto xl:mx-0 leading-relaxed">
-                        La plataforma oficial de anotación para Beisbol Five. Gestiona torneos, estadísticas y comparte resultados en tiempo real con una interfaz premium.
+                    <p className="text-sm md:text-lg text-white/60 max-w-xl mx-auto xl:mx-0 leading-relaxed hidden md:block">
+                        {t('landing.hero_desc')}
                     </p>
 
                     <div className="flex flex-col sm:flex-row gap-4 pt-4 justify-center xl:justify-start">
@@ -195,14 +224,14 @@ export const LandingPage: React.FC = () => {
                             className="group relative px-8 py-4 bg-white text-black font-bold rounded-xl hover:bg-gray-100 transition-all active:scale-95 shadow-[0_0_20px_rgba(255,255,255,0.3)] flex items-center justify-center gap-2"
                         >
                             <Zap className="text-yellow-500 fill-current" size={20} />
-                            <span>Empezar Gratis</span>
+                            <span>{t('landing.cta_start')}</span>
                             <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
                         </button>
                     </div>
                 </div>
 
-                {/* 3D Auth Card Container */}
-                <div className="w-full max-w-md perspective-[2000px] h-[650px] flex items-center justify-center">
+                {/* 3D Auth Card Container - Adjusted height for mobile/tablet */}
+                <div className="w-full max-w-sm md:max-w-md perspective-[2000px] h-[510px] md:h-[650px] flex items-center justify-center shrink-0 z-30">
                     {/* The Flipping Card Wrapper */}
                     <div className={`relative w-full h-full transition-transform duration-700 transform-style-3d ${!isLogin ? 'rotate-y-180' : ''}`}>
 
@@ -212,8 +241,8 @@ export const LandingPage: React.FC = () => {
                                 <div className="absolute inset-0 bg-gradient-to-br from-purple-500/10 to-transparent pointer-events-none"></div>
 
                                 <div className="relative z-10 flex-1 flex flex-col justify-center">
-                                    <h2 className="text-3xl font-bold mb-2">Bienvenido</h2>
-                                    <p className="text-white/40 text-sm mb-8">Inicia sesión para continuar.</p>
+                                    <h2 className="text-3xl font-bold mb-2">{t('landing.login_welcome')}</h2>
+                                    <p className="text-white/40 text-sm mb-8">{t('landing.login_subtitle')}</p>
 
                                     {isForgot ? (
                                         <div className="animate-in fade-in slide-in-from-right duration-300">
@@ -221,21 +250,21 @@ export const LandingPage: React.FC = () => {
                                                 <button onClick={() => { setIsForgot(false); setError(null); setSuccessMsg(null); }} className="text-white/50 hover:text-white transition-colors">
                                                     <ArrowRight size={20} className="rotate-180" />
                                                 </button>
-                                                <h3 className="text-xl font-bold">Recuperar Contraseña</h3>
+                                                <h3 className="text-xl font-bold">{t('landing.recover_title')}</h3>
                                             </div>
 
-                                            <p className="text-white/40 text-sm mb-6">Ingresa tu correo para recibir un enlace de recuperación.</p>
+                                            <p className="text-white/40 text-sm mb-6">{t('landing.recover_desc')}</p>
 
                                             <form onSubmit={handleForgotPassword} className="space-y-4">
                                                 <input
-                                                    type="email" placeholder="Correo Electrónico" value={forgotEmail} onChange={e => setForgotEmail(e.target.value)}
+                                                    type="email" placeholder={t('landing.email')} value={forgotEmail} onChange={e => setForgotEmail(e.target.value)}
                                                     className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-purple-500 focus:bg-black/40 transition-all outline-none" required
                                                 />
                                                 {error && <div className="text-red-300 text-xs bg-red-500/10 p-2 rounded border border-red-500/20">{error}</div>}
                                                 {successMsg && <div className="text-green-300 text-xs bg-green-500/10 p-2 rounded border border-green-500/20">{successMsg}</div>}
 
                                                 <button type="submit" disabled={loading} className="w-full py-3 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl shadow-lg shadow-purple-900/40 active:scale-95 transition-all">
-                                                    {loading ? 'Enviando...' : 'Enviar Correo'}
+                                                    {loading ? t('landing.recover_sending') : t('landing.recover_btn')}
                                                 </button>
                                             </form>
                                         </div>
@@ -246,23 +275,23 @@ export const LandingPage: React.FC = () => {
                                                 className="w-full py-3 bg-white text-black font-bold rounded-xl hover:bg-gray-100 transition-colors flex items-center justify-center gap-3 mb-6"
                                             >
                                                 <img src="https://www.google.com/favicon.ico" alt="Google" className="w-5 h-5" />
-                                                <span>Continuar con Google</span>
+                                                <span>{t('landing.google_login')}</span>
                                             </button>
 
                                             <div className="relative mb-6">
                                                 <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-white/10"></div></div>
-                                                <div className="relative flex justify-center text-xs uppercase"><span className="bg-[#0f0e1a] px-2 text-white/30">O con correo</span></div>
+                                                <div className="relative flex justify-center text-xs uppercase"><span className="bg-[#0f0e1a] px-2 text-white/30">{t('landing.or_email')}</span></div>
                                             </div>
 
                                             <form onSubmit={handleLogin} className="space-y-4">
                                                 <input
-                                                    type="email" placeholder="Correo Electrónico" value={loginEmail} onChange={e => setLoginEmail(e.target.value)}
+                                                    type="email" placeholder={t('landing.email')} value={loginEmail} onChange={e => setLoginEmail(e.target.value)}
                                                     className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-purple-500 focus:bg-black/40 transition-all outline-none" required
                                                 />
                                                 <div className="relative">
                                                     <input
                                                         type={showLoginPassword ? "text" : "password"}
-                                                        placeholder="Contraseña"
+                                                        placeholder={t('landing.password')}
                                                         value={loginPassword}
                                                         onChange={e => setLoginPassword(e.target.value)}
                                                         className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-purple-500 focus:bg-black/40 transition-all outline-none pr-10" required
@@ -277,12 +306,12 @@ export const LandingPage: React.FC = () => {
                                                 </div>
                                                 <div className="flex justify-end">
                                                     <button type="button" onClick={() => setIsForgot(true)} className="text-xs text-purple-400 hover:text-purple-300">
-                                                        ¿Olvidaste tu contraseña?
+                                                        {t('landing.forgot_pass')}
                                                     </button>
                                                 </div>
                                                 {error && <div className="text-red-300 text-xs bg-red-500/10 p-2 rounded border border-red-500/20">{error}</div>}
                                                 <button type="submit" disabled={loading} className="w-full py-3 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl shadow-lg shadow-purple-900/40 active:scale-95 transition-all">
-                                                    {loading ? 'Cargando...' : 'Iniciar Sesión'}
+                                                    {loading ? t('landing.loading') : t('landing.login_btn')}
                                                 </button>
                                             </form>
                                         </>
@@ -291,7 +320,7 @@ export const LandingPage: React.FC = () => {
 
                                 <div className="mt-auto pt-6 text-center border-t border-white/10 relative z-10">
                                     <p className="text-sm text-white/50">
-                                        ¿No tienes cuenta? <button onClick={() => setIsLogin(false)} className="text-purple-400 hover:text-purple-300 font-bold ml-1">Regístrate Gratis</button>
+                                        {t('landing.no_account')} <button onClick={() => setIsLogin(false)} className="text-purple-400 hover:text-purple-300 font-bold ml-1">{t('landing.register_link')}</button>
                                     </p>
                                 </div>
                             </div>
@@ -299,124 +328,92 @@ export const LandingPage: React.FC = () => {
 
                         {/* --- BACK FACE (REGISTER) --- */}
                         <div className="absolute inset-0 backface-hidden rotate-y-180">
-                            <div className="h-full bg-slate-900/40 backdrop-blur-xl border border-white/10 p-8 rounded-3xl shadow-2xl flex flex-col overflow-y-auto custom-scrollbar relative">
+                            <div className="h-full bg-slate-900/40 backdrop-blur-xl border border-white/10 p-4 md:p-8 rounded-3xl shadow-2xl flex flex-col overflow-hidden relative">
                                 <div className="absolute inset-0 bg-gradient-to-bl from-indigo-500/10 to-transparent pointer-events-none"></div>
 
                                 <div className="relative z-10 flex-1">
-                                    <h2 className="text-3xl font-bold mb-2">Crear Cuenta</h2>
-                                    <p className="text-white/40 text-sm mb-6">Únete a B5Tools hoy.</p>
+                                    <h2 className="text-3xl font-bold mb-2">{t('landing.register_title')}</h2>
+                                    <p className="text-white/40 text-sm mb-6">{t('landing.register_subtitle')}</p>
 
-                                    <form onSubmit={handleRegister} className="space-y-3">
-                                        {/* Name Loop */}
-                                        <div className="grid grid-cols-2 gap-3">
+                                    <form onSubmit={handleRegister} className="space-y-2 md:space-y-3">
+                                        {/* Names */}
+                                        <div className="grid grid-cols-2 gap-2">
                                             <input
-                                                type="text" placeholder="Nombre" value={firstName} onChange={e => setFirstName(e.target.value)}
-                                                className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:border-purple-500 focus:bg-black/40 outline-none transition-all" required
+                                                type="text" placeholder={t('landing.name')} value={firstName} onChange={e => setFirstName(e.target.value)}
+                                                className="bg-black/20 border border-white/10 rounded-xl px-3 py-2 text-white text-xs md:text-sm focus:border-purple-500 outline-none" required
                                             />
                                             <input
-                                                type="text" placeholder="Apellidos" value={lastName} onChange={e => setLastName(e.target.value)}
-                                                className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:border-purple-500 focus:bg-black/40 outline-none transition-all" required
+                                                type="text" placeholder={t('landing.lastname')} value={lastName} onChange={e => setLastName(e.target.value)}
+                                                className="bg-black/20 border border-white/10 rounded-xl px-3 py-2 text-white text-xs md:text-sm focus:border-purple-500 outline-none" required
                                             />
                                         </div>
+
+                                        {/* Email */}
                                         <input
-                                            type="email" placeholder="Correo Electrónico" value={regEmail} onChange={e => setRegEmail(e.target.value)}
-                                            className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:border-purple-500 focus:bg-black/40 outline-none transition-all" required
+                                            type="email" placeholder={t('landing.email')} value={regEmail} onChange={e => setRegEmail(e.target.value)}
+                                            className="w-full bg-black/20 border border-white/10 rounded-xl px-3 py-2 text-white text-xs md:text-sm focus:border-purple-500 outline-none" required
                                         />
-                                        <div className="grid grid-cols-2 gap-3">
+
+                                        {/* Passwords */}
+                                        <div className="grid grid-cols-2 gap-2">
                                             <div className="relative">
                                                 <input
-                                                    type={showRegPassword ? "text" : "password"}
-                                                    placeholder="Contraseña"
-                                                    value={regPassword}
-                                                    onChange={e => setRegPassword(e.target.value)}
-                                                    className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:border-purple-500 focus:bg-black/40 outline-none transition-all pr-10" required
+                                                    type={showRegPassword ? "text" : "password"} placeholder={t('landing.password')} value={regPassword} onChange={e => setRegPassword(e.target.value)}
+                                                    className="w-full bg-black/20 border border-white/10 rounded-xl px-3 py-2 text-white text-xs md:text-sm focus:border-purple-500 outline-none pr-8" required
                                                 />
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setShowRegPassword(!showRegPassword)}
-                                                    className="absolute right-2 top-1/2 -translate-y-1/2 text-white/40 hover:text-white transition-colors"
-                                                >
-                                                    {showRegPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                                                <button type="button" onClick={() => setShowRegPassword(!showRegPassword)} className="absolute right-2 top-1/2 -translate-y-1/2 text-white/40 hover:text-white">
+                                                    {showRegPassword ? <EyeOff size={12} /> : <Eye size={12} />}
                                                 </button>
                                             </div>
                                             <div className="relative">
                                                 <input
-                                                    type={showConfirmPassword ? "text" : "password"}
-                                                    placeholder="Confirmar"
-                                                    value={regConfirmPassword}
-                                                    onChange={e => setRegConfirmPassword(e.target.value)}
-                                                    className={`w-full bg-black/20 border ${regConfirmPassword && regPassword !== regConfirmPassword ? 'border-red-500/50 focus:border-red-500' : 'border-white/10 focus:border-purple-500'} rounded-xl px-4 py-2.5 text-white text-sm focus:bg-black/40 outline-none transition-all pr-10`} required
+                                                    type={showConfirmPassword ? "text" : "password"} placeholder={t('landing.confirm')} value={regConfirmPassword} onChange={e => setRegConfirmPassword(e.target.value)}
+                                                    className={`w-full bg-black/20 border ${regConfirmPassword && regPassword !== regConfirmPassword ? 'border-red-500/50' : 'border-white/10'} rounded-xl px-3 py-2 text-white text-xs md:text-sm outline-none pr-8`} required
                                                 />
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                                                    className="absolute right-2 top-1/2 -translate-y-1/2 text-white/40 hover:text-white transition-colors"
-                                                >
-                                                    {showConfirmPassword ? <EyeOff size={14} /> : <Eye size={14} />}
-                                                </button>
                                             </div>
                                         </div>
-                                        {regConfirmPassword && regPassword !== regConfirmPassword && (
-                                            <div className="text-[10px] text-red-300 bg-red-500/10 px-2 py-1 rounded border border-red-500/20 -mt-2 animate-pulse">
-                                                Las contraseñas no coinciden
-                                            </div>
-                                        )}
 
-                                        {/* Club Info */}
-                                        <div className="space-y-3 pt-2">
-                                            <p className="text-xs font-bold text-white/30 uppercase tracking-widest">Información del Club (Opcional)</p>
+                                        {/* Club & Logo - Condensed */}
+                                        <div className="grid grid-cols-2 gap-2">
                                             <input
-                                                type="text" placeholder="Nombre del Club" value={clubName} onChange={e => setClubName(e.target.value)}
-                                                className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:border-purple-500 focus:bg-black/40 outline-none transition-all"
+                                                type="text" placeholder={t('landing.club_info')} value={clubName} onChange={e => setClubName(e.target.value)}
+                                                className="bg-black/20 border border-white/10 rounded-xl px-3 py-2 text-white text-xs md:text-sm focus:border-purple-500 outline-none"
                                             />
-
-                                            <div className="flex items-center gap-3">
-                                                <label className="flex-1 cursor-pointer group">
-                                                    <div className="flex items-center justify-center gap-2 p-3 rounded-xl border border-dashed border-white/20 bg-white/5 group-hover:bg-white/10 transition-colors">
-                                                        <Upload size={16} className="text-purple-400" />
-                                                        <span className="text-xs text-white/60 truncate">{logoFile ? logoFile.name : 'Subir Logo'}</span>
-                                                    </div>
-                                                    <input type="file" className="hidden" accept="image/*" onChange={e => setLogoFile(e.target.files?.[0] || null)} />
-                                                </label>
-                                            </div>
-                                        </div>
-
-                                        {/* Contact */}
-                                        <div className="grid grid-cols-2 gap-3 pt-2">
-                                            <div className="flex flex-col">
-                                                <input
-                                                    type="tel" placeholder="Teléfono" value={phone} onChange={e => setPhone(e.target.value)}
-                                                    className="w-full bg-black/20 border border-white/10 rounded-t-xl rounded-b-md px-4 py-2.5 text-white text-sm focus:border-purple-500 focus:bg-black/40 outline-none transition-all" required
-                                                />
-                                                <span className="text-[10px] text-white/40 px-2 py-0.5 bg-white/5 rounded-b-xl border-x border-b border-white/5">
-                                                    Ej: +34 600123456 (Incluir prefijo)
-                                                </span>
-                                            </div>
-                                            <label className="flex items-center gap-2 p-2.5 rounded-xl border border-white/10 bg-black/20 cursor-pointer hover:bg-black/30 transition-colors">
-                                                <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${hasWhatsapp ? 'bg-green-500 border-green-500' : 'border-white/30'}`}>
-                                                    {hasWhatsapp && <Check size={12} className="text-black" strokeWidth={3} />}
-                                                </div>
-                                                <input type="checkbox" className="hidden" checked={hasWhatsapp} onChange={e => setHasWhatsapp(e.target.checked)} />
-                                                <div className="flex flex-col">
-                                                    <span className="text-xs font-bold text-white/80">WhatsApp</span>
-                                                    <span className="text-[9px] text-white/40 leading-none">Disponible</span>
-                                                </div>
+                                            <label className="flex items-center justify-center gap-2 px-2 py-2 rounded-xl border border-dashed border-white/20 bg-white/5 cursor-pointer hover:bg-white/10">
+                                                <Upload size={14} className="text-purple-400" />
+                                                <span className="text-[10px] md:text-xs text-white/60 truncate max-w-[80px]">{logoFile ? logoFile.name : 'Logo'}</span>
+                                                <input type="file" className="hidden" accept="image/*" onChange={e => setLogoFile(e.target.files?.[0] || null)} />
                                             </label>
                                         </div>
 
-                                        {error && <div className="text-red-300 text-xs bg-red-500/10 p-2 rounded border border-red-500/20">{error}</div>}
-                                        {successMsg && <div className="text-green-300 text-xs bg-green-500/10 p-2 rounded border border-green-500/20">{successMsg}</div>}
+                                        {/* Phone & Whatsapp - Condensed */}
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <input
+                                                type="tel" placeholder={t('landing.phone_placeholder')} value={phone} onChange={e => setPhone(e.target.value)}
+                                                className="bg-black/20 border border-white/10 rounded-xl px-3 py-2 text-white text-xs md:text-sm focus:border-purple-500 outline-none" required
+                                            />
+                                            <label className="flex items-center gap-2 px-2 py-2 rounded-xl border border-white/10 bg-black/20 cursor-pointer hover:bg-black/30">
+                                                <div className={`w-4 h-4 rounded border flex items-center justify-center ${hasWhatsapp ? 'bg-green-500 border-green-500' : 'border-white/30'}`}>
+                                                    {hasWhatsapp && <Check size={10} className="text-black" strokeWidth={3} />}
+                                                </div>
+                                                <input type="checkbox" className="hidden" checked={hasWhatsapp} onChange={e => setHasWhatsapp(e.target.checked)} />
+                                                <span className="text-[10px] md:text-xs text-white/80">{t('landing.whatsapp_label')}</span>
+                                            </label>
+                                        </div>
 
-                                        <button type="submit" disabled={loading} className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl shadow-lg shadow-indigo-900/40 active:scale-95 transition-all mt-4">
-                                            {loading ? 'Creando...' : 'Registrarme'}
+                                        {error && <div className="text-red-300 text-[10px] bg-red-500/10 p-1.5 rounded">{error}</div>}
+                                        {successMsg && <div className="text-green-300 text-[10px] bg-green-500/10 p-1.5 rounded">{successMsg}</div>}
+
+                                        <button type="submit" disabled={loading} className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold rounded-xl shadow-lg shadow-indigo-900/40 active:scale-95 transition-all mt-2">
+                                            {loading ? t('landing.loading') : t('landing.register_btn')}
                                         </button>
                                     </form>
-                                </div>
 
-                                <div className="mt-8 pt-6 text-center border-t border-white/10 relative z-10">
-                                    <p className="text-sm text-white/50">
-                                        ¿Ya tienes cuenta? <button onClick={() => setIsLogin(true)} className="text-indigo-400 hover:text-indigo-300 font-bold ml-1">Inicia Sesión</button>
-                                    </p>
+                                    <div className="mt-4 pt-4 text-center border-t border-white/10">
+                                        <p className="text-xs text-white/50">
+                                            {t('landing.have_account')} <button onClick={() => setIsLogin(true)} className="text-indigo-400 font-bold ml-1">{t('landing.login_btn')}</button>
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -427,7 +424,7 @@ export const LandingPage: React.FC = () => {
             </main>
 
             <footer className="p-6 text-center text-white/20 text-xs relative z-10">
-                &copy; 2025 B5Tools. Desarrollada por B5Tools Development Team. Todos los derechos reservados.
+                {t('landing.footer_rights')}
             </footer>
 
             {/* 3D Styles Injection */}

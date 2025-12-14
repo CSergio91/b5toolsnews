@@ -8,6 +8,7 @@ export const ScoreKeeperPage: React.FC = () => {
     const navigate = useNavigate();
     const [isConnected, setIsConnected] = React.useState<boolean | null>(null);
     const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
+    const [showLocalModeAlert, setShowLocalModeAlert] = useState(true);
 
     React.useEffect(() => {
         import('../lib/supabase').then(({ checkConnection }) => {
@@ -24,17 +25,9 @@ export const ScoreKeeperPage: React.FC = () => {
             </div>
 
             {/* Navigation & Actions */}
-            <div className="fixed top-4 left-4 z-40 no-print">
-                <button
-                    onClick={() => navigate('/')}
-                    className="p-3 rounded-full bg-black/40 border border-white/10 hover:bg-white/10 text-white/70 hover:text-white transition-all backdrop-blur-md shadow-lg group"
-                    title="Volver al Inicio"
-                >
-                    <Home size={20} className="group-hover:scale-110 transition-transform" />
-                </button>
-            </div>
 
-            <div className="fixed top-4 right-4 z-40 no-print">
+
+            <div className="fixed md:top-4 md:right-4 bottom-24 right-4 z-40 no-print">
                 <button
                     onClick={() => setIsRegisterModalOpen(true)}
                     className="group relative flex items-center gap-2 pl-4 pr-5 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 rounded-full shadow-[0_0_20px_rgba(124,58,237,0.5)] hover:shadow-[0_0_30px_rgba(124,58,237,0.7)] hover:scale-105 active:scale-95 transition-all"
@@ -55,21 +48,22 @@ export const ScoreKeeperPage: React.FC = () => {
 
             <div className="relative z-10 container mx-auto px-2 py-6 max-w-[1400px]">
                 {/* Local Mode Alert */}
-                <div className="mb-4 bg-blue-900/40 border border-blue-500/30 p-3 rounded-lg flex items-center justify-center gap-3 text-sm text-blue-200 shadow-lg backdrop-blur-sm no-print mx-12 md:mx-0">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-info flex-shrink-0 text-blue-400"><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>
-                    <p>
-                        <span className="font-bold text-blue-100">Modo Local Activo:</span> Los datos de este partido se almacenan únicamente en tu dispositivo. No hay respaldo en la nube. ¡Recuerda guardar tu progreso o imprimir los resultados!
-                    </p>
-                </div>
-
-                <header className="mb-6 flex flex-col md:flex-row items-center justify-center md:justify-between gap-4 text-center md:text-left">
-                    <div className="flex items-center gap-3">
-                        <img src="/logo.png" alt="B5Tools Logo" className="h-10 md:h-14 w-auto object-contain drop-shadow-[0_0_15px_rgba(168,85,247,0.5)] active:scale-95 transition-transform duration-300" />
-                        <h1 className="text-xl md:text-2xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white to-purple-200">
-                            B5Tools <span className="font-light text-white/70 block md:inline text-sm md:text-2xl">Official</span>
-                        </h1>
+                {/* Local Mode Alert */}
+                {showLocalModeAlert && (
+                    <div className="mb-4 bg-blue-900/40 border border-blue-500/30 p-3 rounded-lg flex items-center justify-between gap-3 text-sm text-blue-200 shadow-lg backdrop-blur-sm no-print mx-12 md:mx-0 animate-in slide-in-from-top-2">
+                        <div className="flex items-center gap-3">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-info flex-shrink-0 text-blue-400"><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>
+                            <p>
+                                <span className="font-bold text-blue-100">Modo Local Activo:</span> Los datos de este partido se almacenan únicamente en tu dispositivo. No hay respaldo en la nube.
+                            </p>
+                        </div>
+                        <button onClick={() => setShowLocalModeAlert(false)} className="bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 p-1 rounded-full transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+                        </button>
                     </div>
-                </header>
+                )}
+
+
 
                 <main className="transition-opacity duration-500 ease-in-out">
                     <ScoreCard />
