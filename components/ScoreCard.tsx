@@ -573,7 +573,8 @@ const LineupGrid: React.FC<{
   isFullScreen?: boolean;
   onToggleFullScreen?: () => void;
   onAdvanceInning?: () => void;
-}> = ({ title, teamNameValue, onTeamNameChange, teamData, onUpdate, onAddColumn, theme, currentInningIdx, nextBatterIdx, opposingTeam, isFullScreen, onToggleFullScreen, onAdvanceInning }) => {
+  renderOverlay?: () => React.ReactNode;
+}> = ({ title, teamNameValue, onTeamNameChange, teamData, onUpdate, onAddColumn, theme, currentInningIdx, nextBatterIdx, opposingTeam, isFullScreen, onToggleFullScreen, onAdvanceInning, renderOverlay }) => {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [activeCell, setActiveCell] = useState<{
@@ -678,247 +679,264 @@ const LineupGrid: React.FC<{
         opposingTeam={opposingTeam}
       />
 
-      <div className={`mb-8 border rounded-xl p-4 bg-white/5 ${theme === 'purple' ? 'border-purple-500/20 shadow-purple-900/20' : 'border-amber-500/20 shadow-orange-900/20'} shadow-lg transition-all print-panel
-        ${isFullScreen ? 'fixed inset-0 z-[155] bg-[#1e1e24] m-0 rounded-none border-0 flex flex-col pt-32 pb-4 px-4 overflow-hidden' : ''}`}>
-        <div className={`flex flex-col md:flex-row items-center justify-between gap-4 mb-4 ${isFullScreen ? 'w-full shrink-0' : ''}`}>
-          <div className="flex flex-col md:flex-row items-start md:items-center gap-4 w-full">
-            <span className={`text-xs font-bold uppercase tracking-widest px-2 py-1 rounded bg-white/5 border border-white/10 ${themeColors.headerText}`}>
-              {title}
-            </span>
-            <input
-              type="text"
-              value={teamNameValue}
-              onChange={(e) => onTeamNameChange(e.target.value)}
-              placeholder={`Nombre del Equipo ${theme === 'purple' ? 'Visitante' : 'Local'}`}
-              className={`bg-transparent text-xl md:text-2xl font-bold uppercase tracking-wide focus:outline-none border-b border-transparent focus:border-white/20 transition-all w-full md:w-auto ${theme === 'purple' ? 'text-white placeholder-purple-300/30' : 'text-white placeholder-orange-300/30'}`}
-            />
-          </div>
-          {onToggleFullScreen && (
-            <button
-              onClick={onToggleFullScreen}
-              className={`p-2 rounded-lg border transition-all ${isFullScreen ? 'bg-red-500/20 text-red-300 border-red-500/30 hover:bg-red-500/30' : 'bg-white/5 text-white/40 border-white/10 hover:bg-white/10 hover:text-white'}`}
-              title={isFullScreen ? "Salir de Pantalla Completa" : "Pantalla Completa"}
-            >
-              {isFullScreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
-            </button>
-          )}
-        </div>
+      {(() => {
+        const content = (
+          <div className={`mb-8 border rounded-xl p-4 bg-white/5 ${theme === 'purple' ? 'border-purple-500/20 shadow-purple-900/20' : 'border-amber-500/20 shadow-orange-900/20'} shadow-lg transition-all print-panel
+            ${isFullScreen ? 'fixed inset-0 z-[155] bg-[#1e1e24] m-0 rounded-none border-0 flex items-center justify-center overflow-hidden' : ''}`}>
 
-        <div className={`overflow-x-auto rounded-lg border border-white/10 bg-black/20 shadow-inner scrollbar-thin ${theme === 'purple' ? 'scrollbar-thumb-purple-600/50' : 'scrollbar-thumb-orange-600/50'} scrollbar-track-transparent pb-2 print-overflow-visible ${isFullScreen ? 'w-full flex-1 overflow-auto border-0 rounded-none bg-transparent shadow-none' : ''}`}>
-          <div
-            className="grid min-w-max"
-            style={{
-              gridTemplateColumns: `${COL_INDEX}px ${COL_NO}px ${COL_NAME}px ${COL_SEX}px ${COL_POS}px repeat(${totalColumns}, ${COL_SCORE}px)`
-            }}
-          >
-            {/* --- Header Row --- */}
-            <div className={`${themeColors.headerBg} p-2 text-center text-[10px] font-bold uppercase ${themeColors.headerText} border-b border-white/20 sticky z-20 left-sticky`} style={{ left: LEFT_INDEX, width: COL_INDEX }}>#</div>
-            <div className={`${themeColors.headerBg} p-2 text-center text-[10px] font-bold uppercase ${themeColors.headerText} border-b border-white/20 sticky z-20 left-sticky`} style={{ left: LEFT_NO, width: COL_NO }}>No.</div>
-            <div className={`${themeColors.headerBg} p-2 text-left text-[10px] font-bold uppercase ${themeColors.headerText} border-b border-white/20 sticky z-20 left-sticky`} style={{ left: LEFT_NAME, width: COL_NAME }}>Jugador</div>
-            <div className={`${themeColors.headerBg} p-2 text-center text-[10px] font-bold uppercase ${themeColors.headerText} border-b border-white/20 sticky z-20 left-sticky`} style={{ left: LEFT_SEX, width: COL_SEX }}>Sex</div>
-            <div className={`${themeColors.headerBg} p-2 text-center text-[10px] font-bold uppercase ${themeColors.headerText} border-b border-white/20 sticky z-20 left-sticky`} style={{ left: LEFT_POS, width: COL_POS }}>POS</div>
-
-            {structure.map((inningCols, iIdx) => {
-              const isExtra = iIdx >= 5;
-              const isLocked = iIdx < currentInningIdx;
-              const isUnlockedManually = unlockedInnings.includes(iIdx);
-              const effectiveLocked = isLocked && !isUnlockedManually;
-
-              return (
-                <div
-                  key={iIdx}
-                  className={`border-b border-l border-white/20 shadow-sm flex flex-col items-center justify-between py-1 px-1 
-                    ${isExtra ? 'bg-indigo-900/50 text-indigo-200' : themeColors.headerBg + ' ' + themeColors.headerText} 
-                    ${effectiveLocked ? 'opacity-50' : 'opacity-100'} 
-                    transition-all duration-300 relative`}
-                  style={{ gridColumn: `span ${inningCols.length}` }}
-                >
-                  {/* Visual Indicator for Unlocked Past Inning */}
-                  {isLocked && isUnlockedManually && (
-                    <div className="absolute inset-0 border-2 border-yellow-400/50 rounded pointer-events-none animate-pulse"></div>
-                  )}
-
-                  <div className="flex items-center justify-between w-full px-1">
-                    <span className="text-xs font-bold">{isExtra ? `${iIdx + 1} EX` : iIdx + 1}</span>
-
-                    {isLocked ? (
-                      <button
-                        onClick={() => toggleUnlock(iIdx)}
-                        className={`p-1 rounded-full transition-all duration-200 hover:scale-110
-                                ${isUnlockedManually
-                            ? 'bg-yellow-500 text-black shadow-[0_0_10px_rgba(234,179,8,0.5)]'
-                            : 'bg-white/10 text-white/40 hover:bg-white/20 hover:text-white'
-                          }`}
-                        title={isUnlockedManually ? "Bloquear Entrada" : "Editar Entrada"}
-                      >
-                        {isUnlockedManually ? <LockOpen size={10} strokeWidth={3} /> : <Pencil size={10} />}
-                      </button>
-                    ) : (
-                      <div className="flex items-center gap-1">
-                        {/* Add Column (Batting Around) */}
-                        <button
-                          onClick={() => onAddColumn(iIdx)}
-                          className={`p-0.5 rounded transition-colors no-print hover:bg-white/20 text-white/50 hover:text-white`}
-                          title="Añadir columna (Bateo corrido)"
-                        >
-                          <Plus size={8} />
-                        </button>
-
-                        {/* Advance Inning - Only for Current Inning */}
-                        {iIdx === currentInningIdx && onAdvanceInning && (
-                          <button
-                            onClick={onAdvanceInning}
-                            className={`ml-1 p-1 rounded-full transition-all duration-300 animate-pulse hover:animate-none 
-                               ${theme === 'purple' ? 'bg-indigo-500 hover:bg-indigo-400 text-white' : 'bg-orange-500 hover:bg-orange-400 text-white'} 
-                               shadow-lg border border-white/20`}
-                            title="Cerrar Entrada / Avanzar"
-                          >
-                            <Plus size={14} strokeWidth={4} />
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
+            <div className={`flex flex-col w-full h-full ${isFullScreen ? 'portrait:w-[100vh] portrait:h-[100vw] portrait:rotate-90 origin-center' : ''}`} style={isFullScreen ? { zoom: 0.70 } : {}}>
+              <div className={`flex flex-col md:flex-row items-center justify-between gap-4 mb-4 ${isFullScreen ? 'hidden' : ''}`}>
+                <div className="flex flex-col md:flex-row items-start md:items-center gap-4 w-full">
+                  <span className={`text-xs font-bold uppercase tracking-widest px-2 py-1 rounded bg-white/5 border border-white/10 ${themeColors.headerText}`}>
+                    {title}
+                  </span>
+                  <input
+                    type="text"
+                    value={teamNameValue}
+                    onChange={(e) => onTeamNameChange(e.target.value)}
+                    placeholder={`Nombre del Equipo ${theme === 'purple' ? 'Visitante' : 'Local'}`}
+                    className={`bg-transparent text-xl md:text-2xl font-bold uppercase tracking-wide focus:outline-none border-b border-transparent focus:border-white/20 transition-all w-full md:w-auto ${theme === 'purple' ? 'text-white placeholder-purple-300/30' : 'text-white placeholder-orange-300/30'}`}
+                  />
                 </div>
-              );
-            })}
+                {onToggleFullScreen && (
+                  <button
+                    onClick={onToggleFullScreen}
+                    className={`p-2 rounded-lg border transition-all ${isFullScreen ? 'bg-red-500/20 text-red-300 border-red-500/30 hover:bg-red-500/30' : 'bg-white/5 text-white/40 border-white/10 hover:bg-white/10 hover:text-white'}`}
+                    title={isFullScreen ? "Salir de Pantalla Completa" : "Pantalla Completa"}
+                  >
+                    {isFullScreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+                  </button>
+                )}
+              </div>
 
-            {/* --- Player Rows --- */}
-            {teamData.slots.map((slot, idx) => {
-              const playerNum = idx + 1;
-              const isNextBatter = idx === nextBatterIdx;
+              <div className={`overflow-x-auto rounded-lg border border-white/10 bg-black/20 shadow-inner scrollbar-thin ${theme === 'purple' ? 'scrollbar-thumb-purple-600/50' : 'scrollbar-thumb-orange-600/50'} scrollbar-track-transparent pb-2 print-overflow-visible ${isFullScreen ? 'w-full flex-1 overflow-auto border-0 rounded-none bg-transparent shadow-none' : ''}`}>
+                <div
+                  className="grid min-w-max"
+                  style={{
+                    gridTemplateColumns: `${COL_INDEX}px ${COL_NO}px ${COL_NAME}px ${COL_SEX}px ${COL_POS}px repeat(${totalColumns}, ${COL_SCORE}px)`
+                  }}
+                >
+                  {/* --- Header Row --- */}
+                  <div className={`${themeColors.headerBg} p-2 text-center text-[10px] font-bold uppercase ${themeColors.headerText} border-b border-white/20 sticky z-20 left-sticky`} style={{ left: LEFT_INDEX, width: COL_INDEX }}>#</div>
+                  <div className={`${themeColors.headerBg} p-2 text-center text-[10px] font-bold uppercase ${themeColors.headerText} border-b border-white/20 sticky z-20 left-sticky`} style={{ left: LEFT_NO, width: COL_NO }}>No.</div>
+                  <div className={`${themeColors.headerBg} p-2 text-left text-[10px] font-bold uppercase ${themeColors.headerText} border-b border-white/20 sticky z-20 left-sticky`} style={{ left: LEFT_NAME, width: COL_NAME }}>Jugador</div>
+                  <div className={`${themeColors.headerBg} p-2 text-center text-[10px] font-bold uppercase ${themeColors.headerText} border-b border-white/20 sticky z-20 left-sticky`} style={{ left: LEFT_SEX, width: COL_SEX }}>Sex</div>
+                  <div className={`${themeColors.headerBg} p-2 text-center text-[10px] font-bold uppercase ${themeColors.headerText} border-b border-white/20 sticky z-20 left-sticky`} style={{ left: LEFT_POS, width: COL_POS }}>POS</div>
 
-              return (
-                <React.Fragment key={playerNum}>
-                  <div className={`${themeColors.stickyBg} flex items-center justify-center ${theme === 'amber' ? 'text-orange-400' : 'text-purple-400'} font-bold border-b border-white/10 text-lg sticky z-10 backdrop-blur-md left-sticky`} style={{ left: LEFT_INDEX }}>{playerNum}</div>
+                  {structure.map((inningCols, iIdx) => {
+                    const isExtra = iIdx >= 5;
+                    const isLocked = iIdx < currentInningIdx;
+                    const isUnlockedManually = unlockedInnings.includes(iIdx);
+                    const effectiveLocked = isLocked && !isUnlockedManually;
 
-                  <div className={`border-b border-r border-white/10 sticky z-10 ${themeColors.stickyBg} backdrop-blur-md left-sticky`} style={{ left: LEFT_NO }}>
-                    <input
-                      className="w-full h-full bg-transparent text-center text-xs text-white focus:outline-none font-bold"
-                      value={slot.starter.number}
-                      onChange={(e) => onUpdate(idx, 'starter', 'number', e.target.value)}
-                    />
-                  </div>
+                    return (
+                      <div
+                        key={iIdx}
+                        className={`border-b border-l border-white/20 shadow-sm flex flex-col items-center justify-between py-1 px-1 
+                          ${isExtra ? 'bg-indigo-900/50 text-indigo-200' : themeColors.headerBg + ' ' + themeColors.headerText} 
+                          ${effectiveLocked ? 'opacity-50' : 'opacity-100'} 
+                          transition-all duration-300 relative`}
+                        style={{ gridColumn: `span ${inningCols.length}` }}
+                      >
+                        {/* Visual Indicator for Unlocked Past Inning */}
+                        {isLocked && isUnlockedManually && (
+                          <div className="absolute inset-0 border-2 border-yellow-400/50 rounded pointer-events-none animate-pulse"></div>
+                        )}
 
-                  <div className={`border-b border-r border-white/10 sticky z-10 ${themeColors.stickyBg} backdrop-blur-md left-sticky`} style={{ left: LEFT_NAME }}>
-                    <input
-                      className={`w-full h-full bg-transparent px-2 text-sm text-white focus:outline-none ${themeColors.inputPlaceholder}`}
-                      placeholder="Nombre Titular"
-                      value={slot.starter.name}
-                      onChange={(e) => onUpdate(idx, 'starter', 'name', e.target.value)}
-                    />
-                  </div>
+                        <div className="flex items-center justify-between w-full px-1">
+                          <span className="text-xs font-bold">{isExtra ? `${iIdx + 1} EX` : iIdx + 1}</span>
 
-                  <div className={`border-b border-r border-white/10 sticky z-10 ${themeColors.stickyBg} left-sticky`} style={{ left: LEFT_SEX }}>
-                    <select
-                      className="w-full h-full bg-transparent text-center text-xs text-white focus:outline-none appearance-none [&>option]:bg-slate-900"
-                      value={slot.starter.gender}
-                      onChange={(e) => onUpdate(idx, 'starter', 'gender', e.target.value)}
-                    >
-                      <option value="">-</option>
-                      <option value="M">M</option>
-                      <option value="F">F</option>
-                    </select>
-                  </div>
+                          {isLocked ? (
+                            <button
+                              onClick={() => toggleUnlock(iIdx)}
+                              className={`p-1 rounded-full transition-all duration-200 hover:scale-110
+                                      ${isUnlockedManually
+                                  ? 'bg-yellow-500 text-black shadow-[0_0_10px_rgba(234,179,8,0.5)]'
+                                  : 'bg-white/10 text-white/40 hover:bg-white/20 hover:text-white'
+                                }`}
+                              title={isUnlockedManually ? "Bloquear Entrada" : "Editar Entrada"}
+                            >
+                              {isUnlockedManually ? <LockOpen size={10} strokeWidth={3} /> : <Pencil size={10} />}
+                            </button>
+                          ) : (
+                            <div className="flex items-center gap-1">
+                              {/* Add Column (Batting Around) */}
+                              <button
+                                onClick={() => onAddColumn(iIdx)}
+                                className={`p-0.5 rounded transition-colors no-print hover:bg-white/20 text-white/50 hover:text-white`}
+                                title="Añadir columna (Bateo corrido)"
+                              >
+                                <Plus size={8} />
+                              </button>
 
-                  <div className={`border-b border-r border-white/10 sticky z-10 ${themeColors.stickyBg} left-sticky`} style={{ left: LEFT_POS }}>
-                    <select
-                      className="w-full h-full bg-transparent text-center text-xs text-white focus:outline-none appearance-none [&>option]:bg-slate-900"
-                      value={slot.starter.pos}
-                      onChange={(e) => onUpdate(idx, 'starter', 'pos', e.target.value)}
-                    >
-                      <option value="">-</option>
-                      <option value="1B">1B</option>
-                      <option value="2B">2B</option>
-                      <option value="3B">3B</option>
-                      <option value="SS">SS</option>
-                      <option value="C">C</option>
-                    </select>
-                  </div>
-
-                  {slot.starter.scores.map((inning, iIdx) =>
-                    inning.map((score, atBatIdx) => {
-                      const isCurrentInning = iIdx === currentInningIdx;
-                      const showHighlight = isNextBatter && isCurrentInning && score === '';
-
-                      return (
-                        <div key={`s-${iIdx}-${atBatIdx}`} className={`border-b border-r border-white/10 bg-white/5 relative ${showHighlight ? 'z-20' : ''}`}>
-                          {showHighlight && (
-                            <div className="absolute inset-0 pointer-events-none animate-pulse bg-yellow-400/10 ring-2 ring-yellow-400/50 z-20"></div>
+                              {/* Advance Inning - Only for Current Inning */}
+                              {iIdx === currentInningIdx && onAdvanceInning && (
+                                <button
+                                  onClick={onAdvanceInning}
+                                  className={`ml-1 p-1 rounded-full transition-all duration-300 animate-pulse hover:animate-none 
+                                     ${theme === 'purple' ? 'bg-indigo-500 hover:bg-indigo-400 text-white' : 'bg-orange-500 hover:bg-orange-400 text-white'} 
+                                     shadow-lg border border-white/20`}
+                                  title="Cerrar Entrada / Avanzar"
+                                >
+                                  <Plus size={14} strokeWidth={4} />
+                                </button>
+                              )}
+                            </div>
                           )}
-                          <ScoreCell
-                            value={score}
-                            onChange={(val) => onUpdate(idx, 'starter', 'score', val, iIdx, atBatIdx)}
-                            onOpenModal={(e) => handleCellClick(e, idx, 'starter', iIdx, atBatIdx, score)}
-                            isEx={iIdx >= 5}
-                            disabled={(iIdx < currentInningIdx) && !unlockedInnings.includes(iIdx)}
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {/* --- Player Rows --- */}
+                  {teamData.slots.map((slot, idx) => {
+                    const playerNum = idx + 1;
+                    const isNextBatter = idx === nextBatterIdx;
+
+                    return (
+                      <React.Fragment key={playerNum}>
+                        <div className={`${themeColors.stickyBg} flex items-center justify-center ${theme === 'amber' ? 'text-orange-400' : 'text-purple-400'} font-bold border-b border-white/10 text-lg sticky z-10 backdrop-blur-md left-sticky`} style={{ left: LEFT_INDEX }}>{playerNum}</div>
+
+                        <div className={`border-b border-r border-white/10 sticky z-10 ${themeColors.stickyBg} backdrop-blur-md left-sticky`} style={{ left: LEFT_NO }}>
+                          <input
+                            className="w-full h-full bg-transparent text-center text-xs text-white focus:outline-none font-bold"
+                            value={slot.starter.number}
+                            onChange={(e) => onUpdate(idx, 'starter', 'number', e.target.value)}
                           />
                         </div>
-                      )
-                    })
-                  )}
 
-                  {/* Sub Row */}
-                  <div className={`${themeColors.stickyBg} text-[10px] text-white/40 flex items-center justify-center border-b border-white/10 font-bold tracking-wider sticky z-10 backdrop-blur-md left-sticky`} style={{ left: LEFT_INDEX }}>SUB</div>
-                  <div className={`border-b border-r border-white/10 bg-white/5 sticky z-10 ${themeColors.stickyBg} left-sticky`} style={{ left: LEFT_NO }}>
-                    <input
-                      className="w-full h-full bg-transparent text-center text-xs text-white/70 focus:outline-none"
-                      value={slot.sub.number}
-                      onChange={(e) => onUpdate(idx, 'sub', 'number', e.target.value)}
-                    />
-                  </div>
-                  <div className={`border-b border-r border-white/10 bg-white/5 sticky z-10 ${themeColors.stickyBg} left-sticky`} style={{ left: LEFT_NAME }}>
-                    <input
-                      className={`w-full h-full bg-transparent px-2 text-xs ${themeColors.subText} focus:outline-none ${themeColors.inputPlaceholder}`}
-                      placeholder="Sustituto"
-                      value={slot.sub.name}
-                      onChange={(e) => onUpdate(idx, 'sub', 'name', e.target.value)}
-                    />
-                  </div>
-                  <div className={`border-b border-r border-white/10 bg-white/5 sticky z-10 ${themeColors.stickyBg} left-sticky`} style={{ left: LEFT_SEX }}>
-                    <select
-                      className="w-full h-full bg-transparent text-center text-xs text-white/70 focus:outline-none appearance-none [&>option]:bg-slate-900"
-                      value={slot.sub.gender}
-                      onChange={(e) => onUpdate(idx, 'sub', 'gender', e.target.value)}
-                    >
-                      <option value="">-</option>
-                      <option value="M">M</option>
-                      <option value="F">F</option>
-                    </select>
-                  </div>
-                  <div className={`border-b border-r border-white/10 bg-white/5 sticky z-10 ${themeColors.stickyBg} left-sticky`} style={{ left: LEFT_POS }}>
-                    <select
-                      className="w-full h-full bg-transparent text-center text-xs text-white/70 focus:outline-none appearance-none [&>option]:bg-slate-900"
-                      value={slot.sub.pos}
-                      onChange={(e) => onUpdate(idx, 'sub', 'pos', e.target.value)}
-                    >
-                      <option value="">-</option>
-                      <option value="1B">1B</option>
-                      <option value="2B">2B</option>
-                      <option value="3B">3B</option>
-                      <option value="SS">SS</option>
-                      <option value="C">C</option>
-                    </select>
-                  </div>
-                  {slot.sub.scores.map((inning, iIdx) =>
-                    inning.map((score, atBatIdx) => (
-                      <div key={`sub-${iIdx}-${atBatIdx}`} className="border-b border-r border-white/10 bg-white/5">
-                        <ScoreCell
-                          value={score}
-                          onChange={(val) => onUpdate(idx, 'sub', 'score', val, iIdx, atBatIdx)}
-                          onOpenModal={(e) => handleCellClick(e, idx, 'sub', iIdx, atBatIdx, score)}
-                          isEx={iIdx >= 5}
-                          disabled={(iIdx < currentInningIdx) && !unlockedInnings.includes(iIdx)}
-                        />
-                      </div>
-                    ))
-                  )}
-                </React.Fragment>
-              );
-            })}
+                        <div className={`border-b border-r border-white/10 sticky z-10 ${themeColors.stickyBg} backdrop-blur-md left-sticky`} style={{ left: LEFT_NAME }}>
+                          <input
+                            className={`w-full h-full bg-transparent px-2 text-sm text-white focus:outline-none ${themeColors.inputPlaceholder}`}
+                            placeholder="Nombre Titular"
+                            value={slot.starter.name}
+                            onChange={(e) => onUpdate(idx, 'starter', 'name', e.target.value)}
+                          />
+                        </div>
+
+                        <div className={`border-b border-r border-white/10 sticky z-10 ${themeColors.stickyBg} left-sticky`} style={{ left: LEFT_SEX }}>
+                          <select
+                            className="w-full h-full bg-transparent text-center text-xs text-white focus:outline-none appearance-none [&>option]:bg-slate-900"
+                            value={slot.starter.gender}
+                            onChange={(e) => onUpdate(idx, 'starter', 'gender', e.target.value)}
+                          >
+                            <option value="">-</option>
+                            <option value="M">M</option>
+                            <option value="F">F</option>
+                          </select>
+                        </div>
+
+                        <div className={`border-b border-r border-white/10 sticky z-10 ${themeColors.stickyBg} left-sticky`} style={{ left: LEFT_POS }}>
+                          <select
+                            className="w-full h-full bg-transparent text-center text-xs text-white focus:outline-none appearance-none [&>option]:bg-slate-900"
+                            value={slot.starter.pos}
+                            onChange={(e) => onUpdate(idx, 'starter', 'pos', e.target.value)}
+                          >
+                            <option value="">-</option>
+                            <option value="1B">1B</option>
+                            <option value="2B">2B</option>
+                            <option value="3B">3B</option>
+                            <option value="SS">SS</option>
+                            <option value="C">C</option>
+                          </select>
+                        </div>
+
+                        {slot.starter.scores.map((inning, iIdx) =>
+                          inning.map((score, atBatIdx) => {
+                            const isCurrentInning = iIdx === currentInningIdx;
+                            const showHighlight = isNextBatter && isCurrentInning && score === '';
+
+                            return (
+                              <div key={`s-${iIdx}-${atBatIdx}`} className={`border-b border-r border-white/10 bg-white/5 relative ${showHighlight ? 'z-20' : ''}`}>
+                                {showHighlight && (
+                                  <div className="absolute inset-0 pointer-events-none animate-pulse bg-yellow-400/10 ring-2 ring-yellow-400/50 z-20"></div>
+                                )}
+                                <ScoreCell
+                                  value={score}
+                                  onChange={(val) => onUpdate(idx, 'starter', 'score', val, iIdx, atBatIdx)}
+                                  onOpenModal={(e) => handleCellClick(e, idx, 'starter', iIdx, atBatIdx, score)}
+                                  isEx={iIdx >= 5}
+                                  disabled={(iIdx < currentInningIdx) && !unlockedInnings.includes(iIdx)}
+                                />
+                              </div>
+                            )
+                          })
+                        )}
+
+                        {/* Sub Row */}
+                        <div className={`${themeColors.stickyBg} text-[10px] text-white/40 flex items-center justify-center border-b border-white/10 font-bold tracking-wider sticky z-10 backdrop-blur-md left-sticky`} style={{ left: LEFT_INDEX }}>SUB</div>
+                        <div className={`border-b border-r border-white/10 bg-white/5 sticky z-10 ${themeColors.stickyBg} left-sticky`} style={{ left: LEFT_NO }}>
+                          <input
+                            className="w-full h-full bg-transparent text-center text-xs text-white/70 focus:outline-none"
+                            value={slot.sub.number}
+                            onChange={(e) => onUpdate(idx, 'sub', 'number', e.target.value)}
+                          />
+                        </div>
+                        <div className={`border-b border-r border-white/10 bg-white/5 sticky z-10 ${themeColors.stickyBg} left-sticky`} style={{ left: LEFT_NAME }}>
+                          <input
+                            className={`w-full h-full bg-transparent px-2 text-xs ${themeColors.subText} focus:outline-none ${themeColors.inputPlaceholder}`}
+                            placeholder="Sustituto"
+                            value={slot.sub.name}
+                            onChange={(e) => onUpdate(idx, 'sub', 'name', e.target.value)}
+                          />
+                        </div>
+                        <div className={`border-b border-r border-white/10 bg-white/5 sticky z-10 ${themeColors.stickyBg} left-sticky`} style={{ left: LEFT_SEX }}>
+                          <select
+                            className="w-full h-full bg-transparent text-center text-xs text-white/70 focus:outline-none appearance-none [&>option]:bg-slate-900"
+                            value={slot.sub.gender}
+                            onChange={(e) => onUpdate(idx, 'sub', 'gender', e.target.value)}
+                          >
+                            <option value="">-</option>
+                            <option value="M">M</option>
+                            <option value="F">F</option>
+                          </select>
+                        </div>
+                        <div className={`border-b border-r border-white/10 bg-white/5 sticky z-10 ${themeColors.stickyBg} left-sticky`} style={{ left: LEFT_POS }}>
+                          <select
+                            className="w-full h-full bg-transparent text-center text-xs text-white/70 focus:outline-none appearance-none [&>option]:bg-slate-900"
+                            value={slot.sub.pos}
+                            onChange={(e) => onUpdate(idx, 'sub', 'pos', e.target.value)}
+                          >
+                            <option value="">-</option>
+                            <option value="1B">1B</option>
+                            <option value="2B">2B</option>
+                            <option value="3B">3B</option>
+                            <option value="SS">SS</option>
+                            <option value="C">C</option>
+                          </select>
+                        </div>
+                        {slot.sub.scores.map((inning, iIdx) =>
+                          inning.map((score, atBatIdx) => (
+                            <div key={`sub-${iIdx}-${atBatIdx}`} className="border-b border-r border-white/10 bg-white/5">
+                              <ScoreCell
+                                value={score}
+                                onChange={(val) => onUpdate(idx, 'sub', 'score', val, iIdx, atBatIdx)}
+                                onOpenModal={(e) => handleCellClick(e, idx, 'sub', iIdx, atBatIdx, score)}
+                                isEx={iIdx >= 5}
+                                disabled={(iIdx < currentInningIdx) && !unlockedInnings.includes(iIdx)}
+                              />
+                            </div>
+                          ))
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {isFullScreen && renderOverlay && (
+              <div className="absolute top-4 right-4 z-[9999] opacity-90 hover:opacity-100 transition-opacity">
+                {renderOverlay()}
+              </div>
+            )}
+
           </div>
-        </div>
-      </div >
+        );
+
+        if (isFullScreen) return createPortal(content, document.body);
+        return content;
+      })()}
     </>
   );
 };
@@ -1023,7 +1041,7 @@ const LiveGameStatus = ({ visitorRuns, localRuns, inning, visitorOuts, localOuts
       className={`fixed z-[160] pointer-events-auto no-print touch-none select-none`}
       style={{ left: position.x, top: position.y }}
       onMouseDown={handleMouseDown}
-      onMouseDown={handleMouseDown}
+
       onTouchStart={handleTouchStart}
     >
       {isCompact ? (
@@ -2502,6 +2520,29 @@ const SingleSetScoreCard: React.FC<{
             isFullScreen={fullScreenMode === 'visitor'}
             onToggleFullScreen={() => setFullScreenMode(fullScreenMode === 'visitor' ? null : 'visitor')}
             onAdvanceInning={() => setShowAdvanceModal(true)}
+            renderOverlay={() => (
+              <div className="flex flex-col gap-2">
+                {[
+                  { id: 'visitor', name: state.gameInfo.visitor || 'VISITANTE', score: visitorRunsTotal, color: 'purple' },
+                  { id: 'local', name: state.gameInfo.home || 'LOCAL', score: localRunsTotal, color: 'amber' }
+                ].map((team) => (
+                  <button
+                    key={team.id}
+                    onClick={() => setFullScreenMode(team.id as 'visitor' | 'local')}
+                    className={`flex flex-col items-center justify-center w-16 h-12 rounded-lg border transition-all ${fullScreenMode === team.id
+                      ? (team.color === 'purple' ? 'bg-purple-600/90 text-white border-purple-400' : 'bg-amber-600/90 text-white border-amber-400')
+                      : 'bg-black/60 border-white/20 text-white/50 hover:bg-white/10'}`}
+                  >
+                    <span className="text-[8px] font-bold uppercase truncate max-w-full">{team.name.substring(0, 3)}</span>
+                    <span className="text-sm font-black leading-none">{team.score}</span>
+                  </button>
+                ))}
+                <div className="h-px bg-white/20 my-1"></div>
+                <button onClick={() => setFullScreenMode(null)} className="w-16 h-10 rounded-lg bg-red-600/80 hover:bg-red-500 text-white flex items-center justify-center">
+                  <Minimize2 size={20} />
+                </button>
+              </div>
+            )}
           />
           <LineupGrid
             title="Alineación Local"
@@ -2517,42 +2558,30 @@ const SingleSetScoreCard: React.FC<{
             isFullScreen={fullScreenMode === 'local'}
             onToggleFullScreen={() => setFullScreenMode(fullScreenMode === 'local' ? null : 'local')}
             onAdvanceInning={() => setShowAdvanceModal(true)}
-          />
-
-          {/* Floating Controls for Full Screen Mode */}
-          {fullScreenMode && (
-            <div className="fixed bottom-6 right-6 z-[160] flex flex-col gap-3 animate-in slide-in-from-bottom duration-300 no-print">
-              {(() => {
-                const isVisitor = fullScreenMode === 'visitor';
-                const outs = isVisitor ? visitorOuts : localOuts;
-                const isEnd = outs >= 3;
-
-                return (
+            renderOverlay={() => (
+              <div className="flex flex-col gap-2">
+                {[
+                  { id: 'visitor', name: state.gameInfo.visitor || 'VISITANTE', score: visitorRunsTotal, color: 'purple' },
+                  { id: 'local', name: state.gameInfo.home || 'LOCAL', score: localRunsTotal, color: 'amber' }
+                ].map((team) => (
                   <button
-                    onClick={() => setFullScreenMode(isVisitor ? 'local' : 'visitor')}
-                    className={`w-14 h-14 rounded-full text-white shadow-lg flex items-center justify-center transition-all border border-white/20 relative group
-                      ${isEnd ? 'animate-bounce' : 'hover:scale-110 active:scale-95'}`}
-                    style={{ backgroundColor: isEnd ? '#f59e0b' : '#2563eb' }}
-                    title="Cambiar Alineación (Local/Visitante)"
+                    key={team.id}
+                    onClick={() => setFullScreenMode(team.id as 'visitor' | 'local')}
+                    className={`flex flex-col items-center justify-center w-16 h-12 rounded-lg border transition-all ${fullScreenMode === team.id
+                      ? (team.color === 'purple' ? 'bg-purple-600/90 text-white border-purple-400' : 'bg-amber-600/90 text-white border-amber-400')
+                      : 'bg-black/60 border-white/20 text-white/50 hover:bg-white/10'}`}
                   >
-                    <ArrowRightLeft size={isEnd ? 28 : 24} />
-                    {isEnd && (
-                      <span className="absolute -top-2 -right-2 bg-red-600 text-white text-[9px] font-bold px-2 py-0.5 rounded-full animate-pulse border border-white/20 animate-pulse">
-                        CAMBIO
-                      </span>
-                    )}
+                    <span className="text-[8px] font-bold uppercase truncate max-w-full">{team.name.substring(0, 3)}</span>
+                    <span className="text-sm font-black leading-none">{team.score}</span>
                   </button>
-                );
-              })()}
-              <button
-                onClick={() => setFullScreenMode(null)}
-                className="w-14 h-14 rounded-full bg-red-600 hover:bg-red-500 text-white shadow-lg shadow-red-500/30 flex items-center justify-center transition-all hover:scale-110 active:scale-95 border border-white/20"
-                title="Salir de Pantalla Completa"
-              >
-                <Minimize2 size={24} />
-              </button>
-            </div>
-          )}
+                ))}
+                <div className="h-px bg-white/20 my-1"></div>
+                <button onClick={() => setFullScreenMode(null)} className="w-16 h-10 rounded-lg bg-red-600/80 hover:bg-red-500 text-white flex items-center justify-center">
+                  <Minimize2 size={20} />
+                </button>
+              </div>
+            )}
+          />
 
           <div className="order-first lg:order-last mb-8 lg:mb-0 lg:mt-0 mt-8 bg-white/5 border border-white/10 rounded-xl overflow-hidden shadow-2xl print-panel">
             <div className="flex bg-white/10 text-xs font-bold text-center border-b border-white/10">
@@ -3456,3 +3485,5 @@ export const ScoreCard: React.FC = () => {
     </div>
   );
 };
+
+export default ScoreCard;
