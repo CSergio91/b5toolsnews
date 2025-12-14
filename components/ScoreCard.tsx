@@ -570,11 +570,11 @@ const LineupGrid: React.FC<{
   nextBatterIdx: number;
   opposingTeam: TeamData;
 
-  isFullScreen?: boolean;
-  onToggleFullScreen?: () => void;
-  onAdvanceInning?: () => void;
-  renderOverlay?: () => React.ReactNode;
-}> = ({ title, teamNameValue, onTeamNameChange, teamData, onUpdate, onAddColumn, theme, currentInningIdx, nextBatterIdx, opposingTeam, isFullScreen, onToggleFullScreen, onAdvanceInning, renderOverlay }) => {
+  isFullScreen?: boolean; // Deprecated - kept for compatibility if needed but logic removed
+  onToggleFullScreen?: () => void; // Deprecated
+  renderOverlay?: () => React.ReactNode; // Deprecated
+}> = ({ title, teamNameValue, onTeamNameChange, teamData, onUpdate, onAddColumn, theme, currentInningIdx, nextBatterIdx, opposingTeam, onAdvanceInning }) => {
+  // isFullScreen, onToggleFullScreen, renderOverlay props are intentionally ignored to enforce external handling
 
   const [modalOpen, setModalOpen] = useState(false);
   const [activeCell, setActiveCell] = useState<{
@@ -680,12 +680,11 @@ const LineupGrid: React.FC<{
       />
 
       {(() => {
-        const content = (
-          <div className={`mb-8 border rounded-xl p-4 bg-white/5 ${theme === 'purple' ? 'border-purple-500/20 shadow-purple-900/20' : 'border-amber-500/20 shadow-orange-900/20'} shadow-lg transition-all print-panel
-            ${isFullScreen ? 'fixed inset-0 z-[155] bg-[#1e1e24] m-0 rounded-none border-0 flex items-center justify-center overflow-hidden' : ''}`}>
+        return (
+          <div className={`mb-8 border rounded-xl p-4 bg-white/5 ${theme === 'purple' ? 'border-purple-500/20 shadow-purple-900/20' : 'border-amber-500/20 shadow-orange-900/20'} shadow-lg transition-all print-panel`}>
 
-            <div className={`flex flex-col w-full h-full ${isFullScreen ? 'portrait:w-[100vh] portrait:h-[100vw] portrait:rotate-90 origin-center' : ''}`} style={isFullScreen ? { zoom: 0.70 } : {}}>
-              <div className={`flex flex-col md:flex-row items-center justify-between gap-4 mb-4 ${isFullScreen ? 'hidden' : ''}`}>
+            <div className={`flex flex-col w-full h-full`}>
+              <div className={`flex flex-col md:flex-row items-center justify-between gap-4 mb-4`}>
                 <div className="flex flex-col md:flex-row items-start md:items-center gap-4 w-full">
                   <span className={`text-xs font-bold uppercase tracking-widest px-2 py-1 rounded bg-white/5 border border-white/10 ${themeColors.headerText}`}>
                     {title}
@@ -698,18 +697,9 @@ const LineupGrid: React.FC<{
                     className={`bg-transparent text-xl md:text-2xl font-bold uppercase tracking-wide focus:outline-none border-b border-transparent focus:border-white/20 transition-all w-full md:w-auto ${theme === 'purple' ? 'text-white placeholder-purple-300/30' : 'text-white placeholder-orange-300/30'}`}
                   />
                 </div>
-                {onToggleFullScreen && (
-                  <button
-                    onClick={onToggleFullScreen}
-                    className={`p-2 rounded-lg border transition-all ${isFullScreen ? 'bg-red-500/20 text-red-300 border-red-500/30 hover:bg-red-500/30' : 'bg-white/5 text-white/40 border-white/10 hover:bg-white/10 hover:text-white'}`}
-                    title={isFullScreen ? "Salir de Pantalla Completa" : "Pantalla Completa"}
-                  >
-                    {isFullScreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
-                  </button>
-                )}
               </div>
 
-              <div className={`overflow-x-auto rounded-lg border border-white/10 bg-black/20 shadow-inner scrollbar-thin ${theme === 'purple' ? 'scrollbar-thumb-purple-600/50' : 'scrollbar-thumb-orange-600/50'} scrollbar-track-transparent pb-2 print-overflow-visible ${isFullScreen ? 'w-full flex-1 overflow-auto border-0 rounded-none bg-transparent shadow-none' : ''}`}>
+              <div className={`overflow-x-auto rounded-lg border border-white/10 bg-black/20 shadow-inner scrollbar-thin ${theme === 'purple' ? 'scrollbar-thumb-purple-600/50' : 'scrollbar-thumb-orange-600/50'} scrollbar-track-transparent pb-2 print-overflow-visible`}>
                 <div
                   className="grid min-w-max"
                   style={{
@@ -925,19 +915,128 @@ const LineupGrid: React.FC<{
               </div>
             </div>
 
-            {isFullScreen && renderOverlay && (
-              <div className="absolute top-4 right-4 z-[9999] opacity-90 hover:opacity-100 transition-opacity">
-                {renderOverlay()}
-              </div>
-            )}
+
+            {/* Overlay logic removed from here */}
 
           </div>
         );
-
-        if (isFullScreen) return createPortal(content, document.body);
-        return content;
       })()}
     </>
+  );
+};
+
+// --- NEW FULL SCREEN SCORE SHEET COMPONENT ---
+const ScoreSheetFullScreen: React.FC<{
+  isOpen: boolean;
+  onClose: () => void;
+  title: string;
+  setNum: string;
+  visitorData: TeamData;
+  localData: TeamData;
+  gameInfo: any;
+  updateGameInfo: (field: string, val: string) => void;
+  updateTeam: (teamKey: 'visitorTeam' | 'localTeam', idx: number, type: 'starter' | 'sub', field: string, val: any, iIdx?: number, abIdx?: number, errorCulprit?: any) => void;
+  handleAddColumn: (iIdx: number, team: 'visitor' | 'local') => void;
+  currentInningIdx: number;
+  visitorNextBatterIdx: number;
+  localNextBatterIdx: number;
+  onAdvanceInning: () => void;
+}> = ({ isOpen, onClose, title, setNum, visitorData, localData, gameInfo, updateGameInfo, updateTeam, handleAddColumn, currentInningIdx, visitorNextBatterIdx, localNextBatterIdx, onAdvanceInning }) => {
+  const [activeTeam, setActiveTeam] = useState<'visitor' | 'local'>('visitor');
+
+  if (!isOpen) return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] bg-[#1e1e24] flex flex-col text-white overflow-hidden">
+
+      {/* 1. Header Bar */}
+      <div className="flex h-14 shrink-0 items-center justify-between px-4 border-b border-white/10 bg-[#2a1205]/50 backdrop-blur-md">
+        <div className="flex items-center gap-4">
+          <div className="flex flex-col">
+            <span className="text-xs text-white/50 font-medium uppercase tracking-wider">{gameInfo.competition || 'Torneo'}</span>
+            <h2 className="text-sm md:text-lg font-bold truncate max-w-[200px] md:max-w-md">{title}</h2>
+          </div>
+          <span className="px-3 py-1 bg-white/10 rounded-lg text-xs font-bold border border-white/10">SET {setNum}</span>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <div className="flex bg-black/40 rounded-lg p-1 border border-white/10">
+            <button
+              onClick={() => setActiveTeam('visitor')}
+              className={`px-3 py-1.5 rounded-md text-xs font-bold uppercase transition-all flex items-center gap-2 ${activeTeam === 'visitor' ? 'bg-purple-600 text-white shadow-lg' : 'text-white/40 hover:text-white'}`}
+            >
+              <span className="w-2 h-2 rounded-full bg-purple-400"></span>
+              {gameInfo.visitor || 'VISITANTE'}
+            </button>
+            <button
+              onClick={() => setActiveTeam('local')}
+              className={`px-3 py-1.5 rounded-md text-xs font-bold uppercase transition-all flex items-center gap-2 ${activeTeam === 'local' ? 'bg-orange-600 text-white shadow-lg' : 'text-white/40 hover:text-white'}`}
+            >
+              <span className="w-2 h-2 rounded-full bg-orange-400"></span>
+              {gameInfo.home || 'LOCAL'}
+            </button>
+          </div>
+
+          <button onClick={onClose} className="w-10 h-10 flex items-center justify-center rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white transition-colors border border-red-500/30">
+            <X size={20} />
+          </button>
+        </div>
+      </div>
+
+      {/* 2. Main Content Area */}
+      <div className="flex-1 overflow-auto bg-[#121214] relative">
+
+        {/* Orientation Warning Overlay (Visible only in Portrait) */}
+        <div className="absolute inset-0 z-50 bg-[#1e1e24] flex flex-col items-center justify-center gap-6 p-8 text-center md:hidden portrait:flex">
+          <RotateCcw size={48} className="text-indigo-400 animate-spin-slow duration-[3s]" />
+          <div className="max-w-xs">
+            <h3 className="text-xl font-bold text-white mb-2">Gira tu dispositivo</h3>
+            <p className="text-white/50 text-sm">Para usar la hoja de anotaciones en pantalla completa, por favor usa el modo horizontal.</p>
+          </div>
+        </div>
+
+        {/* Lineup Grid Container */}
+        <div className="min-w-[100vw] min-h-full p-2 portrait:hidden md:portrait:block">
+          {/* 
+                 Note: We render both but hide one to preserve state if we wanted, 
+                 but simple conditional rendering is better for performance here 
+                 unless we need to keep scroll position. Let's restart scroll. 
+               */}
+          <div className="mx-auto max-w-[1400px]">
+            {activeTeam === 'visitor' ? (
+              <LineupGrid
+                title="Alineación Visitante"
+                teamNameValue={gameInfo.visitor}
+                onTeamNameChange={(val) => updateGameInfo('visitor', val)}
+                teamData={visitorData}
+                onUpdate={(idx, type, field, val, iIdx, abIdx, errorCulprit) => updateTeam('visitorTeam', idx, type, field, val, iIdx, abIdx, errorCulprit)}
+                onAddColumn={(iIdx) => handleAddColumn(iIdx, 'visitor')}
+                theme="purple"
+                currentInningIdx={currentInningIdx}
+                nextBatterIdx={visitorNextBatterIdx}
+                opposingTeam={localData}
+                onAdvanceInning={onAdvanceInning}
+              />
+            ) : (
+              <LineupGrid
+                title="Alineación Local"
+                teamNameValue={gameInfo.home}
+                onTeamNameChange={(val) => updateGameInfo('home', val)}
+                teamData={localData}
+                onUpdate={(idx, type, field, val, iIdx, abIdx, errorCulprit) => updateTeam('localTeam', idx, type, field, val, iIdx, abIdx, errorCulprit)}
+                onAddColumn={(iIdx) => handleAddColumn(iIdx, 'local')}
+                theme="amber"
+                currentInningIdx={currentInningIdx}
+                nextBatterIdx={localNextBatterIdx}
+                opposingTeam={visitorData}
+                onAdvanceInning={onAdvanceInning}
+              />
+            )}
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
   );
 };
 
@@ -1867,7 +1966,7 @@ const SingleSetScoreCard: React.FC<{
   const [showAdvancedStats, setShowAdvancedStats] = useState(false);
   const [showAdvanceModal, setShowAdvanceModal] = useState(false);
 
-  const [fullScreenMode, setFullScreenMode] = useState<'visitor' | 'local' | null>(null);
+  const [fullScreenMode, setFullScreenMode] = useState<boolean>(false);
   const [subscriptionTier, setSubscriptionTier] = useState<string>('basic');
 
   useEffect(() => {
@@ -2448,6 +2547,14 @@ const SingleSetScoreCard: React.FC<{
             <RotateCcw size={14} /> REINICIAR
           </button>
 
+          <button
+            onClick={() => setFullScreenMode(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 rounded-lg border border-indigo-500/20 text-xs font-bold transition-all hover:shadow-lg hover:shadow-indigo-500/10"
+            title="Pantalla Completa"
+          >
+            <Maximize2 size={14} /> PANTALLA COMPLETA
+          </button>
+
 
 
           <button
@@ -2517,32 +2624,7 @@ const SingleSetScoreCard: React.FC<{
             currentInningIdx={currentInningIdx}
             nextBatterIdx={visitorNextBatterIdx}
             opposingTeam={state.localTeam}
-            isFullScreen={fullScreenMode === 'visitor'}
-            onToggleFullScreen={() => setFullScreenMode(fullScreenMode === 'visitor' ? null : 'visitor')}
             onAdvanceInning={() => setShowAdvanceModal(true)}
-            renderOverlay={() => (
-              <div className="flex flex-col gap-2">
-                {[
-                  { id: 'visitor', name: state.gameInfo.visitor || 'VISITANTE', score: visitorRunsTotal, color: 'purple' },
-                  { id: 'local', name: state.gameInfo.home || 'LOCAL', score: localRunsTotal, color: 'amber' }
-                ].map((team) => (
-                  <button
-                    key={team.id}
-                    onClick={() => setFullScreenMode(team.id as 'visitor' | 'local')}
-                    className={`flex flex-col items-center justify-center w-16 h-12 rounded-lg border transition-all ${fullScreenMode === team.id
-                      ? (team.color === 'purple' ? 'bg-purple-600/90 text-white border-purple-400' : 'bg-amber-600/90 text-white border-amber-400')
-                      : 'bg-black/60 border-white/20 text-white/50 hover:bg-white/10'}`}
-                  >
-                    <span className="text-[8px] font-bold uppercase truncate max-w-full">{team.name.substring(0, 3)}</span>
-                    <span className="text-sm font-black leading-none">{team.score}</span>
-                  </button>
-                ))}
-                <div className="h-px bg-white/20 my-1"></div>
-                <button onClick={() => setFullScreenMode(null)} className="w-16 h-10 rounded-lg bg-red-600/80 hover:bg-red-500 text-white flex items-center justify-center">
-                  <Minimize2 size={20} />
-                </button>
-              </div>
-            )}
           />
           <LineupGrid
             title="Alineación Local"
@@ -2555,32 +2637,7 @@ const SingleSetScoreCard: React.FC<{
             currentInningIdx={currentInningIdx}
             nextBatterIdx={localNextBatterIdx}
             opposingTeam={state.visitorTeam}
-            isFullScreen={fullScreenMode === 'local'}
-            onToggleFullScreen={() => setFullScreenMode(fullScreenMode === 'local' ? null : 'local')}
             onAdvanceInning={() => setShowAdvanceModal(true)}
-            renderOverlay={() => (
-              <div className="flex flex-col gap-2">
-                {[
-                  { id: 'visitor', name: state.gameInfo.visitor || 'VISITANTE', score: visitorRunsTotal, color: 'purple' },
-                  { id: 'local', name: state.gameInfo.home || 'LOCAL', score: localRunsTotal, color: 'amber' }
-                ].map((team) => (
-                  <button
-                    key={team.id}
-                    onClick={() => setFullScreenMode(team.id as 'visitor' | 'local')}
-                    className={`flex flex-col items-center justify-center w-16 h-12 rounded-lg border transition-all ${fullScreenMode === team.id
-                      ? (team.color === 'purple' ? 'bg-purple-600/90 text-white border-purple-400' : 'bg-amber-600/90 text-white border-amber-400')
-                      : 'bg-black/60 border-white/20 text-white/50 hover:bg-white/10'}`}
-                  >
-                    <span className="text-[8px] font-bold uppercase truncate max-w-full">{team.name.substring(0, 3)}</span>
-                    <span className="text-sm font-black leading-none">{team.score}</span>
-                  </button>
-                ))}
-                <div className="h-px bg-white/20 my-1"></div>
-                <button onClick={() => setFullScreenMode(null)} className="w-16 h-10 rounded-lg bg-red-600/80 hover:bg-red-500 text-white flex items-center justify-center">
-                  <Minimize2 size={20} />
-                </button>
-              </div>
-            )}
           />
 
           <div className="order-first lg:order-last mb-8 lg:mb-0 lg:mt-0 mt-8 bg-white/5 border border-white/10 rounded-xl overflow-hidden shadow-2xl print-panel">
@@ -2820,6 +2877,22 @@ const SingleSetScoreCard: React.FC<{
           </div>
         </div>
       </div>
+      <ScoreSheetFullScreen
+        isOpen={fullScreenMode}
+        onClose={() => setFullScreenMode(false)}
+        title={`${state.gameInfo.visitor} vs ${state.gameInfo.home}`}
+        setNum={state.gameInfo.setNum || '1'}
+        visitorData={state.visitorTeam}
+        localData={state.localTeam}
+        gameInfo={state.gameInfo}
+        updateGameInfo={updateGameInfo}
+        updateTeam={updateTeam}
+        handleAddColumn={handleAddColumn}
+        currentInningIdx={currentInningIdx}
+        visitorNextBatterIdx={visitorNextBatterIdx}
+        localNextBatterIdx={localNextBatterIdx}
+        onAdvanceInning={() => setShowAdvanceModal(true)}
+      />
     </div>
   );
 };
@@ -3482,6 +3555,8 @@ export const ScoreCard: React.FC = () => {
 
       <MatchWinnerModal matchWinner={matchWinner} onClose={() => setMatchWinner(null)} />
       <GeneralStatsModal isOpen={generalStatsOpen} onClose={() => setGeneralStatsOpen(false)} />
+
+
     </div>
   );
 };
