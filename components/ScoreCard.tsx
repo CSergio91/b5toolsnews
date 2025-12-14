@@ -946,36 +946,66 @@ const ScoreSheetFullScreen: React.FC<{
 }> = ({ isOpen, onClose, title, setNum, visitorData, localData, gameInfo, updateGameInfo, updateTeam, handleAddColumn, currentInningIdx, visitorNextBatterIdx, localNextBatterIdx, onAdvanceInning, liveStatusProps }) => {
   const [activeTeam, setActiveTeam] = useState<'visitor' | 'local'>('visitor');
 
+  useEffect(() => {
+    if (isOpen) {
+      // Small delay to ensure render ensures smooth transition, but direct is fine on click.
+      // Auto-trigger immersive mode
+      const enterFullScreen = async () => {
+        try {
+          if (document.documentElement.requestFullscreen) {
+            await document.documentElement.requestFullscreen();
+          } else if ((document.documentElement as any).webkitRequestFullscreen) {
+            await (document.documentElement as any).webkitRequestFullscreen(); // Safari/iOS
+          }
+        } catch (e) {
+          console.warn("Fullscreen request denied or failed", e);
+        }
+      };
+      enterFullScreen();
+    } else {
+      const exitFullScreen = async () => {
+        try {
+          if (document.fullscreenElement || (document as any).webkitFullscreenElement) {
+            if (document.exitFullscreen) {
+              await document.exitFullscreen();
+            } else if ((document as any).webkitExitFullscreen) {
+              await (document as any).webkitExitFullscreen();
+            }
+          }
+        } catch (e) { console.warn("Exit fullscreen failed", e); }
+      };
+      exitFullScreen();
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[9999] bg-[#1e1e24] flex flex-col text-white overflow-hidden">
-
-      {/* 1. Header Bar */}
-      <div className="flex h-14 shrink-0 items-center justify-between px-4 border-b border-white/10 bg-[#2a1205]/50 backdrop-blur-md">
+    <div className="fixed inset-0 z-[200] bg-[#121214] flex flex-col h-[100dvh] w-screen overflow-hidden">
+      {/* 1. Top Bar */}
+      <div className="flex items-center justify-between px-4 py-2 bg-[#1e1e24] border-b border-white/10 shrink-0">
         <div className="flex items-center gap-4">
-          <div className="flex flex-col">
-            <span className="text-xs text-white/50 font-medium uppercase tracking-wider">{gameInfo.competition || 'Torneo'}</span>
-            <h2 className="text-sm md:text-lg font-bold truncate max-w-[200px] md:max-w-md">{title}</h2>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-white/40 uppercase tracking-widest hidden md:inline">Juego</span>
+            <span className="text-sm font-black text-white">{setNum}</span>
           </div>
-          <span className="px-3 py-1 bg-white/10 rounded-lg text-xs font-bold border border-white/10">SET {setNum}</span>
+          <div className="h-4 w-px bg-white/10" />
+          <h2 className="text-sm md:text-lg font-bold text-white truncate max-w-[150px] md:max-w-md">{title}</h2>
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="flex bg-black/40 rounded-lg p-1 border border-white/10">
+          <div className="flex bg-black/20 p-1 rounded-lg">
             <button
               onClick={() => setActiveTeam('visitor')}
-              className={`px-3 py-1.5 rounded-md text-xs font-bold uppercase transition-all flex items-center gap-2 ${activeTeam === 'visitor' ? 'bg-purple-600 text-white shadow-lg' : 'text-white/40 hover:text-white'}`}
+              className={`px-3 py-1.5 rounded-md text-xs font-bold uppercase transition-all ${activeTeam === 'visitor' ? 'bg-purple-600 text-white shadow' : 'text-white/40 hover:text-white'}`}
             >
-              <span className="w-2 h-2 rounded-full bg-purple-400"></span>
-              {gameInfo.visitor || 'VISITANTE'}
+              Visita
             </button>
             <button
               onClick={() => setActiveTeam('local')}
-              className={`px-3 py-1.5 rounded-md text-xs font-bold uppercase transition-all flex items-center gap-2 ${activeTeam === 'local' ? 'bg-orange-600 text-white shadow-lg' : 'text-white/40 hover:text-white'}`}
+              className={`px-3 py-1.5 rounded-md text-xs font-bold uppercase transition-all ${activeTeam === 'local' ? 'bg-amber-600 text-white shadow' : 'text-white/40 hover:text-white'}`}
             >
-              <span className="w-2 h-2 rounded-full bg-orange-400"></span>
-              {gameInfo.home || 'LOCAL'}
+              Local
             </button>
           </div>
 
@@ -988,16 +1018,9 @@ const ScoreSheetFullScreen: React.FC<{
       {/* 2. Main Content Area */}
       <div className="flex-1 overflow-auto bg-[#121214] relative">
 
-        {/* Orientation Warning Overlay (Visible only in Portrait) */}
-        <div className="absolute inset-0 z-50 bg-[#1e1e24] flex flex-col items-center justify-center gap-6 p-8 text-center md:hidden portrait:flex">
-          <RotateCcw size={48} className="text-indigo-400 animate-spin-slow duration-[3s]" />
-          <div className="max-w-xs">
-            <h3 className="text-xl font-bold text-white mb-2">Gira tu dispositivo</h3>
-            <p className="text-white/50 text-sm">Para usar la hoja de anotaciones en pantalla completa, por favor usa el modo horizontal.</p>
-          </div>
-        </div>
-
-        <div className="absolute inset-0 z-50 bg-[#1e1e24] flex flex-col items-center justify-center gap-6 p-8 text-center md:hidden portrait:flex">
+        {/* Orientation Warning Overlay (Visible only in Portrait AND Mobile) */}
+        {/* We use md:hidden to only show on mobile. portrait:flex to show in portrait. landscape:hidden to HIDE in landscape explicitly. */}
+        <div className="absolute inset-0 z-50 bg-[#1e1e24] flex flex-col items-center justify-center gap-6 p-8 text-center md:hidden portrait:flex landscape:hidden">
           <RotateCcw size={48} className="text-indigo-400 animate-spin-slow duration-[3s]" />
           <div className="max-w-xs">
             <h3 className="text-xl font-bold text-white mb-2">Gira tu dispositivo</h3>
@@ -1007,7 +1030,7 @@ const ScoreSheetFullScreen: React.FC<{
 
         {/* Live Game Status (Compact) */}
         <div className="sticky top-0 z-40 w-full bg-[#1e1e24]/90 backdrop-blur-sm border-b border-white/10 hidden md:block landscape:block">
-          <LiveGameStatus {...liveStatusProps} />
+          <LiveGameStatus {...liveStatusProps} inline={true} />
         </div>
 
         {/* Lineup Grid Container */}
@@ -1076,9 +1099,10 @@ interface LiveGameStatusProps {
     visitor: string[];
     local: string[];
   };
+  inline?: boolean;
 }
 
-const LiveGameStatus = ({ visitorRuns, localRuns, inning, visitorOuts, localOuts, visitorName, localName, visitorLogo, localLogo, onSwap, onAdjustVisitor, onAdjustLocal, visitorHits, localHits, visitorErrors, localErrors, inningScores }: LiveGameStatusProps) => {
+const LiveGameStatus = ({ visitorRuns, localRuns, inning, visitorOuts, localOuts, visitorName, localName, visitorLogo, localLogo, onSwap, onAdjustVisitor, onAdjustLocal, visitorHits, localHits, visitorErrors, localErrors, inningScores, inline }: LiveGameStatusProps) => {
   const [position, setPosition] = useState({ x: 0, y: 10 });
   const [isCompact, setIsCompact] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -1149,13 +1173,73 @@ const LiveGameStatus = ({ visitorRuns, localRuns, inning, visitorOuts, localOuts
   const totalFrames = Math.max(5, Math.max(inningScores.visitor.length, inningScores.local.length));
   const frames = Array.from({ length: totalFrames }, (_, i) => i);
 
+  if (inline) {
+    return (
+      <div className="w-full pointer-events-auto no-print select-none">
+        <div className={`
+          bg-[#1e1e24] border-b border-white/10 shadow-lg 
+          flex flex-col overflow-hidden transition-all duration-300
+        `}>
+          {/* Main Bar */}
+          <div className="flex items-stretch h-14 md:h-16 relative">
+            {/* Content similar to portal version but static */}
+            {/* We can refactor content to a sub-component to avoid duplication, but for now copying structure adjusting slightly for full-width */}
+            <div className="flex-1 flex items-center justify-between px-4 md:px-8 max-w-7xl mx-auto w-full">
+              {/* Visitor Score */}
+              <div className="flex items-center gap-4 flex-1">
+                <div className="flex items-center gap-3">
+                  {visitorLogo ? <img src={visitorLogo} className="w-8 h-8 md:w-10 md:h-10 object-contain" /> : <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 font-bold">{visitorName.substring(0, 1)}</div>}
+                  <div className="text-left">
+                    <div className="text-lg md:text-2xl font-bold font-mono leading-none">{visitorRuns}</div>
+                    <div className="text-[10px] md:text-xs text-white/50 font-bold tracking-wider uppercase truncate max-w-[100px] md:max-w-[150px]">{visitorName}</div>
+                  </div>
+                </div>
+                {/* Visitor Indicators */}
+                <div className="flex gap-2">
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <div key={i} className={`w-2 h-2 rounded-full ${i < visitorOuts ? 'bg-red-500' : 'bg-white/10'}`} />
+                  ))}
+                </div>
+              </div>
+
+              {/* Center Status */}
+              <div className="flex flex-col items-center justify-center px-4 w-32 md:w-48">
+                <div className="text-xs font-bold text-white/40 mb-1">INNING {inning}</div>
+                <div className="flex gap-4 text-[10px] text-white/30 font-mono">
+                  <span>H: {visitorHits}-{localHits}</span>
+                  <span>E: {visitorErrors}-{localErrors}</span>
+                </div>
+              </div>
+
+              {/* Local Score */}
+              <div className="flex items-center gap-4 flex-1 justify-end">
+                {/* Local Indicators */}
+                <div className="flex gap-2">
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <div key={i} className={`w-2 h-2 rounded-full ${i < localOuts ? 'bg-red-500' : 'bg-white/10'}`} />
+                  ))}
+                </div>
+                <div className="flex items-center gap-3 text-right">
+                  <div className="text-right">
+                    <div className="text-lg md:text-2xl font-bold font-mono leading-none">{localRuns}</div>
+                    <div className="text-[10px] md:text-xs text-white/50 font-bold tracking-wider uppercase truncate max-w-[100px] md:max-w-[150px]">{localName}</div>
+                  </div>
+                  {localLogo ? <img src={localLogo} className="w-8 h-8 md:w-10 md:h-10 object-contain" /> : <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-amber-500/20 flex items-center justify-center text-amber-400 font-bold">{localName.substring(0, 1)}</div>}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return createPortal(
     <div
       ref={containerRef}
       className={`fixed z-[160] pointer-events-auto no-print touch-none select-none`}
       style={{ left: position.x, top: position.y }}
       onMouseDown={handleMouseDown}
-
       onTouchStart={handleTouchStart}
     >
       {isCompact ? (
@@ -2041,6 +2125,47 @@ const SingleSetScoreCard: React.FC<{
       document.body.style.overflow = '';
     };
   }, [fullScreenMode]);
+
+  // --- AUTO ADVANCE INNING LOGIC ---
+  useEffect(() => {
+    if (state.winner) return; // Don't advance if game over
+
+    const currentInningIdx = state.visitorTeam.slots[0].starter.scores.length - 1;
+    // Check if we need to verify inputs to prevent loop? 
+    // We only want to advance if the CURRENT inning is full (3 outs each).
+    // And if we haven't already advanced (which we check by seeing if length > currentInningIdx, but local scope only knows current).
+
+    const countOuts = (team: TeamData, idx: number) => {
+      let outs = 0;
+      team.slots.forEach(slot => {
+        const v1 = slot.starter.scores[idx] ? slot.starter.scores[idx][0] || '' : ''; // Assuming score is array of strings? No, scores[idx] is string[].
+        // Wait: scores is string[][] (innings -> at-bats).
+        // Actually, let's verify data structure.
+        // scores[inningIdx] is string[] (list of at-bats in that inning).
+        // Iterate FLAT because outs can be anywhere in that inning's array
+        // But wait, structure: starter.scores is string[][].
+        const inningAtBats = slot.starter.scores[idx] || [];
+        inningAtBats.forEach(val => { if (val.toUpperCase().includes('X') && !val.includes('Ex')) outs++; });
+
+        const subAtBats = slot.sub.scores[idx] || [];
+        subAtBats.forEach(val => { if (val.toUpperCase().includes('X') && !val.includes('Ex')) outs++; });
+      });
+      return outs;
+    };
+
+    const vOuts = countOuts(state.visitorTeam, currentInningIdx);
+    const lOuts = countOuts(state.localTeam, currentInningIdx);
+
+    if (vOuts >= 3 && lOuts >= 3) {
+      // Both teams have 3 outs in the current inning.
+      // We should advance.
+      // Use setTimeout to allow visual confirmation.
+      const timer = setTimeout(() => {
+        confirmAdvanceInning();
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [state.visitorTeam, state.localTeam, state.winner]);
 
   const currentInningIdx = state.visitorTeam.slots[0].starter.scores.length - 1;
   const currentInning = currentInningIdx + 1;
