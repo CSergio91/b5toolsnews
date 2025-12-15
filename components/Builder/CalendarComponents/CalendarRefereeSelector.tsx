@@ -27,10 +27,10 @@ export const CalendarRefereeSelector: React.FC<CalendarRefereeSelectorProps> = (
                     ? 'bg-green-500/10 text-green-400 hover:bg-green-500/20'
                     : 'text-white/20 hover:text-white hover:bg-white/10'
                     }`}
-                title={selectedReferee ? `Árbitro: ${selectedReferee.name}` : "Asignar Árbitro"}
+                title={selectedReferee ? `Árbitro: ${selectedReferee.first_name} ${selectedReferee.last_name}` : "Asignar Árbitro"}
             >
                 <UserCheck size={14} />
-                {selectedReferee && <span className="text-[10px] font-bold max-w-[60px] truncate">{selectedReferee.name}</span>}
+                {selectedReferee && <span className="text-[10px] font-bold max-w-[60px] truncate">{selectedReferee.first_name} {selectedReferee.last_name}</span>}
             </button>
 
             {isOpen && (
@@ -57,7 +57,7 @@ export const CalendarRefereeSelector: React.FC<CalendarRefereeSelectorProps> = (
                                         className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-white/5 ${ref.id === currentRefereeId ? 'text-green-400 font-bold' : 'text-white/70'
                                             }`}
                                     >
-                                        <span>{ref.name}</span>
+                                        <span>{ref.first_name} {ref.last_name}</span>
                                         {ref.id === currentRefereeId && <UserCheck size={12} />}
                                     </button>
                                 ))}

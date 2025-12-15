@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BuilderProvider, useBuilder } from '../context/BuilderContext';
-import { Save, XCircle, ArrowRight, Settings, Users, Trophy, GitBranch, User, LogOut, ChevronUp, Menu, X, Calendar as CalendarIcon, MessageCircle, CreditCard, Edit } from 'lucide-react';
+import { Save, XCircle, ArrowRight, Settings, Users, Trophy, GitBranch, User, LogOut, ChevronUp, Menu, X, Calendar as CalendarIcon, MessageCircle, CreditCard, Edit, MonitorPlay } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ConfigStep } from '../components/Builder/ConfigStep';
 import { TeamManagementStep } from '../components/Builder/TeamManagementStep';
@@ -192,6 +192,15 @@ const BuilderWizard = () => {
                             className="p-2 text-white/60 hover:text-white md:hidden"
                         >
                             <XCircle size={20} />
+                        </button>
+
+                        <button
+                            title="Vista Previa del Torneo"
+                            onClick={() => addToast('Vista Previa: Funcionalidad próximamente', 'info')}
+                            className="p-2 md:px-4 md:py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-full transition-colors flex items-center gap-2"
+                        >
+                            <MonitorPlay size={18} />
+                            <span className="hidden md:inline font-bold text-sm">Vista Previa</span>
                         </button>
 
                         <button

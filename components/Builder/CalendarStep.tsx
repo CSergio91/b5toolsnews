@@ -25,7 +25,7 @@ export interface Field {
 }
 
 export const CalendarStep: React.FC = () => {
-    const { state, updateStructure, teams } = useBuilder();
+    const { state, updateStructure, teams, updateConfig } = useBuilder();
     const { addToast } = useToast();
 
     const [fields, setFields] = useState<Field[]>([]);
@@ -135,11 +135,14 @@ export const CalendarStep: React.FC = () => {
     }, [state.structure, (state.config as any).start_date, (state.config as any).end_date]);
 
     // -- Persistence --
+    // -- Persistence --
     useEffect(() => {
-        if (fields.length >= 0) { // Save even if empty to clear
-            (state.config as any).fields = fields;
-            (state.config as any).matchDuration = matchDuration;
-        }
+        // Use a timeout to debounce updates and prevent rapid context switching if fields change fast (dragging)
+        const timer = setTimeout(() => {
+            updateConfig('fields', fields);
+            updateConfig('matchDuration', matchDuration);
+        }, 500);
+        return () => clearTimeout(timer);
     }, [fields, matchDuration]);
 
 
@@ -257,29 +260,53 @@ export const CalendarStep: React.FC = () => {
         ));
 
         // 2. Update Global Structure
-        // Check if structure exists
         if (!state.structure || !state.structure.phases) return;
 
         const newStructure = { ...state.structure };
         let found = false;
 
-        newStructure.phases = newStructure.phases.map(p => ({
-            ...p,
-            rounds: p.rounds.map(r => ({
-                ...r,
-                matches: r.matches.map(m => {
-                    if (m.id === matchId) {
-                        found = true;
-                        return { ...m, refereeId };
-                    }
-                    return m;
-                })
-            }))
-        }));
+        newStructure.phases = newStructure.phases.map(p => {
+            // Handle Group Phase
+            if (p.groups) {
+                return {
+                    ...p,
+                    groups: p.groups.map(g => ({
+                        ...g,
+                        matches: g.matches.map(m => {
+                            if (m.id === matchId) {
+                                found = true;
+                                return { ...m, refereeId };
+                            }
+                            return m;
+                        })
+                    }))
+                };
+            }
+            // Handle Elimination Phase (matches array directly, or rounds if existing but type says matches?)
+            // Type definition says `matches?: RoundMatch[]`. It does NOT say `rounds`.
+            // But my previous code tried to map `rounds`. BracketStep likely uses `rounds` internally but flattens or structure.ts definition is partial?
+            // "RoundMatch" has "roundIndex".
+            // Let's assume matches are in `p.matches`.
+            if (p.matches) {
+                return {
+                    ...p,
+                    matches: p.matches.map(m => {
+                        if (m.id === matchId) {
+                            found = true;
+                            return { ...m, refereeId };
+                        }
+                        return m;
+                    })
+                };
+            }
+            return p;
+        });
 
         if (found) {
             updateStructure(newStructure);
-            addToast('Árbitro asignado', 'success');
+            addToast('Árbitro asignado y guardado', 'success');
+        } else {
+            console.warn("Match not found in structure during referee check", matchId);
         }
     };
 
