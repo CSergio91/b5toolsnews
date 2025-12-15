@@ -296,7 +296,7 @@ export const CalendarStep: React.FC = () => {
     // Action: Unassign (Drop to sidebar)
     const handleUnassignDrop = (e: React.DragEvent) => {
         e.preventDefault();
-        const data = e.dataTransfer.getData('application/json');
+        const data = e.dataTransfer.getData('application/b5-calendar-item');
         if (!data) return;
 
         try {
