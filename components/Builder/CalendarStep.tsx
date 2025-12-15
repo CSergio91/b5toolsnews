@@ -3,6 +3,7 @@ import { useBuilder } from '../../context/BuilderContext';
 import { RoundMatch } from '../../types/structure';
 import { Calendar as CalendarIcon, Clock, MapPin, Plus, Trash2, GripHorizontal, LayoutGrid, ArrowRight, Settings, Coffee, MoreVertical, CalendarDays, Edit2 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
+import { CalendarFieldColumn } from './CalendarComponents/CalendarFieldColumn';
 
 // Types
 export interface ScheduleItem {
@@ -45,7 +46,7 @@ export const CalendarStep: React.FC = () => {
 
     // Temp Form States
     const [newFieldData, setNewFieldData] = useState({ name: '', startTime: '09:00' });
-    const [renameData, setRenameData] = useState({ id: '', name: '' });
+    const [renameData, setRenameData] = useState({ id: '', name: '', startTime: '' }); // Added startTime
     const [newEventData, setNewEventData] = useState({ name: 'Descanso', duration: 30 }); // duration in minutes
     const [tempDuration, setTempDuration] = useState(60);
 
@@ -200,8 +201,8 @@ export const CalendarStep: React.FC = () => {
 
     const confirmRenameField = () => {
         if (!renameData.name) return;
-        setFields(prev => prev.map(f => f.id === renameData.id ? { ...f, name: renameData.name } : f));
-        addToast('Campo renombrado', 'success');
+        setFields(prev => prev.map(f => f.id === renameData.id ? { ...f, name: renameData.name, startTime: renameData.startTime || f.startTime } : f));
+        addToast('Campo actualizado', 'success');
         setModal({ type: null });
     };
 
@@ -246,6 +247,75 @@ export const CalendarStep: React.FC = () => {
         }));
         addToast('Evento agregado', 'success');
         setModal({ type: null });
+    };
+
+    // Action: Update Referee
+    const handleRefereeSelect = (matchId: string, refereeId: string) => {
+        // 1. Update Local
+        setMatches(prev => prev.map(m =>
+            m.id === matchId ? { ...m, refereeId } : m
+        ));
+
+        // 2. Update Global Structure
+        // Check if structure exists
+        if (!state.structure || !state.structure.phases) return;
+
+        const newStructure = { ...state.structure };
+        let found = false;
+
+        newStructure.phases = newStructure.phases.map(p => ({
+            ...p,
+            rounds: p.rounds.map(r => ({
+                ...r,
+                matches: r.matches.map(m => {
+                    if (m.id === matchId) {
+                        found = true;
+                        return { ...m, refereeId };
+                    }
+                    return m;
+                })
+            }))
+        }));
+
+        if (found) {
+            updateStructure(newStructure);
+            addToast('Árbitro asignado', 'success');
+        }
+    };
+
+    // Action: Delete Event
+    const handleDeleteEvent = (fieldId: string, itemId: string) => {
+        setFields(prev => prev.map(f =>
+            f.id === fieldId
+                ? { ...f, items: f.items.filter(i => i.id !== itemId) }
+                : f
+        ));
+        addToast('Evento eliminado', 'info');
+    };
+
+    // Action: Unassign (Drop to sidebar)
+    const handleUnassignDrop = (e: React.DragEvent) => {
+        e.preventDefault();
+        const data = e.dataTransfer.getData('application/json');
+        if (!data) return;
+
+        try {
+            const parsed = JSON.parse(data);
+            // Ensure it's a match and has an origin field
+            const item = parsed.item;
+            const originFieldId = parsed.originFieldId;
+
+            if (item && item.type === 'match' && originFieldId) {
+                setFields(prev => prev.map(f =>
+                    f.id === originFieldId
+                        ? { ...f, items: f.items.filter(i => i.id !== item.id) }
+                        : f
+                ));
+                addToast('Partido desasignado', 'info');
+            }
+        } catch (e) {
+            console.error("Error parsing drop", e);
+        }
     };
 
     // 4. Drag & Drop
@@ -391,7 +461,11 @@ export const CalendarStep: React.FC = () => {
 
             <div className="flex-1 flex gap-6 overflow-hidden">
                 {/* Available Matches Sidebar */}
-                <div className="w-80 flex flex-col bg-[#111] border-r border-white/5 pr-4 overflow-hidden flex-shrink-0">
+                <div
+                    className="w-80 flex flex-col bg-[#111] border-r border-white/5 pr-4 overflow-hidden flex-shrink-0"
+                    onDragOver={e => e.preventDefault()}
+                    onDrop={handleUnassignDrop}
+                >
                     <div className="text-xs font-bold text-white/50 uppercase tracking-wider mb-2 flex justify-between">
                         <span>Sin Asignar</span>
                         <span className="bg-white/10 px-1.5 rounded text-white">{unassignedMatches.length}</span>
@@ -423,116 +497,27 @@ export const CalendarStep: React.FC = () => {
                 {/* Fields Grid */}
                 <div className="flex-1 overflow-x-auto overflow-y-hidden flex gap-6 pb-4">
                     {fields.map(field => {
-                        let currentTimeAccumulator = 0; // minutes from start of day
-                        // Filter items for this date
                         const dayItems = field.items.filter(i => i.date === selectedDate);
-
                         return (
-                            <div
+                            <CalendarFieldColumn
                                 key={field.id}
-                                className="min-w-[340px] w-[340px] bg-[#1a1a20] border border-white/10 rounded-xl flex flex-col h-full shadow-xl transition-all hover:border-white/20"
+                                field={field}
+                                dateItems={dayItems}
+                                matchesSource={matches}
+                                getTeamName={getTeamName}
+                                calculateTime={calculateTime}
                                 onDragOver={handleDragOver}
-                                onDrop={(e) => {
-                                    if (e.target === e.currentTarget) {
-                                        handleDrop(e, field.id, -1);
-                                    }
+                                onDrop={handleDrop}
+                                onDragStart={(e, item, fid) => handleDragStart(e, item, fid)}
+                                onEditField={(f) => {
+                                    setRenameData({ id: f.id, name: f.name, startTime: f.startTime });
+                                    setModal({ type: 'rename' });
                                 }}
-                            >
-                                {/* Field Header */}
-                                <div className="p-4 border-b border-white/5 bg-white/5 flex justify-between items-center group">
-                                    <div className="overflow-hidden">
-                                        <div className="font-bold text-white truncate flex items-center gap-2">
-                                            {field.name}
-                                            <button onClick={() => openRenameField(field)} className="opacity-0 group-hover:opacity-100 p-1 hover:bg-white/10 rounded transition-all">
-                                                <Edit2 size={12} className="text-white/50" />
-                                            </button>
-                                        </div>
-                                        <div className="text-xs text-white/50 flex items-center gap-1">
-                                            <Clock size={10} /> Inicio: {field.startTime} | {field.items.length} Totales
-                                        </div>
-                                    </div>
-                                    <div className="flex gap-1">
-                                        <button onClick={() => openAddEvent(field.id)} title="Agregar Tiempo Extra" className="p-1.5 text-white/20 hover:text-green-400 rounded hover:bg-green-500/10 transition-colors">
-                                            <Coffee size={14} />
-                                        </button>
-                                        <button onClick={() => removeField(field.id)} className="p-1.5 text-white/20 hover:text-red-400 rounded hover:bg-red-500/10 transition-colors">
-                                            <Trash2 size={14} />
-                                        </button>
-                                    </div>
-                                </div>
-
-                                {/* Timeline */}
-                                <div
-                                    className="flex-1 overflow-y-auto p-2 space-y-2 custom-scrollbar bg-black/20 text-sm"
-                                    onDragOver={handleDragOver}
-                                    onDrop={(e) => {
-                                        if (e.target === e.currentTarget) handleDrop(e, field.id, -1);
-                                    }}
-                                >
-                                    {dayItems.map((item, idx) => {
-                                        const timeStr = calculateTime(field.startTime, currentTimeAccumulator);
-                                        currentTimeAccumulator += item.durationMinutes;
-
-                                        if (item.type === 'event') {
-                                            return (
-                                                <div
-                                                    key={item.id}
-                                                    draggable
-                                                    onDragStart={(e) => handleDragStart(e, item, field.id)}
-                                                    onDrop={(e) => {
-                                                        e.stopPropagation();
-                                                        handleDrop(e, field.id, idx);
-                                                    }}
-                                                    className="bg-yellow-500/5 border border-yellow-500/20 p-2 rounded flex items-center gap-3 select-none hover:bg-yellow-500/10 cursor-move"
-                                                >
-                                                    <div className="text-xs font-mono text-yellow-600/70">{timeStr}</div>
-                                                    <div className="flex-1">
-                                                        <div className="text-xs font-bold text-yellow-500">{item.name}</div>
-                                                        <div className="text-[10px] text-white/30">{item.durationMinutes} min</div>
-                                                    </div>
-                                                    <Coffee size={12} className="text-yellow-500/50" />
-                                                </div>
-                                            );
-                                        }
-
-                                        const match = getMatchById(item.matchId);
-                                        if (!match) return null;
-
-                                        return (
-                                            <div
-                                                key={item.id}
-                                                draggable
-                                                onDragStart={(e) => handleDragStart(e, item, field.id)}
-                                                onDrop={(e) => {
-                                                    e.stopPropagation();
-                                                    handleDrop(e, field.id, idx);
-                                                }}
-                                                className="bg-[#2a2a30] p-3 rounded border border-white/5 relative group hover:border-blue-500/30 transition-all select-none cursor-move hover:bg-[#333]"
-                                            >
-                                                <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500 rounded-l"></div>
-                                                <div className="pl-3">
-                                                    <div className="flex justify-between items-center mb-1">
-                                                        <span className="text-xs font-mono text-blue-300 bg-blue-900/20 px-1.5 rounded">{timeStr}</span>
-                                                        <span className="text-[10px] text-white/20">#{match.globalId}</span>
-                                                    </div>
-                                                    <div className="text-xs text-white mb-1">
-                                                        <span className="font-bold">{match.sourceHome?.type === 'team' ? getTeamName(match.sourceHome.id) : 'TBD'}</span>
-                                                        <span className="text-white/30 mx-1">vs</span>
-                                                        <span className="font-bold">{match.sourceAway?.type === 'team' ? getTeamName(match.sourceAway.id) : 'TBD'}</span>
-                                                    </div>
-                                                    <div className="text-[10px] text-white/30 truncate">{match.name}</div>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-
-                                    {dayItems.length === 0 && (
-                                        <div className="h-full flex flex-col items-center justify-center text-white/10 text-xs border-2 border-dashed border-white/5 rounded m-2 pointer-events-none">
-                                            <p>Arrastra partidos aquí</p>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
+                                onRemoveField={removeField}
+                                onAddEvent={openAddEvent}
+                                onRefereeSelect={handleRefereeSelect}
+                                onDeleteEvent={(itemId) => handleDeleteEvent(field.id, itemId)}
+                            />
                         );
                     })}
 
@@ -579,6 +564,10 @@ export const CalendarStep: React.FC = () => {
                             <div>
                                 <label className="text-xs font-bold text-white/50 uppercase">Nombre</label>
                                 <input type="text" className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-white focus:border-blue-500 outline-none" autoFocus value={renameData.name} onChange={e => setRenameData({ ...renameData, name: e.target.value })} />
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-white/50 uppercase">Inicio</label>
+                                <input type="time" className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-white focus:border-blue-500 outline-none" value={renameData.startTime || '09:00'} onChange={e => setRenameData({ ...renameData, startTime: e.target.value })} />
                             </div>
                         </div>
                         <div className="flex justify-end gap-2 mt-6">

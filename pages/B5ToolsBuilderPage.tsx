@@ -78,6 +78,27 @@ const BuilderWizard = () => {
     ];
 
     const handleSave = async () => {
+        // Validation: Check Referee Assignments
+        let unassignedCount = 0;
+        if (state.structure?.phases) {
+            state.structure.phases.forEach(p => {
+                p.rounds.forEach(r => {
+                    r.matches.forEach(m => {
+                        // Only count if it's a valid match (some sources might be empty/tbd, but usually we validate final structure)
+                        // If match is TBD maybe we don't care, but if it's scheduled it should have referee?
+                        // Let's just check raw refereeId
+                        if (!m.refereeId) unassignedCount++;
+                    });
+                });
+            });
+        }
+
+        if (unassignedCount > 0) {
+            // Soft validation for Draft
+            const proceed = confirm(`Atención: Hay ${unassignedCount} partidos sin árbitro asignado. ¿Deseas guardar de todos modos?`);
+            if (!proceed) return;
+        }
+
         const id = await saveTournament();
         if (id) {
             addToast('Torneo guardado correctamente (Borrador)', 'success');

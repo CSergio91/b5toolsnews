@@ -19,6 +19,7 @@ export interface RoundMatch {
     startTime?: string; // HH:mm
     location?: string;
     court?: string;
+    refereeId?: string;
 }
 
 export interface TournamentPhase {
