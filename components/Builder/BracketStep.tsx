@@ -327,6 +327,48 @@ export const BracketStep: React.FC = () => {
         });
     };
 
+    const handleAddGroup = (phaseId: string) => {
+        setPhases(prev => {
+            const newPhases = prev.map(p => {
+                if (p.id === phaseId && p.groups) {
+                    // Determine next letter
+                    const lastGroup = p.groups[p.groups.length - 1];
+                    const nextCharCode = lastGroup ? lastGroup.name.charCodeAt(0) + 1 : 65; // 65 = 'A'
+                    const nextName = String.fromCharCode(nextCharCode);
+
+                    return {
+                        ...p,
+                        groups: [...p.groups, {
+                            name: nextName,
+                            teams: [],
+                            matches: []
+                        }]
+                    };
+                }
+                return p;
+            });
+            return recalculateGlobalIds(newPhases);
+        });
+    };
+
+    const handleDeleteGroup = (phaseId: string, groupIndex: number) => {
+        if (!confirm("¿Eliminar este grupo y sus partidos?")) return;
+        setPhases(prev => {
+            const newPhases = prev.map(p => {
+                if (p.id === phaseId && p.groups) {
+                    const newGroups = [...p.groups];
+                    newGroups.splice(groupIndex, 1);
+                    return {
+                        ...p,
+                        groups: newGroups
+                    };
+                }
+                return p;
+            });
+            return recalculateGlobalIds(newPhases);
+        });
+    };
+
     // -- Connection Logic --
 
     // Returns available sources for a specific match
@@ -586,7 +628,7 @@ export const BracketStep: React.FC = () => {
                                         className="bg-transparent text-sm font-bold text-white outline-none w-full"
                                     />
                                 </div>
-                                {phase.order > 0 && (
+                                {(phase.order > 0 || phase.type === 'group') && (
                                     <button onClick={() => handleDeletePhase(phase.id)} className="text-white/20 hover:text-red-400 p-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                         <Trash2 size={14} />
                                     </button>
@@ -609,6 +651,13 @@ export const BracketStep: React.FC = () => {
                                                     <span className="text-[10px] bg-blue-500/10 text-blue-300 px-2 py-0.5 rounded border border-blue-500/20">
                                                         {group.matches.length} Partidos
                                                     </span>
+                                                    <button
+                                                        onClick={() => handleDeleteGroup(phase.id, gIdx)}
+                                                        className="p-1 hover:bg-white/10 rounded text-white/30 hover:text-red-400 ml-2"
+                                                        title="Eliminar Grupo"
+                                                    >
+                                                        <Trash2 size={12} />
+                                                    </button>
                                                 </div>
 
                                                 {/* Group Matches Grid */}
@@ -639,76 +688,83 @@ export const BracketStep: React.FC = () => {
                                                     )}
                                                 </div>
                                             </div>
-                                        ))}
-                                    </div>
-                                ) : (
+                                            </div>
+                                ))}
+                                <button
+                                    onClick={() => handleAddGroup(phase.id)}
+                                    className="w-full py-3 border border-dashed border-white/10 rounded-lg text-white/20 hover:text-white hover:border-white/30 text-xs font-bold transition-all flex items-center justify-center gap-2"
+                                >
+                                    <Plus size={14} /> Añadir Grupo
+                                </button>
+                            </div>
+                            ) : (
                                     // Matches Render
                                     phase.matches?.map(match => (
-                                        <div key={match.id} className="bg-[#1a1a20] border border-white/10 rounded-lg p-3 shadow-lg hover:border-blue-500/30 transition-all group relative">
-                                            {/* Match Header */}
-                                            <div className="flex justify-between items-center mb-3">
-                                                <span className="text-[10px] bg-black/40 px-2 py-0.5 rounded text-white/40">#{match.globalId}</span>
-                                                <input
-                                                    className="bg-transparent text-xs text-white/70 text-right outline-none w-24 focus:text-white focus:bg-white/5 rounded px-1"
-                                                    value={match.name}
-                                                    onChange={() => { }} // TODO: Update match name
-                                                />
-                                            </div>
+                            <div key={match.id} className="bg-[#1a1a20] border border-white/10 rounded-lg p-3 shadow-lg hover:border-blue-500/30 transition-all group relative">
+                                {/* Match Header */}
+                                <div className="flex justify-between items-center mb-3">
+                                    <span className="text-[10px] bg-black/40 px-2 py-0.5 rounded text-white/40">#{match.globalId}</span>
+                                    <input
+                                        className="bg-transparent text-xs text-white/70 text-right outline-none w-24 focus:text-white focus:bg-white/5 rounded px-1"
+                                        value={match.name}
+                                        onChange={() => { }} // TODO: Update match name
+                                    />
+                                </div>
 
-                                            <div className="flex flex-col gap-2">
-                                                {/* Visitor Slot */}
-                                                <div className="relative">
-                                                    <div className="text-[10px] text-white/20 uppercase font-bold mb-0.5 ml-1">Visitante</div>
-                                                    {renderSourceButton(match, 'away', phase.order)}
-                                                </div>
+                                <div className="flex flex-col gap-2">
+                                    {/* Visitor Slot */}
+                                    <div className="relative">
+                                        <div className="text-[10px] text-white/20 uppercase font-bold mb-0.5 ml-1">Visitante</div>
+                                        {renderSourceButton(match, 'away', phase.order)}
+                                    </div>
 
-                                                <div className="flex items-center gap-2 m-auto">
-                                                    <div className="h-px bg-white/10 flex-1 w-8"></div>
-                                                    <span className="text-[10px] text-white/10 font-bold">VS</span>
-                                                    <div className="h-px bg-white/10 flex-1 w-8"></div>
-                                                </div>
+                                    <div className="flex items-center gap-2 m-auto">
+                                        <div className="h-px bg-white/10 flex-1 w-8"></div>
+                                        <span className="text-[10px] text-white/10 font-bold">VS</span>
+                                        <div className="h-px bg-white/10 flex-1 w-8"></div>
+                                    </div>
 
-                                                {/* Local Slot */}
-                                                <div className="relative">
-                                                    <div className="text-[10px] text-white/20 uppercase font-bold mb-0.5 ml-1">Local</div>
-                                                    {renderSourceButton(match, 'home', phase.order)}
-                                                </div>
-                                            </div>
+                                    {/* Local Slot */}
+                                    <div className="relative">
+                                        <div className="text-[10px] text-white/20 uppercase font-bold mb-0.5 ml-1">Local</div>
+                                        {renderSourceButton(match, 'home', phase.order)}
+                                    </div>
+                                </div>
 
-                                            {/* Connectors (Decor) */}
-                                            <div className="absolute top-1/2 -left-4 w-4 h-px bg-white/10" />
-                                            <div className="absolute top-1/2 -right-4 w-4 h-px bg-white/10" />
-                                        </div>
-                                    ))
-                                )}
-
-                                {phase.type !== 'group' && (
-                                    <button
-                                        onClick={() => handleAddMatchToPhase(phase.id)}
-                                        className="w-full py-3 border border-dashed border-white/10 rounded-lg text-white/20 hover:text-white hover:border-white/30 text-xs font-bold transition-all flex items-center justify-center gap-2"
-                                    >
-                                        <Plus size={14} /> Añadir Partido
-                                    </button>
-                                )}
+                                {/* Connectors (Decor) */}
+                                <div className="absolute top-1/2 -left-4 w-4 h-px bg-white/10" />
+                                <div className="absolute top-1/2 -right-4 w-4 h-px bg-white/10" />
                             </div>
+                            ))
+                                )}
+
+                            {phase.type !== 'group' && (
+                                <button
+                                    onClick={() => handleAddMatchToPhase(phase.id)}
+                                    className="w-full py-3 border border-dashed border-white/10 rounded-lg text-white/20 hover:text-white hover:border-white/30 text-xs font-bold transition-all flex items-center justify-center gap-2"
+                                >
+                                    <Plus size={14} /> Añadir Partido
+                                </button>
+                            )}
+                        </div>
                         </div>
                     ))}
 
-                    {/* Add Phase Column (Corrected Text Orientation) */}
-                    <div className="h-full flex items-center pt-20">
-                        <button
-                            onClick={() => handleAddPhase('elimination')}
-                            className="w-16 h-96 border border-dashed border-white/10 rounded-full flex flex-col items-center justify-center text-white/10 hover:text-white hover:border-white/30 transition-all hover:bg-white/5 gap-4 group"
-                        >
-                            <span className="uppercase tracking-widest text-xs font-bold whitespace-nowrap" style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>
-                                Añadir Nueva Ronda
-                            </span>
-                            <Plus size={24} className="group-hover:scale-110 transition-transform" />
-                        </button>
-                    </div>
+                {/* Add Phase Column (Corrected Text Orientation) */}
+                <div className="h-full flex items-center pt-20">
+                    <button
+                        onClick={() => handleAddPhase('elimination')}
+                        className="w-16 h-96 border border-dashed border-white/10 rounded-full flex flex-col items-center justify-center text-white/10 hover:text-white hover:border-white/30 transition-all hover:bg-white/5 gap-4 group"
+                    >
+                        <span className="uppercase tracking-widest text-xs font-bold whitespace-nowrap" style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>
+                            Añadir Nueva Ronda
+                        </span>
+                        <Plus size={24} className="group-hover:scale-110 transition-transform" />
+                    </button>
                 </div>
             </div>
         </div>
+        </div >
     );
 };
 

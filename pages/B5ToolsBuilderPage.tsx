@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BuilderProvider, useBuilder } from '../context/BuilderContext';
-import { Save, XCircle, ArrowRight, Settings, Users, Trophy, GitBranch, User, LogOut, ChevronUp, Menu, X, Calendar as CalendarIcon } from 'lucide-react';
+import { Save, XCircle, ArrowRight, Settings, Users, Trophy, GitBranch, User, LogOut, ChevronUp, Menu, X, Calendar as CalendarIcon, MessageCircle, CreditCard, Edit } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ConfigStep } from '../components/Builder/ConfigStep';
 import { TeamManagementStep } from '../components/Builder/TeamManagementStep';
@@ -13,21 +13,27 @@ import { CalendarStep } from '../components/Builder/CalendarStep';
 import { CustomSpinner } from '../components/CustomSpinner';
 import { ParticleBackground } from '../components/ParticleBackground';
 import { supabase } from '../lib/supabase';
-import { ToastProvider } from '../context/ToastContext';
+import { ToastProvider, useToast } from '../context/ToastContext';
+import { EditProfileModal } from '../components/EditProfileModal';
+import { UnsavedChangesModal } from '../components/UnsavedChangesModal';
 
 const BuilderWizard = () => {
     const { state, setStep, saveTournament } = useBuilder();
     const navigate = useNavigate();
+    const { addToast } = useToast();
     const [isLoading, setIsLoading] = useState(true);
 
     // User State for Sidebar
     const [user, setUser] = useState<any>(null);
     const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+    const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+    const [isUnsavedModalOpen, setIsUnsavedModalOpen] = useState(false);
 
-    // Mobile State
-    const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+    // Bottom Nav State
+    const [activeSubMenu, setActiveSubMenu] = useState<number | null>(null);
+    const [isMobileMoreMenuOpen, setIsMobileMoreMenuOpen] = useState(false);
 
-    // Collapsible State
+    // Collapsible State (Desktop)
     const [expandedSteps, setExpandedSteps] = useState<number[]>([]);
 
     useEffect(() => {
@@ -46,44 +52,59 @@ const BuilderWizard = () => {
     // Effect: Auto-expand parent if child is active
     useEffect(() => {
         const activeParent = steps.find(s => s.subItems?.some(sub => sub.id === state.currentStep));
-        if (activeParent && !expandedSteps.includes(activeParent.id)) {
-            setExpandedSteps(prev => [...prev, activeParent.id]);
+        if (activeParent) {
+            if (!expandedSteps.includes(activeParent.id)) {
+                setExpandedSteps(prev => [...prev, activeParent.id]);
+            }
         }
     }, [state.currentStep]);
 
     const steps = [
-        { id: 0, label: 'Configuración', icon: <Settings size={18} /> },
+        { id: 0, label: 'Configuración', icon: <Settings size={20} /> },
         {
             id: 1,
-            label: 'Participantes', // Renamed from Equipos
-            icon: <Users size={18} />,
+            label: 'Participantes',
+            icon: <Users size={20} />,
             subItems: [
-                { id: 10, label: 'Gestionar Equipos' }, // Moved Logic from ID 1 to 10
-                { id: 11, label: 'Gestionar Jugadores' },
-                { id: 12, label: 'Árbitros' }, // New
-                { id: 13, label: 'Administradores' } // New
+                { id: 10, label: 'Equipos' },
+                { id: 11, label: 'Jugadores' },
+                { id: 12, label: 'Árbitros' },
+                { id: 13, label: 'Admins' }
             ]
         },
-        { id: 2, label: 'Formato', icon: <Trophy size={18} /> },
-        { id: 3, label: 'Bracket / Fixture', icon: <GitBranch size={18} /> },
-        { id: 4, label: 'Calendario', icon: <CalendarIcon size={18} /> },
+        { id: 2, label: 'Formato', icon: <Trophy size={20} /> },
+        { id: 3, label: 'Fixture', icon: <GitBranch size={20} /> },
+        { id: 4, label: 'Calendario', icon: <CalendarIcon size={20} /> },
     ];
 
     const handleSave = async () => {
         const id = await saveTournament();
         if (id) {
-            alert('Torneo guardado correctamente (Borrador)');
+            addToast('Torneo guardado correctamente (Borrador)', 'success');
         }
     };
 
     const handleExit = () => {
         if (state.isDirty && !confirm('Tienes cambios sin guardar. ¿Salir?')) return;
-        navigate('/torneos'); // Navigate "Back" to My Tournaments
+        navigate('/torneos');
     };
 
     const handleLogout = async () => {
         await supabase.auth.signOut();
         navigate('/');
+    };
+
+    const handleNavigateToTournaments = () => {
+        if (state.isDirty) {
+            setIsUnsavedModalOpen(true);
+        } else {
+            navigate('/torneos');
+        }
+    };
+
+    const confirmNavigation = () => {
+        setIsUnsavedModalOpen(false);
+        navigate('/torneos');
     };
 
     const handleStepClick = (stepId: number, hasSubItems: boolean = false) => {
@@ -95,11 +116,30 @@ const BuilderWizard = () => {
             return;
         }
         setStep(stepId);
-        setIsMobileMenuOpen(false); // Close mobile menu on navigate
+        setActiveSubMenu(null); // Close active mobile submenu
+        setIsMobileMoreMenuOpen(false); // Close more menu
     };
 
+    const handleMobileStepClick = (step: any) => {
+        setIsMobileMoreMenuOpen(false); // Close "More" menu if open
+        if (step.subItems) {
+            // Toggle Submenu Popup
+            setActiveSubMenu(activeSubMenu === step.id ? null : step.id);
+        } else {
+            setStep(step.id);
+            setActiveSubMenu(null);
+        }
+    };
+
+    const toggleMobileMoreMenu = () => {
+        setActiveSubMenu(null); // Close other submenus
+        setIsMobileMoreMenuOpen(!isMobileMoreMenuOpen);
+    };
+
+
+
     return (
-        <ToastProvider>
+        <>
             <div className="h-screen w-full bg-[#0a0a0a] text-white flex flex-col overflow-hidden">
                 {/* Loading Overlay */}
                 {isLoading && (
@@ -111,14 +151,6 @@ const BuilderWizard = () => {
                 {/* Header */}
                 <header className="h-16 border-b border-white/10 flex items-center justify-between px-4 lg:px-6 bg-[#111] z-20 relative">
                     <div className="flex items-center gap-3">
-                        {/* Mobile Hamburger */}
-                        <button
-                            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-                            className="lg:hidden p-2 -ml-2 text-white/60 hover:text-white"
-                        >
-                            {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
-                        </button>
-
                         <img src="/logo.png" alt="B5Tools" className="w-8 h-8 object-contain" />
                         <div className="flex flex-col">
                             <span className="font-bold text-lg tracking-tight leading-none">B5Tools</span>
@@ -151,21 +183,9 @@ const BuilderWizard = () => {
                 </header>
 
                 <div className="flex-1 flex overflow-hidden relative">
-                    {/* Mobile Backdrop */}
-                    {isMobileMenuOpen && (
-                        <div
-                            className="fixed inset-0 z-30 bg-black/60 backdrop-blur-sm lg:hidden animate-in fade-in"
-                            onClick={() => setIsMobileMenuOpen(false)}
-                        />
-                    )}
 
-                    {/* Sidebar Navigation */}
-                    <aside className={`
-                    fixed lg:static inset-y-0 left-0 z-40 w-64 bg-[#111] border-r border-white/5 flex flex-col py-6
-                    transform transition-transform duration-300 ease-in-out
-                    ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
-                    mt-16 lg:mt-0 h-[calc(100vh-64px)] lg:h-auto
-                `}>
+                    {/* Sidebar Navigation (Desktop Only) */}
+                    <aside className="hidden lg:flex w-64 bg-[#111] border-r border-white/5 flex-col py-6">
                         <nav className="space-y-1 px-3 flex-1 overflow-y-auto custom-scrollbar">
                             {steps.map((step, idx) => (
                                 <div key={step.id} className="mb-1">
@@ -211,7 +231,7 @@ const BuilderWizard = () => {
                             {isUserMenuOpen && (
                                 <div className="absolute bottom-full left-4 right-4 mb-2 bg-[#1a1a20] border border-white/10 rounded-xl shadow-xl overflow-hidden animate-in slide-in-from-bottom-2">
                                     <button
-                                        onClick={handleExit}
+                                        onClick={handleNavigateToTournaments}
                                         className="w-full text-left px-4 py-3 text-sm text-white hover:bg-white/5 flex items-center gap-2"
                                     >
                                         <Trophy size={14} className="text-white/50" /> Mis Torneos
@@ -253,7 +273,7 @@ const BuilderWizard = () => {
                         <ParticleBackground />
 
                         {/* Content */}
-                        <div className={`${state.currentStep === 3 ? 'w-full h-full' : 'max-w-5xl mx-auto h-full'} relative z-10 pb-20 lg:pb-0`}>
+                        <div className={`${state.currentStep === 3 ? 'w-full h-full' : 'max-w-5xl mx-auto h-full'} relative z-10 pb-24 lg:pb-0`}>
                             {state.currentStep === 0 && <ConfigStep />}
                             {state.currentStep === 10 && <TeamManagementStep />}
                             {state.currentStep === 11 && <PlayerManagementStep />}
@@ -265,9 +285,116 @@ const BuilderWizard = () => {
                             {state.currentStep === 4 && <CalendarStep />}
                         </div>
                     </main>
+
+                    {/* Mobile Bottom Navigation Bar */}
+                    <nav className="fixed bottom-0 left-0 right-0 h-16 bg-[#111] border-t border-white/10 z-50 lg:hidden flex items-center justify-around px-2 pb-safe-area">
+                        {steps.map(step => {
+                            const isActive = state.currentStep === step.id || (step.subItems && step.subItems.some(s => s.id === state.currentStep));
+                            return (
+                                <div key={step.id} className="relative">
+                                    {/* Submenu Popover */}
+                                    {step.subItems && activeSubMenu === step.id && (
+                                        <div className="absolute bottom-full mb-4 left-1/2 -translate-x-1/2 min-w-[160px] bg-[#1a1a20] border border-white/10 rounded-xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-2 z-50 flex flex-col p-1">
+                                            {step.subItems.map(sub => (
+                                                <button
+                                                    key={sub.id}
+                                                    onClick={() => handleStepClick(sub.id)}
+                                                    className={`text-left px-4 py-3 text-xs font-bold rounded-lg transition-colors ${state.currentStep === sub.id ? 'bg-blue-600 text-white' : 'text-white/60 hover:text-white hover:bg-white/5'}`}
+                                                >
+                                                    {sub.label}
+                                                </button>
+                                            ))}
+                                            <div className="absolute bottom-[-6px] left-1/2 -translate-x-1/2 w-3 h-3 bg-[#1a1a20] border-r border-b border-white/10 rotate-45"></div>
+                                        </div>
+                                    )}
+
+                                    <button
+                                        onClick={() => handleMobileStepClick(step)}
+                                        className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-all ${isActive ? 'text-blue-400' : 'text-white/40 hover:text-white'}`}
+                                    >
+                                        <div className={`p-1.5 rounded-full ${isActive ? 'bg-blue-500/10' : ''}`}>
+                                            {step.icon}
+                                        </div>
+                                        <span className="text-[10px] font-bold">{step.label}</span>
+                                    </button>
+                                </div>
+                            );
+                        })}
+
+                        {/* Mobile More "Hambuger" Menu */}
+                        <div className="relative">
+                            {isMobileMoreMenuOpen && (
+                                <div className="absolute bottom-full right-0 mb-4 w-64 bg-[#1a1a20] border border-white/10 rounded-xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-2 z-50 p-4">
+                                    {/* User Profile */}
+                                    <div className="flex items-center gap-3 mb-4 pb-4 border-b border-white/5">
+                                        <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center overflow-hidden border border-white/10">
+                                            {user?.user_metadata?.avatar_url ? (
+                                                <img src={user.user_metadata.avatar_url} alt="User" className="w-full h-full object-cover" />
+                                            ) : (
+                                                <User size={20} className="text-white" />
+                                            )}
+                                        </div>
+                                        <div className="flex-1 overflow-hidden">
+                                            <p className="text-sm font-bold text-white truncate">
+                                                {user?.user_metadata?.first_name || user?.email?.split('@')[0] || 'Usuario'}
+                                            </p>
+                                            <div className="flex items-center gap-1 mt-0.5">
+                                                <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                                                <p className="text-[10px] text-white/50 uppercase">Plan Pro</p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Menu Items */}
+                                    <div className="space-y-1">
+                                        <button onClick={() => { setIsMobileMoreMenuOpen(false); setIsProfileModalOpen(true); }} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-white/60 hover:text-white hover:bg-white/5 rounded-lg transition-colors">
+                                            <Edit size={16} /> Editar Perfil
+                                        </button>
+                                        <button onClick={handleNavigateToTournaments} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-white/60 hover:text-white hover:bg-white/5 rounded-lg transition-colors">
+                                            <Trophy size={16} /> Mis Torneos
+                                        </button>
+                                        <a
+                                            href="https://wa.me/34683367026"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-green-400 hover:text-green-300 hover:bg-green-500/10 rounded-lg transition-colors"
+                                        >
+                                            <MessageCircle size={16} /> Contactar Soporte
+                                        </a>
+                                        <div className="h-px bg-white/5 my-2"></div>
+                                        <button onClick={handleLogout} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg transition-colors">
+                                            <LogOut size={16} /> Cerrar Sesión
+                                        </button>
+                                    </div>
+
+                                    <div className="absolute bottom-[-6px] right-6 w-3 h-3 bg-[#1a1a20] border-r border-b border-white/10 rotate-45"></div>
+                                </div>
+                            )}
+
+                            <button
+                                onClick={toggleMobileMoreMenu}
+                                className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-all ${isMobileMoreMenuOpen ? 'text-blue-400' : 'text-white/40 hover:text-white'}`}
+                            >
+                                <div className={`p-1.5 rounded-full ${isMobileMoreMenuOpen ? 'bg-blue-500/10' : ''}`}>
+                                    <Menu size={20} />
+                                </div>
+                                <span className="text-[10px] font-bold">Menú</span>
+                            </button>
+                        </div>
+                    </nav>
+
                 </div>
             </div>
-        </ToastProvider>
+            <EditProfileModal
+                isOpen={isProfileModalOpen}
+                onClose={() => setIsProfileModalOpen(false)}
+            />
+            <UnsavedChangesModal
+                isOpen={isUnsavedModalOpen}
+                onClose={() => setIsUnsavedModalOpen(false)}
+                onConfirm={confirmNavigation}
+            />
+        </>
     );
 };
 
@@ -275,7 +402,9 @@ export const B5ToolsBuilderPage: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     return (
         <BuilderProvider initialId={id}>
-            <BuilderWizard />
+            <ToastProvider>
+                <BuilderWizard />
+            </ToastProvider>
         </BuilderProvider>
     );
 };
