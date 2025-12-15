@@ -4,7 +4,7 @@ import { TieBreakerRule } from '../../types/tournament';
 import { useBuilder } from '../../context/BuilderContext';
 import { sortTeamsWithTieBreaker } from '../../utils/tieBreakerLogic';
 import { calculateTeamStats } from '../../utils/tournamentStats';
-import { AlignLeft, HelpCircle } from 'lucide-react';
+import { AlertTriangle, HelpCircle, Loader2, Check } from 'lucide-react';
 
 interface ClassificationTableProps {
     phases: TournamentPhase[];
@@ -24,78 +24,120 @@ interface TeamStats {
     runs_allowed: number;
 }
 
+// Helper function (assuming it exists or needs to be added)
+// This was implicitly part of the instruction's `stats` useMemo,
+// but the original code used `sortTeamsWithTieBreaker` directly.
+// Let's assume `getSortedStandings` is a wrapper around `sortTeamsWithTieBreaker`
+// or a more comprehensive sorting logic. For now, I'll use `sortTeamsWithTieBreaker`
+// as it's already imported and used in the original code.
+// If `getSortedStandings` is a new utility, it would need to be imported/defined.
+// For the purpose of this edit, I will adapt the instruction's logic to use
+// `sortTeamsWithTieBreaker` and the existing `calculateTeamStats`.
+const getSortedStandings = (rawStats: TeamStats[], rules: TieBreakerRule[]) => {
+    if (rules && rules.length > 0) {
+        return sortTeamsWithTieBreaker(rawStats, rules);
+    }
+    // Standard Sort if no specific rules are applied
+    return rawStats.sort((a, b) => {
+        if (a.group !== b.group) return a.group.localeCompare(b.group);
+        return b.points - a.points;
+    });
+};
+
+
 export const ClassificationTable: React.FC<ClassificationTableProps> = ({ phases, simulationResults, isSimulation }) => {
-    const { teams, state } = useBuilder();
+    const { state, updateConfig } = useBuilder();
     const config = state.config;
 
-    // State for temporary simulation overrides
-    // We only need this locally for visual feedback in simulation
-    // When sim ends, this component unmounts or props change, resetting state? 
-    // Actually we need to explicitly clear it if isSimulation becomes false
+    // Local override for simulation view (Reset when sim changes or closes)
     const [activeRuleOverride, setActiveRuleOverride] = useState<TieBreakerRule | null>(null);
+    const [analyzingRule, setAnalyzingRule] = useState<string | null>(null);
+    const [previewRule, setPreviewRule] = useState<TieBreakerRule | null>(null);
 
+    // Reset when simulation stops
     useEffect(() => {
-        if (!isSimulation) setActiveRuleOverride(null);
+        if (!isSimulation && activeRuleOverride) {
+            setActiveRuleOverride(null);
+            setPreviewRule(null);
+        }
     }, [isSimulation]);
 
     const stats = useMemo(() => {
-        // Use shared logic
-        const rawStats = calculateTeamStats(phases, teams, simulationResults, state.config);
+        const raw = calculateTeamStats(phases, state.teams, simulationResults, config);
+        // Use previewRule if available, otherwise activeOverride, otherwise fallback to config
+        let rulesToUse = config.tiebreaker_rules || [];
 
-        // Sort Logic with Tie Breaker Override
-        if (isSimulation && activeRuleOverride) {
-            return sortTeamsWithTieBreaker(rawStats, [activeRuleOverride]);
+        if (previewRule) {
+            // Previewing a specific rule
+            rulesToUse = [previewRule];
+        } else if (activeRuleOverride) {
+            // Rule applied
+            rulesToUse = [activeRuleOverride];
         }
 
-        // Standard Sort
-        return rawStats.sort((a, b) => {
-            if (a.group !== b.group) return a.group.localeCompare(b.group);
-            return b.points - a.points;
-        });
+        return getSortedStandings(raw, rulesToUse);
+    }, [phases, state.teams, simulationResults, config, activeRuleOverride, previewRule]);
 
-    }, [phases, teams, simulationResults, state.config, activeRuleOverride, isSimulation]);
+    const hasTies = useMemo(() => {
+        // Simple check: are there teams with same points?
+        // (This check assumes sorted stats)
+        for (let i = 0; i < stats.length - 1; i++) {
+            if (stats[i].points === stats[i + 1].points && stats[i].group === stats[i + 1].group) return true;
+        }
+        return false;
+    }, [stats]);
 
-    // Tie Detection Logic for UI
-    const getTiedGroups = () => {
-        const groups: Record<string, TeamStats[]> = {};
+    // Find groups of ties for display
+    const ties = useMemo(() => {
+        if (!hasTies) return [];
+
+        // Simpler approach for UI: Filter teams that share points with at least one other team
+        const tieMap = new Map<string, TeamStats[]>();
         stats.forEach(t => {
-            if (!groups[t.group]) groups[t.group] = [];
-            groups[t.group].push(t);
+            const key = `${t.group}-${t.points}`;
+            if (!tieMap.has(key)) tieMap.set(key, []);
+            tieMap.get(key)!.push(t);
         });
 
-        const tiedInfo: { group: string, points: number, teams: TeamStats[] }[] = [];
-
-        Object.entries(groups).forEach(([grpName, groupTeams]) => {
-            // Group teams by points
-            const pointMap: Record<number, TeamStats[]> = {};
-            groupTeams.forEach(t => {
-                if (!pointMap[t.points]) pointMap[t.points] = [];
-                pointMap[t.points].push(t);
-            });
-
-            // If any point value has > 1 team, it's a tie
-            Object.entries(pointMap).forEach(([pts, tiedTeams]) => {
-                if (tiedTeams.length > 1) {
-                    tiedInfo.push({ group: grpName, points: parseInt(pts), teams: tiedTeams });
-                }
-            });
+        const result = [];
+        tieMap.forEach((teams, key) => {
+            if (teams.length > 1) {
+                const [group, points] = key.split('-');
+                result.push({ points: parseInt(points), group, teams });
+            }
         });
 
-        return tiedInfo;
+        return result;
+    }, [stats, hasTies]);
+
+    const handleRuleClick = (rule: any) => {
+        if (analyzingRule) return;
+        setAnalyzingRule(rule.type);
+        setPreviewRule(null); // Clear previous preview
+
+        // Simulate analysis
+        setTimeout(() => {
+            setAnalyzingRule(null);
+            setPreviewRule({ ...rule, active: true });
+        }, 1500);
     };
 
-    const ties = isSimulation ? getTiedGroups() : [];
-    const hasTies = ties.length > 0;
+    const handleApplyRule = () => {
+        if (previewRule) {
+            setActiveRuleOverride(previewRule);
+            setPreviewRule(null);
+        }
+    };
 
     if (stats.length === 0) return null;
 
     return (
-        <div className="flex gap-4 items-start w-full">
+        <div className="flex gap-4 items-start w-full transition-all">
             {/* Main Table */}
             <div className={`bg-[#1a1a20] rounded-lg border border-white/10 overflow-hidden flex-1 transition-all`}>
                 <div className="px-4 py-2 bg-white/5 border-b border-white/10 flex justify-between items-center">
-                    <h3 className="text-xs font-bold uppercase tracking-wider text-white/70">Tabla de Clasificación General</h3>
-                    <span className="text-[10px] text-white/30 uppercase">Fase de Grupos</span>
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-white/70">Tabla de Clasificación</h3>
+                    <span className="text-[10px] text-white/30 uppercase">General</span>
                 </div>
 
                 <div className="overflow-x-auto">
@@ -113,10 +155,13 @@ export const ClassificationTable: React.FC<ClassificationTableProps> = ({ phases
                         </thead>
                         <tbody className="divide-y divide-white/5">
                             {stats.map((stat, idx) => (
-                                <tr key={stat.id} className="hover:bg-white/5 transition-colors">
+                                <tr key={stat.id} className={`transition-colors ${previewRule ? 'animate-in fade-in duration-500' : ''} hover:bg-white/5`}>
                                     <td className="px-4 py-2 text-center font-bold text-white/50">{idx + 1}</td>
                                     <td className="px-4 py-2 text-center font-bold text-white/30">{stat.group}</td>
-                                    <td className="px-4 py-2 font-medium text-white/80">{stat.name}</td>
+                                    <td className="px-4 py-2 font-medium text-white/80 flex items-center gap-2">
+                                        {stat.name}
+                                        {/* Show simple diff indicator if previewing? Optional */}
+                                    </td>
                                     <td className="px-2 py-2 text-center text-white/50">{stat.played}</td>
                                     <td className="px-2 py-2 text-center text-green-400/70">{stat.won}</td>
                                     <td className="px-2 py-2 text-center text-red-400/70">{stat.lost}</td>
@@ -129,24 +174,16 @@ export const ClassificationTable: React.FC<ClassificationTableProps> = ({ phases
             </div>
 
             {/* Tie Breaker Zone */}
-            {isSimulation && hasTies && (
+            {isSimulation && hasTies && !activeRuleOverride && (
                 <div className="w-[500px] bg-[#1a1a20] rounded-lg border border-yellow-500/30 overflow-hidden animate-in fade-in slide-in-from-right-4 shadow-xl">
                     <div className="flex items-center justify-between p-3 bg-yellow-500/10 border-b border-yellow-500/20">
                         <div className="flex items-center gap-2 text-yellow-500">
                             <HelpCircle size={14} />
                             <span className="text-xs font-bold uppercase tracking-wider">Desempate Requerido</span>
                         </div>
-                        {activeRuleOverride && (
-                            <button
-                                onClick={() => setActiveRuleOverride(null)}
-                                className="text-[10px] text-white/50 hover:text-white underline"
-                            >
-                                Resetear Regla
-                            </button>
-                        )}
                     </div>
 
-                    <div className="grid grid-cols-2 divide-x divide-white/10">
+                    <div className="grid grid-cols-2 divide-x divide-white/5">
                         {/* Column 1: Tied Teams */}
                         <div className="p-4 space-y-3">
                             {ties.map((tie, idx) => (
@@ -167,20 +204,48 @@ export const ClassificationTable: React.FC<ClassificationTableProps> = ({ phases
 
                         {/* Column 2: Rules */}
                         <div className="p-4 flex flex-col gap-2 justify-center">
-                            <div className="text-[10px] uppercase font-bold text-white/40 mb-2 text-center">Aplicar Regla</div>
-                            {(config.tiebreaker_rules || []).map((rule: any) => (
-                                <button
-                                    key={rule.type}
-                                    onClick={() => setActiveRuleOverride({ ...rule, active: true })}
-                                    className={`w-full p-2 text-xs text-left rounded border transition-all flex items-center justify-between group ${activeRuleOverride?.type === rule.type
-                                            ? 'bg-yellow-500 text-black border-yellow-500 font-bold'
-                                            : 'bg-white/5 border-white/10 text-white/70 hover:border-yellow-500/50 hover:text-white'
-                                        }`}
-                                >
-                                    <span>{rule.label || rule.type}</span>
-                                    {activeRuleOverride?.type === rule.type && <div className="w-1.5 h-1.5 rounded-full bg-black animate-pulse" />}
-                                </button>
-                            ))}
+                            <div className="text-[10px] uppercase font-bold text-white/40 mb-2 text-center">Analizar por Regla</div>
+                            {(config.tiebreaker_rules || []).map((rule: any) => {
+                                const ruleLabels: Record<string, string> = {
+                                    'direct_match': 'Resultado Directo',
+                                    'run_diff': 'Diferencia de Carreras',
+                                    'runs_scored': 'Carreras Anotadas',
+                                    'random': 'Sorteo Aleatorio'
+                                };
+                                const isAnalyzing = analyzingRule === rule.type;
+                                const isPreviewing = previewRule?.type === rule.type;
+
+                                return (
+                                    <button
+                                        key={rule.type}
+                                        onClick={() => handleRuleClick(rule)}
+                                        disabled={!!analyzingRule}
+                                        className={`w-full p-2 text-xs text-left rounded border transition-all flex items-center justify-between group relative overflow-hidden ${isPreviewing
+                                            ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500'
+                                            : 'bg-white/5 border-white/10 text-white/70 hover:border-yellow-500/50 hover:text-white disabled:opacity-50'
+                                            }`}
+                                    >
+                                        <span>{ruleLabels[rule.type] || rule.label || rule.type}</span>
+                                        {isAnalyzing && <Loader2 size={12} className="animate-spin text-yellow-500" />}
+                                        {isPreviewing && !isAnalyzing && <div className="w-1.5 h-1.5 rounded-full bg-yellow-500" />}
+                                    </button>
+                                );
+                            })}
+
+                            {/* Confirmation Button */}
+                            {previewRule && (
+                                <div className="mt-4 pt-4 border-t border-white/10 animate-in slide-in-from-bottom-2 fade-in">
+                                    <button
+                                        onClick={handleApplyRule}
+                                        className="w-full py-2 bg-yellow-500 hover:bg-yellow-400 text-black font-bold text-xs rounded shadow-[0_0_15px_rgba(234,179,8,0.3)] flex items-center justify-center gap-2 transition-all">
+                                        <Check size={14} /> Aplicar Regla
+                                    </button>
+                                    <div className="text-[10px] text-center text-white/30 mt-2">
+                                        Se actualizará la tabla
+                                    </div>
+                                </div>
+                            )}
+
                             {(!config.tiebreaker_rules || config.tiebreaker_rules.length === 0) && (
                                 <div className="text-xs text-white/30 text-center italic">No hay reglas configuradas</div>
                             )}

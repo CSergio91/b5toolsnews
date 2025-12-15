@@ -239,18 +239,34 @@ export const BracketStep: React.FC = () => {
 
     // -- Init Load & Auto-Gen --
     useEffect(() => {
-        if (state.structure && state.structure.phases && state.structure.phases.length > 0) {
+        let shouldGen = false;
+
+        // 1. If no phases, generate
+        if (!state.structure || !state.structure.phases || state.structure.phases.length === 0) {
+            shouldGen = true;
+        }
+        // 2. If Groups Display, check strict sync with config
+        else if (state.config.tournament_type === 'groups') {
+            const groupPhase = state.structure.phases.find(p => p.type === 'group');
+            const currentGroupsCount = groupPhase?.groups?.length || 0;
+            const configGroupsCount = state.config.number_of_groups || 4;
+
+            // If mismatch in group count, force regenerate to match config
+            if (currentGroupsCount !== configGroupsCount) {
+                shouldGen = true;
+            }
+        }
+
+        if (shouldGen && state.config.tournament_type) {
+            generateStructure();
+        } else if (state.structure?.phases) {
+            // Load existing
             setPhases(state.structure.phases);
             if (state.structure.simulationResults) {
                 setSimulationResults(state.structure.simulationResults);
             }
-        } else {
-            // Auto-generate if empty and type is selected
-            if (state.config.tournament_type) {
-                generateStructure();
-            }
         }
-    }, []);
+    }, [state.config.number_of_groups, state.config.tournament_type]);
 
     const handleAddPhase = (type: 'elimination' | 'placement' | 'group') => {
         setPendingPhaseType(type);

@@ -12,6 +12,7 @@ export interface TeamStats {
     points: number;
     runs_scored: number;
     runs_allowed: number;
+    matches_vs?: Record<string, 'win' | 'loss' | 'draw' | undefined>;
 }
 
 export const calculateTeamStats = (
@@ -25,6 +26,8 @@ export const calculateTeamStats = (
     const pointsForLoss = config.points_for_loss || 0;
 
     // 1. Initialize with all teams found in groups
+    // NOTE: Only 'group' type phases contribute to the Classification Table. 
+    // Elimination phases (Brackets) are excluded.
     phases.forEach(phase => {
         if (phase.type === 'group' && phase.groups) {
             phase.groups.forEach(group => {
@@ -58,16 +61,26 @@ export const calculateTeamStats = (
                                     teamStats[homeId].played++;
                                     teamStats[awayId].played++;
 
+                                    // Init matches_vs if needed
+                                    if (!teamStats[homeId].matches_vs) teamStats[homeId].matches_vs = {};
+                                    if (!teamStats[awayId].matches_vs) teamStats[awayId].matches_vs = {};
+
                                     if (winnerId === homeId) {
                                         teamStats[homeId].won++;
                                         teamStats[homeId].points += pointsForWin;
+                                        teamStats[homeId].matches_vs[awayId] = 'win';
+
                                         teamStats[awayId].lost++;
                                         teamStats[awayId].points += pointsForLoss;
+                                        teamStats[awayId].matches_vs[homeId] = 'loss';
                                     } else {
                                         teamStats[awayId].won++;
                                         teamStats[awayId].points += pointsForWin;
+                                        teamStats[awayId].matches_vs[homeId] = 'win';
+
                                         teamStats[homeId].lost++;
                                         teamStats[homeId].points += pointsForLoss;
+                                        teamStats[homeId].matches_vs[awayId] = 'loss';
                                     }
                                 }
                             }

@@ -12,6 +12,7 @@ import { ErrorPage } from './pages/ErrorPage';
 import { B5ToolsBuilderPage } from './pages/B5ToolsBuilderPage';
 import { InvitedTournamentsPage } from './pages/InvitedTournamentsPage';
 import { supabase } from './lib/supabase';
+import TournamentPreviewPage from './components/Builder/preview/previewpage';
 
 import { LanguageProvider } from './context/LanguageContext';
 
@@ -35,6 +36,8 @@ const App: React.FC = () => {
               <Route path="/torneosinvitados" element={<InvitedTournamentsPage />} />
               {/* Direct Create/Edit Route for Builder */}
               <Route path="/torneos/B5ToolsBuilder/:id" element={<B5ToolsBuilderPage />} />
+              <Route path="/torneos/B5ToolsBuilder/:id/preview" element={<TournamentPreviewPage />} />
+              {/* Fallback Legacy Route - can be removed eventually or redirected */}
               {/* Fallback Legacy Route - can be removed eventually or redirected */}
               <Route path="/B5ToolsBuilder" element={<Navigate to="/torneos/B5ToolsBuilder/new" replace />} />
             </Route>

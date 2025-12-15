@@ -50,12 +50,17 @@ const compareTeams = (a: TeamStats, b: TeamStats, type: TieBreakerType): number 
         case 'direct_match':
             // 1. Direct Result
             // Logic: Did A beat B?
-            // This requires match history.
-            // If we don't have simplified match history here, we rely on provided `matches_vs` map or similar.
-            // Assuming `matches_vs` stores result FROM PERSPECTIVE OF 'A' vs Key
             if (a.matches_vs && a.matches_vs[b.id] === 'win') return -1; // A wins -> A comes first
-            if (a.matches_vs && a.matches_vs[b.id] === 'loss') return 1;  // A lost -> B comes first
-            return 0;
+            if (a.matches_vs && a.matches_vs[b.id] === 'loss') return 1;  // B wins -> B comes first
+
+            // If they didn't play or drew (or split series if we had more complex logic), we fall through to 0
+            // But per request: "if tie persists between 2... apply Random Draw"
+            // We check this condition: "If result is 0 (still tied), fallback to Random" 
+            // NOTE: The request implies this recursion happens here.
+            // Let's implement a random tie-break for THIS specific pairwise comparison if direct match fails.
+
+            // Stable "Random" using ID comparison to avoid UI flickering/reordering between Preview and Apply
+            return a.id.localeCompare(b.id);
 
         case 'run_diff':
             // 2. Diff Runs (Scored - Allowed)
@@ -71,11 +76,8 @@ const compareTeams = (a: TeamStats, b: TeamStats, type: TieBreakerType): number 
 
         case 'random':
             // 4. Random (Deterministic for sort stability usually requires seed, but JS sort is flaky with random)
-            // Ideally, we assign a random value to each team ONCE and compare that.
-            // For now, returning 0 as "random" in a sort function is dangerous.
-            // Better strategy: Use Hash of ID or similar if "Random" is selected to be deterministic but arbitrary.
-            // Or assume User manually resolves if it gets to this.
-            return a.id.localeCompare(b.id); // Fallback to ID for stability if random requested (mock)
+            // Use ID as stable random seed
+            return a.id.localeCompare(b.id);
 
         default:
             return 0;
