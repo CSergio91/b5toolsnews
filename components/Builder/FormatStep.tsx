@@ -1,30 +1,21 @@
 import React, { useState } from 'react';
 import { useBuilder } from '../../context/BuilderContext';
-import { Trophy, Users, GitBranch, ArrowRight, Shield, LayoutGrid, CheckCircle } from 'lucide-react';
+import { Trophy, LayoutGrid, Clock, Users, CheckCircle } from 'lucide-react';
 
 export const FormatStep: React.FC = () => {
     const { state, updateConfig } = useBuilder();
+    const config = state.config;
 
-    // Initialize state from Context to ensure persistence
-    const [selectedFormat, setSelectedFormat] = useState<'groups' | 'knockout' | 'double_elimination' | null>(() => {
-        const type = state.config.tournament_type;
-        if (type === 'group_stage') return 'groups';
-        if (type === 'knockout') return 'knockout';
-        if (type === 'double_elimination') return 'double_elimination';
-        return null;
-    });
+    const [groupsCount, setGroupsCount] = useState(config.number_of_groups || 4);
 
-    const [groupsCount, setGroupsCount] = useState(state.config.number_of_groups || 4);
+    const types = [
+        { id: 'groups', label: 'Grupos + Playoff', icon: <LayoutGrid size={24} />, desc: 'Fase de grupos (Round Robin) seguida de una llave de eliminación.' },
+    ];
 
-    const handleSelect = (format: 'groups' | 'knockout' | 'double_elimination') => {
-        setSelectedFormat(format);
-        // Map to DB schema types roughly, or store as metadata
-        updateConfig('tournament_type', format === 'groups' ? 'group_stage' : format);
-        // Since schema has 'open' | 'invitational', we might need to store format config in a JSON column or new field. 
-        // For now, let's assume 'tournament_type' in our UI logic maps to this.
-
-        // Pass extra config for groups
-        if (format === 'groups') {
+    const handleSelectType = (id: string) => {
+        updateConfig('tournament_type', id);
+        // If 'groups' is selected, ensure number_of_groups is set
+        if (id === 'groups') {
             updateConfig('number_of_groups', groupsCount);
         }
     };
@@ -35,68 +26,45 @@ export const FormatStep: React.FC = () => {
                 <Trophy className="text-yellow-500" /> Formato de Competición
             </h2>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                {/* Option 1: Groups + Playoff */}
-                <button
-                    onClick={() => handleSelect('groups')}
-                    className={`group relative overflow-hidden p-6 rounded-2xl border text-left transition-all duration-300 hover:scale-[1.02] ${selectedFormat === 'groups'
-                        ? 'border-blue-500 bg-gradient-to-br from-blue-500/20 to-blue-600/5 shadow-[0_0_40px_rgba(59,130,246,0.3)]'
-                        : 'border-white/10 bg-white/5 hover:bg-white/10 hover:border-blue-500/50 hover:shadow-[0_0_20px_rgba(59,130,246,0.15)]'
-                        }`}
-                >
-                    <div className="relative z-10">
-                        <div className="w-12 h-12 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center mb-4">
-                            <LayoutGrid size={24} />
+            {/* Active Formats */}
+            <div className="grid grid-cols-1 gap-6 mb-8">
+                {types.map(t => (
+                    <button
+                        key={t.id}
+                        onClick={() => handleSelectType(t.id)}
+                        className={`group relative overflow-hidden p-6 rounded-2xl border text-left transition-all duration-300 hover:scale-[1.01] ${config.tournament_type === t.id
+                            ? 'border-yellow-500 bg-yellow-500/10 shadow-[0_0_30px_rgba(234,179,8,0.1)]'
+                            : 'border-white/10 bg-white/5 hover:bg-white/10 hover:border-yellow-500/50'
+                            }`}
+                    >
+                        <div className="flex items-start gap-4 reltative z-10">
+                            <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${config.tournament_type === t.id
+                                ? 'bg-yellow-500 text-black'
+                                : 'bg-white/10 text-white/50'
+                                }`}>
+                                {t.icon}
+                            </div>
+                            <div>
+                                <h3 className={`text-xl font-bold mb-1 ${config.tournament_type === t.id ? 'text-white' : 'text-white/80'}`}>
+                                    {t.label}
+                                </h3>
+                                <p className="text-sm text-white/50 leading-relaxed max-w-2xl">
+                                    {t.desc}
+                                </p>
+                            </div>
                         </div>
-                        <h3 className="text-xl font-bold text-white mb-2">Grupos + Playoff</h3>
-                        <p className="text-sm text-white/50 leading-relaxed">
-                            Fase de grupos (Round Robin) seguida de una llave de eliminación.
-                        </p>
-                    </div>
-                </button>
-
-                {/* Option 2: Single Elimination */}
-                <button
-                    onClick={() => handleSelect('knockout')}
-                    className={`group relative overflow-hidden p-6 rounded-2xl border text-left transition-all duration-300 hover:scale-[1.02] ${selectedFormat === 'knockout'
-                        ? 'border-purple-500 bg-gradient-to-br from-purple-500/20 to-purple-600/5 shadow-[0_0_40px_rgba(168,85,247,0.3)]'
-                        : 'border-white/10 bg-white/5 hover:bg-white/10 hover:border-purple-500/50 hover:shadow-[0_0_20px_rgba(168,85,247,0.15)]'
-                        }`}
-                >
-                    <div className="relative z-10">
-                        <div className="w-12 h-12 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center mb-4">
-                            <GitBranch size={24} />
-                        </div>
-                        <h3 className="text-xl font-bold text-white mb-2">Eliminación Directa</h3>
-                        <p className="text-sm text-white/50 leading-relaxed">
-                            Formato de llave clásica (Bracket). Quien pierde queda fuera.
-                        </p>
-                    </div>
-                </button>
-
-                {/* Option 3: Double Elimination */}
-                <button
-                    onClick={() => handleSelect('double_elimination')}
-                    className={`group relative overflow-hidden p-6 rounded-2xl border text-left transition-all duration-300 hover:scale-[1.02] ${selectedFormat === 'double_elimination'
-                        ? 'border-orange-500 bg-gradient-to-br from-orange-500/20 to-orange-600/5 shadow-[0_0_40px_rgba(249,115,22,0.3)]'
-                        : 'border-white/10 bg-white/5 hover:bg-white/10 hover:border-orange-500/50 hover:shadow-[0_0_20px_rgba(249,115,22,0.15)]'
-                        }`}
-                >
-                    <div className="relative z-10">
-                        <div className="w-12 h-12 rounded-xl bg-orange-500/20 text-orange-400 flex items-center justify-center mb-4">
-                            <Shield size={24} />
-                        </div>
-                        <h3 className="text-xl font-bold text-white mb-2">Doble Eliminación</h3>
-                        <p className="text-sm text-white/50 leading-relaxed">
-                            Los perdedores van a un "Losers Bracket" y tienen una segunda oportunidad.
-                        </p>
-                    </div>
-                </button>
+                        {config.tournament_type === t.id && (
+                            <div className="absolute top-4 right-4 text-yellow-500">
+                                <CheckCircle size={20} />
+                            </div>
+                        )}
+                    </button>
+                ))}
             </div>
 
-            {/* Config Panel for Groups */}
-            {selectedFormat === 'groups' && (
-                <div className="mb-6 p-6 bg-blue-500/5 border border-blue-500/20 rounded-2xl animate-in slide-in-from-top-2">
+            {/* Config Panel for Groups (Moved Up) */}
+            {config.tournament_type === 'groups' && (
+                <div className="mb-8 p-6 bg-blue-500/5 border border-blue-500/20 rounded-2xl animate-in slide-in-from-top-2">
                     <h4 className="font-bold text-white mb-4">Configuración de Fase de Grupos</h4>
                     <div className="flex items-center gap-6">
                         <div className="flex-1">
@@ -127,6 +95,57 @@ export const FormatStep: React.FC = () => {
                 </div>
             )}
 
+            {/* Marketplace / Templates Section */}
+            <div>
+                <h3 className="text-sm font-bold text-white/50 uppercase tracking-widest mb-4 flex items-center gap-2">
+                    <LayoutGrid size={14} /> Plantillas Disponibles
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {[
+                        {
+                            label: 'Eliminación Directa',
+                            icon: <Trophy size={20} />,
+                            desc: 'Formato clásico de llaves (Bracket). El que pierde queda fuera.',
+                            color: 'from-purple-500/20 to-purple-600/5 border-purple-500/30 text-purple-400',
+                            iconBg: 'bg-purple-500/20'
+                        },
+                        {
+                            label: 'Doble Eliminación',
+                            icon: <Trophy size={20} />,
+                            desc: 'Incluye llave de perdedores (Losers Bracket) para una segunda oportunidad.',
+                            color: 'from-orange-500/20 to-orange-600/5 border-orange-500/30 text-orange-400',
+                            iconBg: 'bg-orange-500/20'
+                        },
+                        {
+                            label: 'Fase de Grupos Avanzada',
+                            icon: <LayoutGrid size={20} />,
+                            desc: 'Dos rondas de grupos consecutivas antes de las finales.',
+                            color: 'from-cyan-500/20 to-cyan-600/5 border-cyan-500/30 text-cyan-400',
+                            iconBg: 'bg-cyan-500/20'
+                        },
+                    ].map((template, idx) => (
+                        <div key={idx} className={`p-5 rounded-xl border bg-gradient-to-br transition-all relative overflow-hidden group hover:opacity-100 opacity-70 grayscale hover:grayscale-0 ${template.color}`}>
+                            <div className="absolute top-3 right-3 bg-black/40 backdrop-blur-sm text-[10px] uppercase font-bold px-2 py-1 rounded border border-white/10 text-white/70 group-hover:bg-white/10 group-hover:text-white transition-colors cursor-help">
+                                Próximamente
+                            </div>
+                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center mb-3 ${template.iconBg} ${template.color.split(' ').pop()}`}>
+                                {template.icon}
+                            </div>
+                            <h4 className="font-bold text-white mb-1">{template.label}</h4>
+                            <p className="text-xs text-white/50 leading-relaxed group-hover:text-white/70 transition-colors">
+                                {template.desc}
+                            </p>
+                        </div>
+                    ))}
+
+                    {/* General specific Coming Soon placeholder */}
+                    <div className="p-5 rounded-xl border border-dashed border-white/10 bg-white/5 flex flex-col items-center justify-center text-center gap-2 opacity-50 hover:opacity-80 transition-opacity cursor-not-allowed">
+                        <Clock size={20} className="text-white/20" />
+                        <span className="text-xs text-white/30 font-medium">Más plantillas en camino...</span>
+                    </div>
+                </div>
+            </div>
+
             <div className="p-6 rounded-2xl border border-white/10 bg-black/20 mt-auto">
                 <h4 className="font-bold text-white mb-3">Resumen de Generación</h4>
                 <div className="flex items-center gap-4 text-sm text-white/60">
@@ -136,9 +155,9 @@ export const FormatStep: React.FC = () => {
                     <div className="h-4 w-px bg-white/10"></div>
                     <div className="flex items-center gap-2">
                         <Trophy size={16} />
-                        {selectedFormat === 'groups' ? `Fase de Grupos (${groupsCount}) + Playoff` :
-                            selectedFormat === 'knockout' ? 'Eliminación Directa' :
-                                selectedFormat === 'double_elimination' ? 'Doble Eliminación' : 'Selecciona un formato'}
+                        {config.tournament_type === 'groups' ? `Fase de Grupos (${groupsCount}) + Playoff` :
+                            config.tournament_type === 'free' ? 'Manual / Libre' :
+                                'Selecciona un formato'}
                     </div>
                 </div>
             </div>

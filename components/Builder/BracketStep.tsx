@@ -51,8 +51,8 @@ export const BracketStep: React.FC = () => {
                     const sorted = recalculateGlobalIds(phases);
                     updateStructure({
                         phases: sorted,
-                        globalMatchCount: 0,
-                        simulationResults
+                        globalMatchCount: 0
+                        // REMOVED simulationResults from sync as requested
                     });
                 }, 1000);
                 return () => clearTimeout(debounce);
@@ -60,15 +60,7 @@ export const BracketStep: React.FC = () => {
         }
     }, [phases, simulationResults]);
 
-    // -- Init Load --
-    useEffect(() => {
-        if (state.structure && state.structure.phases && state.structure.phases.length > 0) {
-            setPhases(state.structure.phases);
-            if (state.structure.simulationResults) {
-                setSimulationResults(state.structure.simulationResults);
-            }
-        }
-    }, []);
+
 
     // -- Actions --
 
@@ -244,6 +236,21 @@ export const BracketStep: React.FC = () => {
 
         setPhases(recalculateGlobalIds(newPhases));
     };
+
+    // -- Init Load & Auto-Gen --
+    useEffect(() => {
+        if (state.structure && state.structure.phases && state.structure.phases.length > 0) {
+            setPhases(state.structure.phases);
+            if (state.structure.simulationResults) {
+                setSimulationResults(state.structure.simulationResults);
+            }
+        } else {
+            // Auto-generate if empty and type is selected
+            if (state.config.tournament_type) {
+                generateStructure();
+            }
+        }
+    }, []);
 
     const handleAddPhase = (type: 'elimination' | 'placement' | 'group') => {
         setPendingPhaseType(type);
