@@ -5,6 +5,8 @@ import { ZoomIn, ZoomOut, RefreshCcw, GripVertical, Trash2, Plus, Edit2, X, Chec
 import { TournamentPhase, RoundMatch, ReferenceSource } from '../../types/structure';
 import { useToast } from '../../context/ToastContext';
 import { ClassificationTable } from './ClassificationTable';
+import { calculateTeamStats, getSortedStandings } from '../../utils/tournamentStats';
+import { Podium } from '../Tournament/Podium';
 
 // Helpers
 const generateId = () => {
@@ -23,6 +25,10 @@ export const BracketStep: React.FC = () => {
     // Simulation State
     const [isSimulation, setIsSimulation] = useState(false);
     const [simulationResults, setSimulationResults] = useState<Record<string, string>>({}); // matchId -> winnerId
+
+    // Sets Modal State
+    const [isSetsModalOpen, setIsSetsModalOpen] = useState(false);
+    const [pendingPhaseType, setPendingPhaseType] = useState<'elimination' | 'placement' | 'group' | null>(null);
 
     // Canvas State
     const [zoom, setZoom] = useState(1);
@@ -219,21 +225,7 @@ export const BracketStep: React.FC = () => {
                 groups: groups
             });
 
-            const playoffPhase: TournamentPhase = {
-                id: generateId(),
-                type: 'elimination',
-                name: 'Playoffs',
-                order: 1,
-                matches: [{
-                    id: generateId(),
-                    globalId: 1,
-                    name: 'Gran Final',
-                    roundIndex: 0,
-                    phaseId: generateId(),
-                    location: `${defaultSets} Sets`
-                }]
-            };
-            newPhases.push(playoffPhase);
+            // NO Playoff Phase generated automatically for "groups" type, as requested.
 
         } else {
             // FREE MODE (Default)
@@ -254,9 +246,18 @@ export const BracketStep: React.FC = () => {
     };
 
     const handleAddPhase = (type: 'elimination' | 'placement' | 'group') => {
-        // Prompt for Sets
-        const setsInput = prompt("¿Cuántos sets se jugarán por partido en esta fase?", String(state.config.sets_per_match || 3));
-        const setsInfo = setsInput ? `${setsInput} Sets` : `${state.config.sets_per_match || 3} Sets`;
+        setPendingPhaseType(type);
+        setIsSetsModalOpen(true);
+    };
+
+    const handleConfirmAddPhase = (sets: number) => {
+        const type = pendingPhaseType;
+        if (!type) return;
+
+        setIsSetsModalOpen(false);
+        setPendingPhaseType(null);
+
+        const setsInfo = `${sets} Sets`;
 
         setPhases(prev => {
             let newPhase: TournamentPhase;
@@ -569,21 +570,41 @@ export const BracketStep: React.FC = () => {
     };
 
     // -- Resolution --
+    // -- Resolution --
     const resolveTeamId = (source: ReferenceSource | undefined): string | null => {
         if (!source) return null;
         if (source.type === 'team') return source.id;
 
-        // Resolve dynamic
+        // Resolve Group Position (Smart Sim)
+        if (source.type === 'group.pos' && isSimulation) {
+            // Calculate Standings specially for this
+            // Note: This might be expensive if called often. Consider memoizing if slow.
+            // For now, calculating on fly is safer for correctness.
+            const stats = calculateTeamStats(phases, teams, simulationResults, state.config);
+
+            // Filter by group
+            const groupStats = stats.filter(s => s.group === source.id);
+
+            // Sort
+            const sorted = getSortedStandings(groupStats);
+
+            // source.index is 1-based (1st, 2nd, etc.)
+            const targetStat = sorted[source.index - 1];
+            return targetStat ? targetStat.id : null;
+        }
+
+        // Resolve Match Winner/Loser
         if (source.type === 'match.winner' || source.type === 'match.loser') {
             // Find match
             let foundMatch: RoundMatch | undefined;
             // Search all phases
             for (const p of phases) {
                 if (p.matches) {
-                    const m = p.matches.find(m => String(m.globalId) === source.id);
+                    // Support looking up by Internal ID (programmatic links) OR Global ID (user links)
+                    const m = p.matches.find(m => m.id === source.id || String(m.globalId) === source.id);
                     if (m) { foundMatch = m; break; }
                 }
-                // Check group matches too if needed
+                // Check group matches too if needed - usually groups don't have winners fed to brackets by ID, but by POS
             }
 
             if (foundMatch) {
@@ -842,6 +863,21 @@ export const BracketStep: React.FC = () => {
                     <button onClick={() => setIsSimulation(!isSimulation)} className={`p-2 rounded border transition-colors flex items-center gap-2 text-xs font-bold ${isSimulation ? 'bg-yellow-500/20 border-yellow-500 text-yellow-200' : 'bg-white/5 border-white/10 text-white/50 hover:text-white'}`}>
                         <Play size={14} className={isSimulation ? 'fill-current' : ''} /> {isSimulation ? 'Terminar Simulación' : 'Simular Torneo'}
                     </button>
+                    {isSimulation && (
+                        <button
+                            onClick={() => {
+                                if (Object.keys(simulationResults).length === 0) return;
+                                if (confirm("¿Estás seguro de resetear toda la simulación?")) {
+                                    setSimulationResults({});
+                                }
+                            }}
+                            disabled={Object.keys(simulationResults).length === 0}
+                            className={`p-2 ml-2 rounded border transition-colors ${Object.keys(simulationResults).length === 0 ? 'bg-white/5 border-white/5 text-white/20 cursor-not-allowed' : 'bg-red-500/10 hover:bg-red-500/20 text-red-400 border-red-500/30'}`}
+                            title="Resetear Simulación"
+                        >
+                            <RefreshCcw size={14} />
+                        </button>
+                    )}
                     {!isSimulation && (
                         <>
                             <div className="h-4 w-px bg-white/10" />
@@ -881,7 +917,8 @@ export const BracketStep: React.FC = () => {
                     >
                         {/* Classification Table */}
                         <div className="w-full max-w-4xl">
-                            <ClassificationTable phases={phases} simulationResults={simulationResults} />
+                            {/* Pass empty simulation results if not in simulation mode to force reset view */}
+                            <ClassificationTable phases={phases} simulationResults={isSimulation ? simulationResults : undefined} isSimulation={isSimulation} />
                         </div>
 
                         {/* Phases */}
@@ -926,7 +963,42 @@ export const BracketStep: React.FC = () => {
                                             {/* Column 2: Final + Champion */}
                                             <div className="flex flex-col items-center gap-8 translate-y-8">
                                                 {phase.matches?.filter(m => m.name === 'Gran Final').map(m => renderMatch(m, phase))}
-                                                {isSimulation && renderChampionCard()}
+
+                                                {/* Champion / Podium */}
+                                                {isSimulation && (() => {
+                                                    // Determine Podium
+                                                    const finalMatch = phase.matches?.find(m => m.name === 'Gran Final');
+                                                    const thirdPlaceMatch = phase.matches?.find(m => m.name.includes('3er'));
+
+                                                    if (finalMatch && simulationResults[finalMatch.id]) {
+                                                        const winnerId = simulationResults[finalMatch.id];
+                                                        const loserId = resolveTeamId(finalMatch.sourceHome) === winnerId
+                                                            ? resolveTeamId(finalMatch.sourceAway)
+                                                            : resolveTeamId(finalMatch.sourceHome);
+
+                                                        const thirdId = thirdPlaceMatch ? simulationResults[thirdPlaceMatch.id] : undefined;
+
+                                                        if (winnerId && loserId && thirdId) {
+                                                            const getTeamData = (id: string) => {
+                                                                const t = teams.find(team => team.id === id);
+                                                                return { name: t?.name || 'Unknown', logo: t?.logo_url, color: t?.color };
+                                                            };
+
+                                                            return (
+                                                                <Podium teams={[
+                                                                    { place: 1, ...getTeamData(winnerId) },
+                                                                    { place: 2, ...getTeamData(loserId) },
+                                                                    { place: 3, ...getTeamData(thirdId) }
+                                                                ]} />
+                                                            );
+                                                        }
+
+                                                        // Fallback to simpler champion card if not full podium ready
+                                                        return renderChampionCard();
+                                                    }
+                                                    return null;
+                                                })()}
+
                                                 {phase.matches?.filter(m => m.name.includes('3er')).map(m => renderMatch(m, phase))}
                                             </div>
                                         </div>
@@ -968,6 +1040,40 @@ export const BracketStep: React.FC = () => {
                     </div>
                 </div>
             </div>
+            {/* Sets Config Modal */}
+            {isSetsModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-[#1a1a20] border border-white/10 rounded-2xl p-6 w-full max-w-md shadow-2xl scale-100 animate-in zoom-in-95 duration-200">
+                        <h3 className="text-xl font-bold text-white mb-2">Configuración de Sets</h3>
+                        <p className="text-white/50 text-sm mb-6">¿Cuántos sets se jugarán por partido en esta fase?</p>
+
+                        <div className="grid grid-cols-2 gap-4">
+                            <button
+                                onClick={() => handleConfirmAddPhase(1)}
+                                className="group relative overflow-hidden rounded-xl border border-white/10 bg-white/5 p-4 hover:border-purple-500 hover:bg-purple-500/10 transition-all text-left"
+                            >
+                                <div className="text-2xl font-bold text-white mb-1">1 Set</div>
+                                <div className="text-xs text-white/40 group-hover:text-purple-200">Partido Único</div>
+                            </button>
+
+                            <button
+                                onClick={() => handleConfirmAddPhase(3)}
+                                className="group relative overflow-hidden rounded-xl border border-white/10 bg-white/5 p-4 hover:border-blue-500 hover:bg-blue-500/10 transition-all text-left"
+                            >
+                                <div className="text-2xl font-bold text-white mb-1">3 Sets</div>
+                                <div className="text-xs text-white/40 group-hover:text-blue-200">Al Mejor de 3</div>
+                            </button>
+                        </div>
+
+                        <button
+                            onClick={() => setIsSetsModalOpen(false)}
+                            className="mt-6 w-full py-3 rounded-xl border border-white/10 text-white/50 hover:text-white hover:bg-white/5 transition-colors text-sm font-bold"
+                        >
+                            Cancelar
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
