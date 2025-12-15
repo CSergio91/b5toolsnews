@@ -39,14 +39,14 @@ const Header: React.FC<HeaderProps> = ({ darkMode, toggleTheme }) => {
     <nav className="sticky top-0 z-50 glass-panel shadow-sm transition-colors duration-300">
       <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-20">
-          
+
           {/* Logo Section */}
           <div className="flex items-center space-x-4">
             <div className="flex-shrink-0 cursor-pointer hover:scale-105 transition-transform duration-300" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
-              <img 
-                alt="B5Tools Logo" 
-                className="h-14 md:h-16 w-auto object-contain animate-float" 
-                src="https://lh3.googleusercontent.com/aida-public/AB6AXuCJQmut-RSi8NSZ870i01UMW18Gw-11AOb7WjaxzOY9EcarduLCI7vAYx0aTIUvoelNw3g3iUvhGWB7u3uQgmbTrd8xdKXKf6fcQ5Dt_-yTvi_CAPaIty6aW69Y0tURRSx9wBFPzgk3hmkwXimAF-H9a1eTWT9lX-X61Jne_Pe7wyCVbwgbIrjdDa8bEv-D3x7TW7A3DoOWkxPD3y25Me-2ISWq1EEI81emAb8S8tcFp6LAQngTZWi3eZCUY8z8N40XW3wlBEmUEWA" 
+              <img
+                alt="B5Tools Logo"
+                className="h-14 md:h-16 w-auto object-contain animate-float"
+                src="https://lh3.googleusercontent.com/aida-public/AB6AXuCJQmut-RSi8NSZ870i01UMW18Gw-11AOb7WjaxzOY9EcarduLCI7vAYx0aTIUvoelNw3g3iUvhGWB7u3uQgmbTrd8xdKXKf6fcQ5Dt_-yTvi_CAPaIty6aW69Y0tURRSx9wBFPzgk3hmkwXimAF-H9a1eTWT9lX-X61Jne_Pe7wyCVbwgbIrjdDa8bEv-D3x7TW7A3DoOWkxPD3y25Me-2ISWq1EEI81emAb8S8tcFp6LAQngTZWi3eZCUY8z8N40XW3wlBEmUEWA"
               />
             </div>
             <div className="hidden lg:block">
@@ -62,7 +62,7 @@ const Header: React.FC<HeaderProps> = ({ darkMode, toggleTheme }) => {
           {/* Desktop Navigation (Visible on Large screens only) */}
           <div className="hidden lg:flex items-center space-x-1 bg-gray-100/50 dark:bg-white/5 p-1 rounded-full border border-gray-200 dark:border-white/10 backdrop-blur-md">
             {navItems.map((item) => (
-              <button 
+              <button
                 key={item.name}
                 onClick={() => scrollToSection(item.id)}
                 className="flex items-center px-4 py-1.5 rounded-full text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-white dark:hover:bg-white/10 hover:text-primary dark:hover:text-primary transition-all group"
@@ -79,14 +79,14 @@ const Header: React.FC<HeaderProps> = ({ darkMode, toggleTheme }) => {
               <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse"></span>
               <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">LIVE</span>
             </div>
-            
+
             <div className="text-right hidden xl:block">
               <div className="text-sm font-bold text-gray-900 dark:text-white" suppressHydrationWarning>{currentTime}</div>
               <div className="text-xs text-gray-500 dark:text-gray-400">Oct 24, 2023</div>
             </div>
-            
+
             {/* Theme Toggle */}
-            <button 
+            <button
               onClick={toggleTheme}
               className="p-2 rounded-full text-gray-500 hover:text-primary hover:bg-gray-100 dark:text-gray-300 dark:hover:text-primary dark:hover:bg-white/10 transition-all focus:outline-none"
               aria-label="Toggle Dark Mode"
@@ -97,7 +97,7 @@ const Header: React.FC<HeaderProps> = ({ darkMode, toggleTheme }) => {
             </button>
 
             {/* Mobile Menu Button (Hamburger) - Kept for secondary actions */}
-            <button 
+            <button
               className="lg:hidden p-2 rounded-full text-gray-500 hover:text-primary dark:text-gray-300 dark:hover:text-primary transition-colors focus:outline-none"
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
             >
@@ -113,4 +113,15 @@ const Header: React.FC<HeaderProps> = ({ darkMode, toggleTheme }) => {
           <button
             key={item.name}
             onClick={() => scrollToSection(item.id)}
-            className="flex flex-col items-center justify-center p-2 rounded-xl text-gray-500 dark:text-gray-400 hover:text-primary dark
+            className="flex flex-col items-center justify-center p-2 rounded-xl text-gray-500 dark:text-gray-400 hover:text-primary dark:hover:text-primary transition-colors focus:outline-none"
+          >
+            <span className="material-icons-round text-2xl mb-1">{item.icon}</span>
+            <span className="text-[10px] font-medium">{item.name}</span>
+          </button>
+        ))}
+      </div>
+    </nav>
+  );
+};
+
+export default Header;
