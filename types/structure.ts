@@ -1,7 +1,7 @@
 export type PhaseType = 'group' | 'elimination' | 'placement';
 
 export interface ReferenceSource {
-    type: 'group.pos' | 'match.winner' | 'match.loser';
+    type: 'group.pos' | 'match.winner' | 'match.loser' | 'team';
     id: string; // Group Name (e.g., 'A') or Match Global ID (e.g. '10')
     index?: number; // For group pos (1, 2, 3...)
 }

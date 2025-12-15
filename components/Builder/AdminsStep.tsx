@@ -44,18 +44,15 @@ export const AdminsStep = () => {
             setIsSearching(true);
             setShowEmailError(false);
             try {
-                // Search in public profiles
-                // Assuming 'profiles' table has 'email' column exposed or manageable
+                // Search via Secure RPC to bypass RLS
                 const { data, error } = await supabase
-                    .from('profiles')
-                    .select('id, first_name, last_name, avatar_url')
-                    .eq('email', email.trim())
-                    .single();
+                    .rpc('search_users_by_email', { query_email: email.trim() });
 
-                if (data && !error) {
-                    setFoundProfile({ id: data.id, avatar_url: data.avatar_url });
+                if (data && !error && data.length > 0) {
+                    const profile = data[0];
+                    setFoundProfile({ id: profile.id, avatar_url: profile.avatar_url });
                     // Auto-fill name if found
-                    const foundName = `${data.first_name || ''} ${data.last_name || ''}`.trim();
+                    const foundName = `${profile.first_name || ''} ${profile.last_name || ''}`.trim();
                     if (foundName) setFullName(foundName);
                 } else {
                     setFoundProfile(null);

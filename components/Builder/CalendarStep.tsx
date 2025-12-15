@@ -1,15 +1,87 @@
-
 import React, { useState, useEffect } from 'react';
 import { useBuilder } from '../../context/BuilderContext';
-import { TournamentPhase, RoundMatch } from '../../types/structure';
-import { Calendar as CalendarIcon, Clock, MapPin, Coffee, ArrowRight, Save, LayoutList } from 'lucide-react';
+import { RoundMatch } from '../../types/structure';
+import { Calendar as CalendarIcon, Clock, MapPin, Plus, Trash2, GripHorizontal, LayoutGrid, ArrowRight, Settings, Coffee, MoreVertical, CalendarDays, Edit2 } from 'lucide-react';
+import { useToast } from '../../context/ToastContext';
+
+// Types
+export interface ScheduleItem {
+    id: string; // UUID
+    type: 'match' | 'event';
+    date: string; // YYYY-MM-DD
+    // For Match
+    matchId?: string; // Reference to RoundMatch
+    // For Event
+    name?: string; // e.g. "Almuerzo", "Mantenimiento"
+    durationMinutes: number; // Duration of this specific item
+}
+
+export interface Field {
+    id: string;
+    name: string;
+    startTime: string; // '09:00'
+    items: ScheduleItem[]; // Ordered list of activities
+}
 
 export const CalendarStep: React.FC = () => {
-    const { state, updateStructure } = useBuilder();
+    const { state, updateStructure, teams } = useBuilder();
+    const { addToast } = useToast();
+
+    const [fields, setFields] = useState<Field[]>([]);
     const [matches, setMatches] = useState<RoundMatch[]>([]);
 
-    // Load matches from structure
+    // Dates State
+    const [tournamentDates, setTournamentDates] = useState<string[]>([]);
+    const [selectedDate, setSelectedDate] = useState<string>('');
+
+    // Config State
+    const [matchDuration, setMatchDuration] = useState<number>(60); // Default 60 mins
+
+    // Modal States
+    const [modal, setModal] = useState<{
+        type: 'field' | 'config' | 'event' | 'rename' | null;
+        fieldId?: string; // For adding event
+    }>({ type: null });
+
+    // Temp Form States
+    const [newFieldData, setNewFieldData] = useState({ name: '', startTime: '09:00' });
+    const [renameData, setRenameData] = useState({ id: '', name: '' });
+    const [newEventData, setNewEventData] = useState({ name: 'Descanso', duration: 30 }); // duration in minutes
+    const [tempDuration, setTempDuration] = useState(60);
+
+    // -- Init Load --
     useEffect(() => {
+        // 1. Generate Dates
+        // Fix: Config uses snake_case keys (start_date, end_date)
+        const configAny = state.config as any;
+        const sDate = configAny.start_date || configAny.startDate;
+        const eDate = configAny.end_date || configAny.endDate;
+
+        const start = sDate ? new Date(sDate) : new Date();
+        const end = eDate ? new Date(eDate) : new Date(start);
+
+        // Ensure end >= start
+        if (end < start) end.setTime(start.getTime());
+
+        const dates: string[] = [];
+        let curr = new Date(start);
+        // Safety Break: max 30 days to prevent infinite loops if bad dates
+        let safety = 0;
+        while (curr <= end && safety < 60) {
+            dates.push(curr.toISOString().split('T')[0]);
+            curr.setDate(curr.getDate() + 1);
+            safety++;
+        }
+
+        // If no valid dates, default to today
+        if (dates.length === 0) dates.push(new Date().toISOString().split('T')[0]);
+
+        setTournamentDates(dates);
+        if (!selectedDate || !dates.includes(selectedDate)) {
+            setSelectedDate(dates[0]);
+        }
+
+        // 2. Load Structure
         if (state.structure) {
             const allMatches: RoundMatch[] = [];
             state.structure.phases.forEach(p => {
@@ -21,147 +93,540 @@ export const CalendarStep: React.FC = () => {
                     allMatches.push(...p.matches);
                 }
             });
-            // Sort by Global ID if possible, otherwise by Phase order
             allMatches.sort((a, b) => (a.globalId || 0) - (b.globalId || 0));
             setMatches(allMatches);
+
+            // Restore Config
+            if (configAny.matchDuration) {
+                setMatchDuration(configAny.matchDuration);
+                setTempDuration(configAny.matchDuration);
+            }
+
+            // Restore Fields
+            if (configAny.fields) {
+                const loaded: any[] = configAny.fields;
+                const migrated = loaded.map(f => {
+                    // Migration: ensure items list
+                    let items = f.items;
+                    if (!items && f.assignedMatches) {
+                        items = f.assignedMatches.map((mid: string) => ({
+                            id: crypto.randomUUID(),
+                            type: 'match',
+                            matchId: mid,
+                            durationMinutes: configAny.matchDuration || 60,
+                            date: dates[0] // assign to first day
+                        }));
+                    }
+                    if (items) {
+                        // Ensure all items have dates
+                        items = items.map((i: any) => ({
+                            ...i,
+                            date: i.date || dates[0] // fallback
+                        }));
+                    } else {
+                        items = [];
+                    }
+                    return { ...f, items };
+                });
+                setFields(migrated);
+            }
         }
-    }, [state.structure]);
+    }, [state.structure, (state.config as any).start_date, (state.config as any).end_date]);
 
-    const handleUpdateMatch = (matchId: string, updates: Partial<RoundMatch>) => {
-        if (!state.structure) return;
+    // -- Persistence --
+    useEffect(() => {
+        if (fields.length >= 0) { // Save even if empty to clear
+            (state.config as any).fields = fields;
+            (state.config as any).matchDuration = matchDuration;
+        }
+    }, [fields, matchDuration]);
 
-        const newPhases = state.structure.phases.map(p => {
-            // Update in Groups
-            if (p.type === 'group' && p.groups) {
-                return {
-                    ...p,
-                    groups: p.groups.map(g => ({
-                        ...g,
-                        matches: g.matches.map(m => m.id === matchId ? { ...m, ...updates } : m)
-                    }))
-                };
-            }
-            // Update in Elimination/Placement
-            if (p.matches) {
-                return {
-                    ...p,
-                    matches: p.matches.map(m => m.id === matchId ? { ...m, ...updates } : m)
-                };
-            }
-            return p;
-        });
 
-        updateStructure({
-            ...state.structure,
-            phases: newPhases
-        });
+    // -- Helpers --
+    const getMatchById = (id: string | undefined) => matches.find(m => m.id === id);
+    const getTeamName = (id: string | undefined) => {
+        if (!id) return '...';
+        const t = teams.find(tm => tm.id === id);
+        return t ? t.name : '...';
     };
 
-    // Group matches by Date for display
-    const groupedMatches = matches.reduce((acc, match) => {
-        const date = match.date || 'Sin Programar';
-        if (!acc[date]) acc[date] = [];
-        acc[date].push(match);
-        return acc;
-    }, {} as Record<string, RoundMatch[]>);
+    const calculateTime = (startTime: string, minutesToAdd: number) => {
+        const [h, m] = startTime.split(':').map(Number);
+        const total = h * 60 + m + minutesToAdd;
+        const newH = Math.floor(total / 60) % 24; // Handle day wrap conceptually
+        const newM = total % 60;
+        return `${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}`;
+    };
 
-    // Helpers for mass updates?
-    // "Auto-schedule"? Maybe later.
+    const formatDate = (dateStr: string) => {
+        const d = new Date(dateStr);
+        return d.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' });
+    };
+
+    // -- Actions --
+
+    // 1. Fields
+    const openAddField = () => {
+        setNewFieldData({ name: `Cancha ${fields.length + 1}`, startTime: '09:00' });
+        setModal({ type: 'field' });
+    };
+
+    const confirmAddField = () => {
+        if (!newFieldData.name) {
+            addToast('El nombre es obligatorio', 'error');
+            return;
+        }
+        setFields(prev => [...prev, {
+            id: crypto.randomUUID(),
+            name: newFieldData.name,
+            startTime: newFieldData.startTime,
+            items: []
+        }]);
+        addToast('Campo creado correctamente', 'success');
+        setModal({ type: null });
+    };
+
+    const removeField = (id: string) => {
+        if (confirm("¿Eliminar campo? Los partidos volverán a estar sin asignar.")) {
+            setFields(prev => prev.filter(f => f.id !== id));
+            addToast('Campo eliminado', 'info');
+        }
+    };
+
+    const openRenameField = (f: Field) => {
+        setRenameData({ id: f.id, name: f.name });
+        setModal({ type: 'rename' });
+    };
+
+    const confirmRenameField = () => {
+        if (!renameData.name) return;
+        setFields(prev => prev.map(f => f.id === renameData.id ? { ...f, name: renameData.name } : f));
+        addToast('Campo renombrado', 'success');
+        setModal({ type: null });
+    };
+
+    // 2. Config
+    const openConfig = () => {
+        setTempDuration(matchDuration);
+        setModal({ type: 'config' });
+    };
+
+    const saveConfig = () => {
+        setMatchDuration(tempDuration);
+        setFields(prev => prev.map(f => ({
+            ...f,
+            items: f.items.map(i => i.type === 'match' ? { ...i, durationMinutes: tempDuration } : i)
+        })));
+        addToast(`Duración actualizada a ${tempDuration} min`, 'success');
+        setModal({ type: null });
+    };
+
+    // 3. Events
+    const openAddEvent = (fieldId: string) => {
+        setNewEventData({ name: 'Descanso', duration: 15 });
+        setModal({ type: 'event', fieldId });
+    };
+
+    const confirmAddEvent = () => {
+        if (!modal.fieldId) return;
+        setFields(prev => prev.map(f => {
+            if (f.id === modal.fieldId) {
+                return {
+                    ...f,
+                    items: [...f.items, {
+                        id: crypto.randomUUID(),
+                        type: 'event',
+                        name: newEventData.name,
+                        durationMinutes: newEventData.duration,
+                        date: selectedDate
+                    }]
+                };
+            }
+            return f;
+        }));
+        addToast('Evento agregado', 'success');
+        setModal({ type: null });
+    };
+
+    // 4. Drag & Drop
+    const handleDragStart = (e: React.DragEvent, item: { id: string, type: 'match' | 'event', matchId?: string, durationMinutes?: number, name?: string }, originFieldId?: string) => { // originFieldId undefined if from sidebar
+        // Data payload
+        const payload = JSON.stringify({
+            item,
+            originFieldId
+        });
+        e.dataTransfer.setData('application/b5-calendar-item', payload);
+        e.dataTransfer.effectAllowed = 'move';
+    };
+
+    const handleDragOver = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+    };
+
+    const handleDrop = (e: React.DragEvent, targetFieldId: string, targetIndexOnDate: number = -1) => { // targetIndex relative to the filtered list for this date
+        e.preventDefault();
+        const dataStr = e.dataTransfer.getData('application/b5-calendar-item');
+        if (!dataStr) return;
+
+        try {
+            const { item, originFieldId } = JSON.parse(dataStr);
+            console.log("Dropped:", item, "From:", originFieldId, "To:", targetFieldId, "@", targetIndexOnDate);
+
+            // Logic:
+            // 1. Identify Source Item (if Origin Field, remove it. If Sidebar, create new Match wrapper).
+            // 2. Identify Target List: targetField.items filtered by selectedDate.
+            // 3. Insert into relevant position in global list.
+
+            setFields(prev => {
+                const newFields = [...prev];
+                let itemToInsert: ScheduleItem;
+
+                if (!originFieldId) {
+                    // FROM SIDEBAR
+                    const newId = typeof crypto !== 'undefined' && crypto.randomUUID
+                        ? crypto.randomUUID()
+                        : Math.random().toString(36).substring(2) + Date.now().toString(36);
+
+                    itemToInsert = {
+                        id: newId,
+                        type: 'match',
+                        matchId: item.id,
+                        durationMinutes: matchDuration,
+                        date: selectedDate
+                    };
+
+                    // Clean up doubles just in case
+                    newFields.forEach(f => {
+                        f.items = f.items.filter(i => i.matchId !== item.id);
+                    });
+
+                } else {
+                    // FROM FIELD
+                    const sourceField = newFields.find(f => f.id === originFieldId);
+                    if (!sourceField) return prev;
+
+                    const idx = sourceField.items.findIndex(i => i.id === item.id);
+                    if (idx === -1) return prev;
+
+                    itemToInsert = { ...sourceField.items[idx], date: selectedDate }; // Update date to target date!
+                    sourceField.items.splice(idx, 1);
+                }
+
+                // INSERT
+                const targetField = newFields.find(f => f.id === targetFieldId);
+                if (targetField) {
+                    // We need to find the actual index in the full list because we are viewing a filtered list by date.
+                    // itemsOnDate = targetField.items.filter(i => i.date === selectedDate)
+                    // If targetIndexOnDate is -1, append to END of itemsOnDate.
+                    // Then find where that is in the real list.
+
+                    const itemsOnDate = targetField.items.filter(i => i.date === selectedDate);
+
+                    if (targetIndexOnDate === -1) {
+                        // Append after the last item of this date? Or just push to end of array.
+                        // For simplicity, let's just push to end of global array. 
+                        // If we wanted to keep dates grouped in memory, we'd need to find the last item of this date.
+                        // But since we filter on render, global order only matters for persistence stability.
+                        targetField.items.push(itemToInsert);
+                    } else {
+                        // Insert BEFORE the item at targetIndexOnDate
+                        const targetItemRef = itemsOnDate[targetIndexOnDate];
+                        if (targetItemRef) {
+                            const realIdx = targetField.items.indexOf(targetItemRef);
+                            targetField.items.splice(realIdx, 0, itemToInsert);
+                        } else {
+                            targetField.items.push(itemToInsert);
+                        }
+                    }
+                }
+                return newFields;
+            });
+            addToast('Horario actualizado', 'success');
+        } catch (err) {
+            console.error("Drop Error", err);
+        }
+    };
+
+    // -- Derived Data --
+    const assignedMatchIds = new Set(fields.flatMap(f => f.items.filter(i => i.type === 'match').map(i => i.matchId)));
+    const unassignedMatches = matches.filter(m => !assignedMatchIds.has(m.id));
 
     return (
-        <div className="h-full flex flex-col gap-6 animate-in fade-in">
+        <div className="h-full flex flex-col gap-6 animate-in fade-in pb-20 relative">
             <div className="flex items-center justify-between">
-                <h2 className="text-2xl font-bold flex items-center gap-2">
-                    <CalendarIcon className="text-blue-500" /> Calendario y Horarios
-                </h2>
-                <div className="flex gap-2 text-sm text-white/50">
-                    <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-blue-500"></div> Programado</span>
-                    <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-white/20"></div> Pendiente</span>
+                <div>
+                    <h2 className="text-2xl font-bold flex items-center gap-2">
+                        <CalendarIcon className="text-blue-500" /> Programación de Campos
+                    </h2>
+                    <p className="text-white/40 text-xs mt-1">Arrastra partidos. Organiza por fechas y campos.</p>
+                </div>
+
+                <div className="flex gap-2">
+                    <button onClick={openConfig} className="p-2 px-3 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-lg text-sm font-bold flex items-center gap-2 transition-colors">
+                        <Settings size={16} /> <span className="hidden md:inline">{matchDuration} min/partido</span>
+                    </button>
+                    <button onClick={openAddField} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-bold flex items-center gap-2 transition-colors">
+                        <Plus size={16} /> Agregar Campo
+                    </button>
                 </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto pr-2 space-y-8">
-                {Object.entries(groupedMatches).sort((a, b) => a[0] === 'Sin Programar' ? -1 : a[0].localeCompare(b[0])).map(([date, dateMatches]) => (
-                    <div key={date} className="bg-[#1a1a20] rounded-xl border border-white/5 overflow-hidden">
-                        {/* Date Header */}
-                        <div className={`p-4 font-bold flex justify-between items-center ${date === 'Sin Programar' ? 'bg-orange-500/10 text-orange-200' : 'bg-blue-600/20 text-blue-100'}`}>
-                            <div className="flex items-center gap-2">
-                                <CalendarIcon size={16} />
-                                {date === 'Sin Programar' ? 'Partidos Sin Fecha' : new Date(date).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-                            </div>
-                            <span className="text-xs opacity-50 bg-black/20 px-2 py-1 rounded">{dateMatches.length} Partidos</span>
-                        </div>
-
-                        {/* Matches List */}
-                        <div className="divide-y divide-white/5">
-                            {dateMatches.map(match => (
-                                <div key={match.id} className="p-4 hover:bg-white/5 transition-colors flex flex-col md:flex-row gap-4 items-center">
-                                    {/* Match Info */}
-                                    <div className="w-full md:w-48 flex-shrink-0">
-                                        <div className="text-xs text-blue-400 font-bold mb-1">#{match.globalId} • {match.phaseId}</div>
-                                        <div className="font-medium text-white">{match.name}</div>
-                                    </div>
-
-                                    {/* Scheduling Inputs */}
-                                    <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4 w-full">
-                                        {/* Date */}
-                                        <div className="flex flex-col gap-1">
-                                            <label className="text-[10px] uppercase font-bold text-white/30 flex items-center gap-1">
-                                                <CalendarIcon size={10} /> Fecha
-                                            </label>
-                                            <input
-                                                type="date"
-                                                className="bg-black/20 border border-white/10 rounded px-2 py-1.5 text-sm text-white focus:border-blue-500 outline-none transition-colors"
-                                                value={match.date || ''}
-                                                onChange={(e) => handleUpdateMatch(match.id, { date: e.target.value })}
-                                            />
-                                        </div>
-
-                                        {/* Time */}
-                                        <div className="flex flex-col gap-1">
-                                            <label className="text-[10px] uppercase font-bold text-white/30 flex items-center gap-1">
-                                                <Clock size={10} /> Hora
-                                            </label>
-                                            <input
-                                                type="time"
-                                                className="bg-black/20 border border-white/10 rounded px-2 py-1.5 text-sm text-white focus:border-blue-500 outline-none transition-colors"
-                                                value={match.startTime || ''}
-                                                onChange={(e) => handleUpdateMatch(match.id, { startTime: e.target.value })}
-                                            />
-                                        </div>
-
-                                        {/* Location */}
-                                        <div className="flex flex-col gap-1">
-                                            <label className="text-[10px] uppercase font-bold text-white/30 flex items-center gap-1">
-                                                <MapPin size={10} /> Cancha / Lugar
-                                            </label>
-                                            <input
-                                                type="text"
-                                                placeholder="Ej. Cancha 1"
-                                                className="bg-black/20 border border-white/10 rounded px-2 py-1.5 text-sm text-white focus:border-blue-500 outline-none transition-colors placeholder:text-white/10"
-                                                value={match.location || ''}
-                                                onChange={(e) => handleUpdateMatch(match.id, { location: e.target.value })}
-                                            />
-                                        </div>
-                                    </div>
-
-                                    {/* Status or Break */}
-                                    {/* Could add "Add Break" feature here later */}
-                                </div>
-                            ))}
-                        </div>
-                    </div>
+            {/* Date Tabs */}
+            <div className="flex gap-2 overflow-x-auto pb-2 border-b border-white/10">
+                {tournamentDates.map(date => (
+                    <button
+                        key={date}
+                        onClick={() => setSelectedDate(date)}
+                        className={`px-4 py-2 rounded-t-lg text-sm font-bold flex items-center gap-2 transition-all ${selectedDate === date
+                            ? 'bg-blue-600 text-white border-b-2 border-blue-400'
+                            : 'bg-[#1a1a20] text-white/50 hover:bg-[#25252b] hover:text-white'
+                            }`}
+                    >
+                        <CalendarDays size={14} />
+                        {formatDate(date)}
+                    </button>
                 ))}
             </div>
 
-            {/* Legend / Tips */}
-            <div className="bg-blue-500/10 border border-blue-500/20 p-4 rounded-lg flex items-start gap-3">
-                <LayoutList className="text-blue-400 mt-1 flex-shrink-0" size={18} />
-                <div className="text-sm text-blue-200/80">
-                    <strong className="text-blue-200 block mb-1">Planificación del Torneo</strong>
-                    Define las fechas y horarios para cada partido. Los partidos se agruparán automáticamente por fecha. Los cambios se guardan en tiempo real.
+            <div className="flex-1 flex gap-6 overflow-hidden">
+                {/* Available Matches Sidebar */}
+                <div className="w-80 flex flex-col bg-[#111] border-r border-white/5 pr-4 overflow-hidden flex-shrink-0">
+                    <div className="text-xs font-bold text-white/50 uppercase tracking-wider mb-2 flex justify-between">
+                        <span>Sin Asignar</span>
+                        <span className="bg-white/10 px-1.5 rounded text-white">{unassignedMatches.length}</span>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
+                        {unassignedMatches.map(m => (
+                            <div
+                                key={m.id}
+                                draggable
+                                onDragStart={(e) => handleDragStart(e, { ...m, type: 'match' }, undefined)}
+                                className="bg-[#1a1a20] p-3 rounded border border-white/5 hover:border-blue-500/50 cursor-grab active:cursor-grabbing group transition-all"
+                            >
+                                <div className="flex justify-between items-center mb-1">
+                                    <span className="text-[10px] text-white/30 font-mono">#{m.globalId}</span>
+                                    <span className="text-[10px] text-blue-400 bg-blue-500/10 px-1 rounded">{m.phaseId}</span>
+                                </div>
+                                <div className="text-sm font-bold text-white mb-1 truncate">{m.name}</div>
+                                <div className="flex justify-between text-xs text-white/60">
+                                    <span className="truncate max-w-[45%]">{m.sourceHome?.type === 'team' ? getTeamName(m.sourceHome.id) : 'TBD'}</span>
+                                    <span className="text-white/20">vs</span>
+                                    <span className="truncate max-w-[45%]">{m.sourceAway?.type === 'team' ? getTeamName(m.sourceAway.id) : 'TBD'}</span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Fields Grid */}
+                <div className="flex-1 overflow-x-auto overflow-y-hidden flex gap-6 pb-4">
+                    {fields.map(field => {
+                        let currentTimeAccumulator = 0; // minutes from start of day
+                        // Filter items for this date
+                        const dayItems = field.items.filter(i => i.date === selectedDate);
+
+                        return (
+                            <div
+                                key={field.id}
+                                className="min-w-[340px] w-[340px] bg-[#1a1a20] border border-white/10 rounded-xl flex flex-col h-full shadow-xl transition-all hover:border-white/20"
+                                onDragOver={handleDragOver}
+                                onDrop={(e) => {
+                                    if (e.target === e.currentTarget) {
+                                        handleDrop(e, field.id, -1);
+                                    }
+                                }}
+                            >
+                                {/* Field Header */}
+                                <div className="p-4 border-b border-white/5 bg-white/5 flex justify-between items-center group">
+                                    <div className="overflow-hidden">
+                                        <div className="font-bold text-white truncate flex items-center gap-2">
+                                            {field.name}
+                                            <button onClick={() => openRenameField(field)} className="opacity-0 group-hover:opacity-100 p-1 hover:bg-white/10 rounded transition-all">
+                                                <Edit2 size={12} className="text-white/50" />
+                                            </button>
+                                        </div>
+                                        <div className="text-xs text-white/50 flex items-center gap-1">
+                                            <Clock size={10} /> Inicio: {field.startTime} | {field.items.length} Totales
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-1">
+                                        <button onClick={() => openAddEvent(field.id)} title="Agregar Tiempo Extra" className="p-1.5 text-white/20 hover:text-green-400 rounded hover:bg-green-500/10 transition-colors">
+                                            <Coffee size={14} />
+                                        </button>
+                                        <button onClick={() => removeField(field.id)} className="p-1.5 text-white/20 hover:text-red-400 rounded hover:bg-red-500/10 transition-colors">
+                                            <Trash2 size={14} />
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Timeline */}
+                                <div
+                                    className="flex-1 overflow-y-auto p-2 space-y-2 custom-scrollbar bg-black/20 text-sm"
+                                    onDragOver={handleDragOver}
+                                    onDrop={(e) => {
+                                        if (e.target === e.currentTarget) handleDrop(e, field.id, -1);
+                                    }}
+                                >
+                                    {dayItems.map((item, idx) => {
+                                        const timeStr = calculateTime(field.startTime, currentTimeAccumulator);
+                                        currentTimeAccumulator += item.durationMinutes;
+
+                                        if (item.type === 'event') {
+                                            return (
+                                                <div
+                                                    key={item.id}
+                                                    draggable
+                                                    onDragStart={(e) => handleDragStart(e, item, field.id)}
+                                                    onDrop={(e) => {
+                                                        e.stopPropagation();
+                                                        handleDrop(e, field.id, idx);
+                                                    }}
+                                                    className="bg-yellow-500/5 border border-yellow-500/20 p-2 rounded flex items-center gap-3 select-none hover:bg-yellow-500/10 cursor-move"
+                                                >
+                                                    <div className="text-xs font-mono text-yellow-600/70">{timeStr}</div>
+                                                    <div className="flex-1">
+                                                        <div className="text-xs font-bold text-yellow-500">{item.name}</div>
+                                                        <div className="text-[10px] text-white/30">{item.durationMinutes} min</div>
+                                                    </div>
+                                                    <Coffee size={12} className="text-yellow-500/50" />
+                                                </div>
+                                            );
+                                        }
+
+                                        const match = getMatchById(item.matchId);
+                                        if (!match) return null;
+
+                                        return (
+                                            <div
+                                                key={item.id}
+                                                draggable
+                                                onDragStart={(e) => handleDragStart(e, item, field.id)}
+                                                onDrop={(e) => {
+                                                    e.stopPropagation();
+                                                    handleDrop(e, field.id, idx);
+                                                }}
+                                                className="bg-[#2a2a30] p-3 rounded border border-white/5 relative group hover:border-blue-500/30 transition-all select-none cursor-move hover:bg-[#333]"
+                                            >
+                                                <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500 rounded-l"></div>
+                                                <div className="pl-3">
+                                                    <div className="flex justify-between items-center mb-1">
+                                                        <span className="text-xs font-mono text-blue-300 bg-blue-900/20 px-1.5 rounded">{timeStr}</span>
+                                                        <span className="text-[10px] text-white/20">#{match.globalId}</span>
+                                                    </div>
+                                                    <div className="text-xs text-white mb-1">
+                                                        <span className="font-bold">{match.sourceHome?.type === 'team' ? getTeamName(match.sourceHome.id) : 'TBD'}</span>
+                                                        <span className="text-white/30 mx-1">vs</span>
+                                                        <span className="font-bold">{match.sourceAway?.type === 'team' ? getTeamName(match.sourceAway.id) : 'TBD'}</span>
+                                                    </div>
+                                                    <div className="text-[10px] text-white/30 truncate">{match.name}</div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+
+                                    {dayItems.length === 0 && (
+                                        <div className="h-full flex flex-col items-center justify-center text-white/10 text-xs border-2 border-dashed border-white/5 rounded m-2 pointer-events-none">
+                                            <p>Arrastra partidos aquí</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        );
+                    })}
+
+                    {fields.length === 0 && (
+                        <div className="flex-1 flex flex-col items-center justify-center text-white/20 border-2 border-dashed border-white/5 rounded-xl m-4">
+                            <LayoutGrid size={48} className="mb-4 opacity-50" />
+                            <p>No hay campos creados.</p>
+                            <button onClick={openAddField} className="mt-4 px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded text-sm font-bold">
+                                Crear Primer Campo
+                            </button>
+                        </div>
+                    )}
                 </div>
             </div>
+
+            {/* Modals */}
+            {modal.type === 'field' && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in">
+                    <div className="bg-[#1a1a20] w-full max-w-sm rounded-xl border border-white/10 shadow-2xl p-6">
+                        <h3 className="text-lg font-bold text-white mb-4">Nuevo Campo</h3>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="text-xs font-bold text-white/50 uppercase">Nombre</label>
+                                <input type="text" className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-white focus:border-blue-500 outline-none" autoFocus value={newFieldData.name} onChange={e => setNewFieldData({ ...newFieldData, name: e.target.value })} />
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-white/50 uppercase">Inicio</label>
+                                <input type="time" className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-white focus:border-blue-500 outline-none" value={newFieldData.startTime} onChange={e => setNewFieldData({ ...newFieldData, startTime: e.target.value })} />
+                            </div>
+                        </div>
+                        <div className="flex justify-end gap-2 mt-6">
+                            <button onClick={() => setModal({ type: null })} className="px-4 py-2 text-white/50 hover:text-white font-bold text-sm">Cancelar</button>
+                            <button onClick={confirmAddField} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-bold">Crear</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {modal.type === 'rename' && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in">
+                    <div className="bg-[#1a1a20] w-full max-w-sm rounded-xl border border-white/10 shadow-2xl p-6">
+                        <h3 className="text-lg font-bold text-white mb-4">Renombrar Campo</h3>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="text-xs font-bold text-white/50 uppercase">Nombre</label>
+                                <input type="text" className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-white focus:border-blue-500 outline-none" autoFocus value={renameData.name} onChange={e => setRenameData({ ...renameData, name: e.target.value })} />
+                            </div>
+                        </div>
+                        <div className="flex justify-end gap-2 mt-6">
+                            <button onClick={() => setModal({ type: null })} className="px-4 py-2 text-white/50 hover:text-white font-bold text-sm">Cancelar</button>
+                            <button onClick={confirmRenameField} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-bold">Guardar</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {modal.type === 'config' && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in">
+                    <div className="bg-[#1a1a20] w-full max-w-sm rounded-xl border border-white/10 shadow-2xl p-6">
+                        <h3 className="text-lg font-bold text-white mb-4">Configuración Calendario</h3>
+                        <div>
+                            <label className="text-xs font-bold text-white/50 uppercase">Duración por Partido (Minutos)</label>
+                            <input type="number" className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-white focus:border-blue-500 outline-none" value={tempDuration} onChange={e => setTempDuration(Number(e.target.value))} />
+                            <p className="text-[10px] text-white/30 mt-2">Esto recalculará todos los partidos ya asignados.</p>
+                        </div>
+                        <div className="flex justify-end gap-2 mt-6">
+                            <button onClick={() => setModal({ type: null })} className="px-4 py-2 text-white/50 hover:text-white font-bold text-sm">Cancelar</button>
+                            <button onClick={saveConfig} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-bold">Guardar</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {modal.type === 'event' && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in">
+                    <div className="bg-[#1a1a20] w-full max-w-sm rounded-xl border border-white/10 shadow-2xl p-6">
+                        <h3 className="text-lg font-bold text-white mb-4">Agregar Evento / Descanso</h3>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="text-xs font-bold text-white/50 uppercase">Nombre</label>
+                                <input type="text" className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-white focus:border-blue-500 outline-none" autoFocus placeholder="Ej. Almuerzo" value={newEventData.name} onChange={e => setNewEventData({ ...newEventData, name: e.target.value })} />
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-white/50 uppercase">Duración (Minutos)</label>
+                                <input type="number" className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-white focus:border-blue-500 outline-none" value={newEventData.duration} onChange={e => setNewEventData({ ...newEventData, duration: Number(e.target.value) })} />
+                            </div>
+                        </div>
+                        <div className="flex justify-end gap-2 mt-6">
+                            <button onClick={() => setModal({ type: null })} className="px-4 py-2 text-white/50 hover:text-white font-bold text-sm">Cancelar</button>
+                            <button onClick={confirmAddEvent} className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg text-sm font-bold">Agregar</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

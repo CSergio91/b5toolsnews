@@ -60,6 +60,7 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({ isOpen, on
                 email: regEmail,
                 password: regPassword,
                 options: {
+                    emailRedirectTo: window.location.origin,
                     data: {
                         first_name: firstName,
                         last_name: lastName,
@@ -223,8 +224,8 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({ isOpen, on
                                             value={regConfirmPassword}
                                             onChange={(e) => setRegConfirmPassword(e.target.value)}
                                             className={`w-full px-3 py-2.5 rounded-lg bg-black/40 border text-white focus:ring-2 outline-none pr-8 ${regConfirmPassword && regPassword !== regConfirmPassword
-                                                    ? 'border-red-500/50 focus:ring-red-500'
-                                                    : 'border-white/10 focus:ring-purple-500'
+                                                ? 'border-red-500/50 focus:ring-red-500'
+                                                : 'border-white/10 focus:ring-purple-500'
                                                 }`}
                                         />
                                         <button

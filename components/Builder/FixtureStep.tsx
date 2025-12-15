@@ -13,23 +13,55 @@ export const FixtureStep: React.FC = () => {
 
     const [unassignedTeams, setUnassignedTeams] = useState<string[]>([]);
 
-    // Initialize Empty Groups
+    // Initialize Groups (Hydrate from State if available)
     useEffect(() => {
-        if (isGroupFormat && generatedGroups.length === 0) {
-            const groupsCount = (state.config as any).number_of_groups || 4;
-            const groups: GroupStructure[] = Array.from({ length: groupsCount }, (_, i) => ({
-                name: String.fromCharCode(65 + i),
-                teams: [],
-                matches: []
-            }));
-            setGeneratedGroups(groups);
-            // Initially all teams are unassigned
-            setUnassignedTeams(teams.map(t => t.id));
-            setViewMode('groups');
+        if (generatedGroups.length > 0) return; // Already loaded locally
+
+        if (isGroupFormat) {
+            // Check global structure first
+            const existingGroupPhase = state.structure?.phases.find(p => p.type === 'group');
+
+            if (existingGroupPhase && existingGroupPhase.groups && existingGroupPhase.groups.length > 0) {
+                // Restore from State
+                const restoredGroups: GroupStructure[] = existingGroupPhase.groups.map(g => ({
+                    name: g.name,
+                    teams: g.teams,
+                    matches: g.matches.map(m => ({
+                        id: m.id,
+                        home: m.sourceHome?.id || '?', // Map back if possible, though sourceHome is ref
+                        away: m.sourceAway?.id || '?',
+                        // Reconstruction might be tricky if roundMatch format differs from temp group match
+                        // But for drag-drop UI we mainly need teams list.
+                        // Matches regeneration might be safer?
+                        // "teams" is the source of truth for Groups UI. matches are derived.
+                    } as any))
+                }));
+
+                // Regenerate matches to ensure format consistency for the UI list
+                restoredGroups.forEach(g => {
+                    if (!g.matches || g.matches.length === 0) {
+                        g.matches = generateMatchesForOneGroup(g.teams, g.name);
+                    }
+                });
+
+                setGeneratedGroups(restoredGroups);
+                setViewMode('groups');
+            } else {
+                // Initialize New Empty Groups
+                const groupsCount = (state.config as any).number_of_groups || 4;
+                const groups: GroupStructure[] = Array.from({ length: groupsCount }, (_, i) => ({
+                    name: String.fromCharCode(65 + i),
+                    teams: [],
+                    matches: []
+                }));
+                setGeneratedGroups(groups);
+                setUnassignedTeams(teams.map(t => t.id));
+                setViewMode('groups');
+            }
         } else if (!isGroupFormat) {
             setViewMode('bracket');
         }
-    }, [isGroupFormat, state.config.number_of_groups]); // Removed teams from dependency to avoid auto-reset
+    }, [isGroupFormat, state.config.number_of_groups, state.structure]);
 
     // Update unassigned teams whenever groups change
     useEffect(() => {
@@ -49,16 +81,24 @@ export const FixtureStep: React.FC = () => {
             groups: generatedGroups.map(g => ({
                 name: g.name,
                 teams: g.teams,
-                matches: g.matches.map(m => ({
-                    id: m.id,
-                    globalId: 0, // Placeholder, engine should numbering
-                    name: `G${g.name} - Match`,
-                    phaseId: 'group-phase',
-                    // ... map other fields if needed
-                    roundIndex: 0
-                } as any))
+                matches: g.matches.map(m => {
+                    // Normalize Team IDs (Handle hydration vs generation diffs if any)
+                    const homeId = (m as any).localTeamId || (m as any).home;
+                    const awayId = (m as any).visitorTeamId || (m as any).away;
+
+                    return {
+                        id: m.id,
+                        globalId: 0,
+                        name: `G${g.name} - Match`,
+                        phaseId: 'group-phase',
+                        roundIndex: 0,
+                        sourceHome: { type: 'team', id: homeId },
+                        sourceAway: { type: 'team', id: awayId }
+                    };
+                })
             }))
         };
+
 
         let newPhases = [...existingStructure.phases];
         if (phaseIndex >= 0) {
@@ -246,7 +286,7 @@ export const FixtureStep: React.FC = () => {
     }
 
     return (
-        <div className="h-full flex flex-col animate-in fade-in">
+        <div className="h-full flex flex-col animate-in fade-in p-4 lg:p-8">
             <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 gap-4">
                 <h2 className="text-xl md:text-2xl font-bold flex items-center gap-2">
                     <LayoutGrid className="text-blue-500" /> Fase de Grupos

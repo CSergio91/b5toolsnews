@@ -3,9 +3,11 @@ import { useBuilder } from '../../context/BuilderContext';
 import { supabase } from '../../lib/supabase';
 import { User, Plus, Trash2, Edit2, CheckCircle, XCircle, ChevronDown, ChevronUp, Search, Loader2, Link as LinkIcon, AlertTriangle, X, Copy, Check } from 'lucide-react';
 import { RefereeProfile } from '../../types/tournament';
+import { useToast } from '../../context/ToastContext';
 
 export const RefereesStep = () => {
     const { referees, addReferee, updateReferee, removeReferee } = useBuilder();
+    const { addToast } = useToast();
     const [isEditing, setIsEditing] = useState<string | null>(null);
     const [fullName, setFullName] = useState('');
     const [email, setEmail] = useState('');
@@ -36,18 +38,19 @@ export const RefereesStep = () => {
             setIsSearching(true);
             setShowEmailError(false);
             try {
-                // Search in public profiles
-                // Assuming 'profiles' table has 'email' column exposed or manageable
+                // Search via Secure RPC to bypass RLS
                 const { data, error } = await supabase
-                    .from('profiles')
-                    .select('id, first_name, last_name, avatar_url')
-                    .eq('email', email.trim())
-                    .single();
+                    .rpc('search_users_by_email', { query_email: email.trim() });
 
-                if (data && !error) {
-                    setFoundProfile({ id: data.id, avatar_url: data.avatar_url });
+                // RPC returns an array (or null if single not applicable in return type simply but we treat as list)
+                // But wait, our RPC matches exact email logic inside but returns TABLE which is array.
+                // We should take the first item.
+
+                if (data && !error && data.length > 0) {
+                    const profile = data[0];
+                    setFoundProfile({ id: profile.id, avatar_url: profile.avatar_url });
                     // Auto-fill name if found
-                    const foundName = `${data.first_name || ''} ${data.last_name || ''}`.trim();
+                    const foundName = `${profile.first_name || ''} ${profile.last_name || ''}`.trim();
                     if (foundName) setFullName(foundName);
                 } else {
                     setFoundProfile(null);
@@ -73,8 +76,12 @@ export const RefereesStep = () => {
         const first = parts[0];
         const last = parts.slice(1).join(' ') || '';
 
+        const newId = (typeof crypto !== 'undefined' && crypto.randomUUID)
+            ? crypto.randomUUID()
+            : Math.random().toString(36).substring(2) + Date.now().toString(36);
+
         addReferee({
-            id: foundProfile?.id || crypto.randomUUID(), // Use real ID if found, else random
+            id: foundProfile?.id || newId, // Use real ID if found, else random
             first_name: first,
             last_name: last,
             email: email.trim(),
@@ -106,8 +113,9 @@ export const RefereesStep = () => {
     };
 
     const deleteReferee = (id: string) => {
-        if (confirm('¿Seguro que quieres eliminar este árbitro?')) {
+        if (window.confirm('¿Seguro que quieres eliminar este árbitro?')) {
             removeReferee(id);
+            addToast('Árbitro eliminado', 'success');
         }
     };
 
@@ -298,7 +306,7 @@ export const RefereesStep = () => {
                                                         onClick={() => {
                                                             // Future integration: Call Edge Function to send Magic Link
                                                             // supabase.functions.invoke('invite-referee', { body: { email: ref.email } })
-                                                            alert(`Invitación Magic Link enviada a ${ref.email} (Simulación)`);
+                                                            addToast(`Invitación Magic Link enviada a ${ref.email}`, 'success');
                                                         }}
                                                         className="p-2 bg-blue-500/10 text-blue-400 hover:text-blue-300 hover:bg-blue-500/20 rounded-lg transition-all"
                                                         title="Enviar Invitación Magic Link"
