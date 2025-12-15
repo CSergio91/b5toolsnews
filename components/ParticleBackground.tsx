@@ -18,7 +18,7 @@ export const ParticleBackground: React.FC = () => {
     }, []);
 
     return (
-        <div className="absolute inset-0 pointer-events-none overflow-hidden z-0 bg-[#0a0a0a]">
+        <div className="fixed inset-0 pointer-events-none overflow-hidden z-0 bg-[#0a0a0a]">
             {/* Background Gradient Mesh */}
             <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-blue-500/10 rounded-full blur-[100px] -translate-y-1/2 translate-x-1/2"></div>
             <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-purple-500/10 rounded-full blur-[100px] translate-y-1/2 -translate-x-1/2"></div>

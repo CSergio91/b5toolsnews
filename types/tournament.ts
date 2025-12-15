@@ -21,6 +21,15 @@ export interface Tournament {
     sets_per_match?: 1 | 3;
     custom_rules?: string[];
     number_of_groups?: number;
+    tiebreaker_rules?: TieBreakerRule[];
+}
+
+export type TieBreakerType = 'direct_match' | 'run_diff' | 'runs_scored' | 'random';
+
+export interface TieBreakerRule {
+    type: TieBreakerType;
+    order: number;
+    active: boolean;
 }
 
 export interface TournamentStage {

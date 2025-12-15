@@ -42,4 +42,5 @@ export interface GroupConfiguration {
 export interface TournamentStructure {
     phases: TournamentPhase[];
     globalMatchCount: number;
+    simulationResults?: Record<string, string>; // matchId -> winnerId
 }

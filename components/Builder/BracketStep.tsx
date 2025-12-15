@@ -1,7 +1,7 @@
 
 import React, { useEffect, useState, useRef } from 'react';
 import { useBuilder } from '../../context/BuilderContext';
-import { ZoomIn, ZoomOut, RefreshCcw, GripVertical, Trash2, Plus, Edit2, X, Check, Save, Link as LinkIcon, AlertCircle, ArrowLeft, ArrowRight } from 'lucide-react';
+import { ZoomIn, ZoomOut, RefreshCcw, GripVertical, Trash2, Plus, Edit2, X, Check, Save, Link as LinkIcon, AlertCircle, ArrowLeft, ArrowRight, Play, Trophy, ArrowLeftRight } from 'lucide-react';
 import { TournamentPhase, RoundMatch, ReferenceSource } from '../../types/structure';
 import { useToast } from '../../context/ToastContext';
 import { ClassificationTable } from './ClassificationTable';
@@ -14,13 +14,15 @@ const generateId = () => {
 };
 
 export const BracketStep: React.FC = () => {
-    const { state, teams } = useBuilder();
+    const { state, teams, updateStructure } = useBuilder();
     const { addToast } = useToast();
 
     // -- State --
-    // We maintain a local structure state that mimics the global structure
-    // In a real app we'd sync this 2-way with context, but for now we build it here.
     const [phases, setPhases] = useState<TournamentPhase[]>([]);
+
+    // Simulation State
+    const [isSimulation, setIsSimulation] = useState(false);
+    const [simulationResults, setSimulationResults] = useState<Record<string, string>>({}); // matchId -> winnerId
 
     // Canvas State
     const [zoom, setZoom] = useState(1);
@@ -29,54 +31,48 @@ export const BracketStep: React.FC = () => {
     const lastPos = useRef({ x: 0, y: 0 });
     const containerRef = useRef<HTMLDivElement>(null);
 
-    // Drag/Drop Reordering
-    const [draggedPhaseId, setDraggedPhaseId] = useState<string | null>(null);
-
     // Editing
     const [editingMatchId, setEditingMatchId] = useState<string | null>(null); // For connecting sources
 
     // -- Persistence Sync --
     useEffect(() => {
         if (phases.length > 0) {
-            // Update Context
-            // Be careful about loops. `updateStructure` triggers state change.
-            // If `phases` is equal to `state.structure.phases`, don't update?
-            // Simple check length or stringify for now.
-            const currentStr = JSON.stringify(phases);
-            const prevStr = JSON.stringify(state.structure?.phases || []);
+            const currentStr = JSON.stringify({ phases, sim: simulationResults });
+            const prevStr = JSON.stringify({ phases: state.structure?.phases || [], sim: state.structure?.simulationResults || {} });
 
             if (currentStr !== prevStr) {
                 const debounce = setTimeout(() => {
-                    const sorted = recalculateGlobalIds(phases); // Ensure numbering
-                    state.structure = {
+                    const sorted = recalculateGlobalIds(phases);
+                    updateStructure({
                         phases: sorted,
-                        globalMatchCount: 0 // TODO calculate
-                    };
-                    // useBuilder provided updateStructure?
-                    // Not imported here? Let's check imports.
-                    // The component wrapper or context needs to provide `updateStructure`.
-                    // `useBuilder` provides `updateStructure` in context.
-                }, 1000); // 1s Debounce
+                        globalMatchCount: 0,
+                        simulationResults
+                    });
+                }, 1000);
                 return () => clearTimeout(debounce);
             }
         }
-    }, [phases]);
+    }, [phases, simulationResults]);
 
-    // -- Init --
+    // -- Init Load --
+    useEffect(() => {
+        if (state.structure && state.structure.phases && state.structure.phases.length > 0) {
+            setPhases(state.structure.phases);
+            if (state.structure.simulationResults) {
+                setSimulationResults(state.structure.simulationResults);
+            }
+        }
+    }, []);
+
     // -- Actions --
 
     const recalculateGlobalIds = (currentPhases: TournamentPhase[]) => {
         let count = 1;
-        // Logic: Iterate phases by order.
-        // Groups: count += matches.length
-        // Elimination: Iterate matches
         const sorted = [...currentPhases].sort((a, b) => a.order - b.order);
 
         sorted.forEach(p => {
             if (p.type === 'group' && p.groups) {
                 p.groups.forEach(g => {
-                    // Assume group matches are already generated/counted. 
-                    // We just reserve the block.
                     g.matches.forEach(m => m.globalId = count++);
                 });
             } else if (p.matches) {
@@ -92,7 +88,8 @@ export const BracketStep: React.FC = () => {
         // -- DYNAMIC GENERATION LOGIC --
         const type = state.config.tournament_type || 'knockout';
         const teamsList = state.teams || [];
-        // DEBUG: Verify teams presence
+        const defaultSets = state.config.sets_per_match || 3;
+
         if (teamsList.length === 0) addToast("Advertencia: No se detectaron equipos. Asegúrate de haber agregado equipos en el paso anterior.", 'error');
 
         const newPhases: TournamentPhase[] = [];
@@ -123,7 +120,7 @@ export const BracketStep: React.FC = () => {
                 name: 'Gran Final',
                 roundIndex: 0,
                 phaseId: finalsPhase.id,
-                location: `${state.config.sets_per_match || 3} Sets`
+                location: `${defaultSets} Sets`
             }];
             newPhases.push(finalsPhase);
 
@@ -176,7 +173,6 @@ export const BracketStep: React.FC = () => {
             // 1. Generate Group Phase
             const numGroups = state.config.number_of_groups || 4;
             const groups: any[] = [];
-            const setsInfo = state.config.sets_per_match || 3;
 
             // Match Generator (Round Robin) - Simplified for Groups
             const generateRoundRobin = (teamIds: string[], groupName: string) => {
@@ -194,7 +190,7 @@ export const BracketStep: React.FC = () => {
                             phaseId: 'group-temp',
                             sourceHome: { type: 'team', id: teamIds[i] },
                             sourceAway: { type: 'team', id: teamIds[j] },
-                            location: `${setsInfo} Sets`
+                            location: `${defaultSets} Sets`
                         });
                         matchCount++;
                     }
@@ -233,7 +229,8 @@ export const BracketStep: React.FC = () => {
                     globalId: 1,
                     name: 'Gran Final',
                     roundIndex: 0,
-                    phaseId: generateId()
+                    phaseId: generateId(),
+                    location: `${defaultSets} Sets`
                 }]
             };
             newPhases.push(playoffPhase);
@@ -256,18 +253,10 @@ export const BracketStep: React.FC = () => {
         setPhases(recalculateGlobalIds(newPhases));
     };
 
-    // -- Init --
-    useEffect(() => {
-        // If state already has structure, load it
-        if (state.structure && state.structure.phases.length > 0) {
-            setPhases(state.structure.phases);
-        } else {
-            generateStructure();
-        }
-    }, [state.teams, state.config.tournament_type, state.config.number_of_groups]); // Run when these change (and phases empty)
-
     const handleAddPhase = (type: 'elimination' | 'placement' | 'group') => {
-        const setsInfo = state.config.sets_per_match || 3;
+        // Prompt for Sets
+        const setsInput = prompt("¿Cuántos sets se jugarán por partido en esta fase?", String(state.config.sets_per_match || 3));
+        const setsInfo = setsInput ? `${setsInput} Sets` : `${state.config.sets_per_match || 3} Sets`;
 
         setPhases(prev => {
             let newPhase: TournamentPhase;
@@ -293,11 +282,7 @@ export const BracketStep: React.FC = () => {
                 // "Finales" Logic
                 newPhase = {
                     id: generateId(),
-                    type: 'elimination', // treating as elimination for rendering purposes, or keep 'placement' if specific render needed? 
-                    // User asked for "bracket llamado Finales". Render logic usually handles 'elimination' well.
-                    // Let's use 'elimination' type but name it 'Finales' to reuse match rendering.
-                    // Or if 'placement' type has special rendering, I should check. 
-                    // Currently render checks `phase.type === 'group' ? ... : ...` so 'elimination' and 'placement' render same.
+                    type: 'elimination',
                     name: 'Finales',
                     order: prev.length,
                     matches: []
@@ -316,7 +301,7 @@ export const BracketStep: React.FC = () => {
                         name: 'Semifinal 1',
                         roundIndex: 0,
                         phaseId: newPhase.id,
-                        location: `${setsInfo} Sets`
+                        location: setsInfo
                     },
                     {
                         id: semi2Id,
@@ -324,7 +309,7 @@ export const BracketStep: React.FC = () => {
                         name: 'Semifinal 2',
                         roundIndex: 0,
                         phaseId: newPhase.id,
-                        location: `${setsInfo} Sets`
+                        location: setsInfo
                     },
                     {
                         id: thirdPlaceId,
@@ -332,7 +317,7 @@ export const BracketStep: React.FC = () => {
                         name: '3er y 4to Puesto',
                         roundIndex: 1,
                         phaseId: newPhase.id,
-                        location: `${setsInfo} Sets`,
+                        location: setsInfo,
                         sourceHome: { type: 'match.loser', id: semi1Id },
                         sourceAway: { type: 'match.loser', id: semi2Id }
                     },
@@ -342,7 +327,7 @@ export const BracketStep: React.FC = () => {
                         name: 'Gran Final',
                         roundIndex: 1,
                         phaseId: newPhase.id,
-                        location: `${setsInfo} Sets`,
+                        location: setsInfo,
                         sourceHome: { type: 'match.winner', id: semi1Id },
                         sourceAway: { type: 'match.winner', id: semi2Id }
                     }
@@ -360,7 +345,7 @@ export const BracketStep: React.FC = () => {
                         name: 'Partido 1',
                         roundIndex: 0,
                         phaseId: generateId(), // Temp ID?
-                        location: `${setsInfo} Sets`
+                        location: setsInfo
                     }]
                 };
                 newPhase.matches![0].phaseId = newPhase.id;
@@ -412,7 +397,8 @@ export const BracketStep: React.FC = () => {
                             globalId: 0,
                             name: 'Partido ' + (p.matches.length + 1),
                             roundIndex: 0,
-                            phaseId: phaseId
+                            phaseId: phaseId,
+                            location: `${state.config.sets_per_match || 3} Sets`
                         }]
                     };
                 }
@@ -493,7 +479,8 @@ export const BracketStep: React.FC = () => {
                 p.groups.forEach(g => {
                     // Add positions 1..4 (or matches length?)
                     // "1st Group A"
-                    [1, 2, 3, 4].forEach(pos => {
+                    const count = Math.max(4, g.teams.length);
+                    Array.from({ length: count }, (_, i) => i + 1).forEach(pos => {
                         sources.push({
                             label: pos + 'º Grupo ' + g.name,
                             value: { type: 'group.pos', id: g.name, index: pos },
@@ -541,20 +528,108 @@ export const BracketStep: React.FC = () => {
         setEditingMatchId(null);
     };
 
+    const handleSwapTeams = (phaseId: string, matchId: string) => {
+        setPhases(prev => {
+            return prev.map(p => {
+                if (p.id === phaseId) { // Check phase ID to avoid scanning all phases if we pass it
+                    if (p.matches) {
+                        return {
+                            ...p,
+                            matches: p.matches.map(m => {
+                                if (m.id === matchId) {
+                                    return { ...m, sourceHome: m.sourceAway, sourceAway: m.sourceHome };
+                                }
+                                return m;
+                            })
+                        };
+                    }
+                    if (p.groups) {
+                        // Handle swap inside groups? Usually group matches generated automatically.
+                        const newGroups = p.groups.map(g => ({
+                            ...g,
+                            matches: g.matches.map(m => {
+                                if (m.id === matchId) return { ...m, sourceHome: m.sourceAway, sourceAway: m.sourceHome };
+                                return m;
+                            })
+                        }));
+                        return { ...p, groups: newGroups };
+                    }
+                }
+                return p;
+            });
+        });
+    };
+
+    const handleSimulationClick = (matchId: string, teamId: string | null) => {
+        if (!isSimulation || !teamId) return;
+        setSimulationResults(prev => ({
+            ...prev,
+            [matchId]: teamId
+        }));
+    };
+
+    // -- Resolution --
+    const resolveTeamId = (source: ReferenceSource | undefined): string | null => {
+        if (!source) return null;
+        if (source.type === 'team') return source.id;
+
+        // Resolve dynamic
+        if (source.type === 'match.winner' || source.type === 'match.loser') {
+            // Find match
+            let foundMatch: RoundMatch | undefined;
+            // Search all phases
+            for (const p of phases) {
+                if (p.matches) {
+                    const m = p.matches.find(m => String(m.globalId) === source.id);
+                    if (m) { foundMatch = m; break; }
+                }
+                // Check group matches too if needed
+            }
+
+            if (foundMatch) {
+                const winnerId = simulationResults[foundMatch.id];
+                if (!winnerId) return null; // Not played yet
+
+                if (source.type === 'match.winner') return winnerId;
+                if (source.type === 'match.loser') {
+                    // Find loser logic
+                    const homeId = resolveTeamId(foundMatch.sourceHome);
+                    const awayId = resolveTeamId(foundMatch.sourceAway);
+                    if (homeId === winnerId) return awayId;
+                    if (awayId === winnerId) return homeId;
+                }
+            }
+        }
+
+        return null;
+    };
+
+    const getTeamName = (id: string | null | undefined, teams: any[]) => {
+        if (!id) return '...';
+        if (id === 'BYE') return 'BYE';
+        const t = teams.find(team => String(team.id) === String(id));
+        return t ? t.name : 'Unknown';
+    };
+
     // -- Render --
 
-    const renderSourceButton = (match: RoundMatch, side: 'home' | 'away', phaseOrder: number) => {
+    const renderSourceButtonFull = (match: RoundMatch, side: 'home' | 'away', phaseOrder: number) => {
         const source = side === 'home' ? match.sourceHome : match.sourceAway;
         const available = getAvailableSources(phaseOrder);
 
+        // Sim Resolution
+        const resolvedTeamId = resolveTeamId(source); // Recursive resolution!
+        const resolvedTeamName = resolvedTeamId ? getTeamName(resolvedTeamId, teams) : null;
+
+        // Winner Check
+        const isWinner = simulationResults[match.id] === resolvedTeamId && resolvedTeamId !== null;
+
         // If picking
-        if (editingMatchId === match.id + '-' + side) {
+        if (editingMatchId === match.id + '-' + side && !isSimulation) {
             return (
                 <div className="absolute top-0 left-0 bg-[#333] border border-blue-500 rounded-lg p-2 z-50 w-72 shadow-2xl max-h-60 overflow-y-auto font-sans">
                     <div className="text-xs text-blue-300 mb-2 font-bold uppercase sticky top-0 bg-[#333] pb-1 border-b border-white/10">Seleccionar Origen</div>
                     {available.length === 0 && <div className="text-white/30 text-xs italic">No hay fases previas</div>}
-
-                    {/* Group by Phase Name */}
                     {Object.entries(available.reduce((acc, curr) => {
                         (acc[curr.phaseName] = acc[curr.phaseName] || []).push(curr);
                         return acc;
@@ -573,45 +648,49 @@ export const BracketStep: React.FC = () => {
                             ))}
                         </div>
                     ))}
-
                     <button onClick={() => setEditingMatchId(null)} className="mt-2 w-full text-center text-[10px] text-red-400 p-1 border border-red-500/20 rounded hover:bg-red-500/10 hover:text-red-300 transition-colors">Cancelar</button>
                 </div>
             );
         }
 
         let label = '';
-        if (source) {
-            if (source.type === 'group.pos') {
-                label = source.index + 'º G' + source.id;
-            } else if (source.type === 'match.winner') {
-                label = 'Ganador';
-            } else if (source.type === 'match.loser') {
-                label = 'Perdedor';
-            } else if (source.type === 'team') {
-                // Need to look up team name from context
-                label = getTeamName(source.id, teams);
-            }
+        // If Simulating, show resolved name better
+        if (isSimulation && resolvedTeamName) {
+            label = resolvedTeamName;
+        } else if (source) {
+            if (source.type === 'group.pos') label = source.index + 'º G' + source.id;
+            else if (source.type === 'match.winner') label = 'Ganador';
+            else if (source.type === 'match.loser') label = 'Perdedor';
+            else if (source.type === 'team') label = getTeamName(source.id, teams);
         }
 
         return (
             <button
-                onClick={() => setEditingMatchId(match.id + '-' + side)}
+                onClick={() => {
+                    if (isSimulation) {
+                        if (resolvedTeamId) handleSimulationClick(match.id, resolvedTeamId);
+                    } else {
+                        setEditingMatchId(match.id + '-' + side);
+                    }
+                }}
                 className={'w-full p-2 text-xs text-left rounded border transition-colors relative group ' +
-                    (source ? 'bg-blue-900/20 border-blue-500/50 text-blue-200' : 'bg-white/5 border-dashed border-white/10 text-white/20 hover:border-white/30 hover:text-white')
+                    (isWinner ? 'bg-yellow-500/20 border-yellow-500 text-yellow-200' :
+                        source ? 'bg-blue-900/20 border-blue-500/50 text-blue-200' : 'bg-white/5 border-dashed border-white/10 text-white/20 hover:border-white/30 hover:text-white')
                 }
             >
-                {source ? (
+                {source || resolvedTeamName ? (
                     <div className="flex items-center gap-2">
-                        <LinkIcon size={12} className="opacity-50" />
+                        {!isSimulation && <LinkIcon size={12} className="opacity-50" />}
+                        {isSimulation && <div className={`w-2 h-2 rounded-full ${isWinner ? 'bg-yellow-400' : 'bg-white/20'}`} />}
                         <span className="truncate">
-                            {/* Try to find source phase name if possible */}
-                            {source.type !== 'team' && (
+                            {/* Hint Source in Edit Mode */}
+                            {!isSimulation && source && source.type !== 'team' && (
                                 <span className="text-[9px] opacity-70 block">
                                     {phases.find(p => p.groups?.some(g => g.name === source.id) || p.matches?.some(m => String(m.globalId) === source.id))?.name || 'Origen'} &gt;
                                 </span>
                             )}
                             {label}
-                            {source.type !== 'group.pos' && (
+                            {!isSimulation && source && source.type !== 'group.pos' && (
                                 <span className="ml-1 opacity-50 text-[10px]">
                                     (#{phases.flatMap(p => p.matches || []).find(m => String(m.globalId) === source.id || m.id === source.id)?.globalId || '?'})
                                 </span>
@@ -622,6 +701,75 @@ export const BracketStep: React.FC = () => {
                     <span>+ Seleccionar</span>
                 )}
             </button>
+        );
+    };
+
+    const renderMatch = (match: RoundMatch, phase: TournamentPhase) => {
+        return (
+            <div
+                key={match.id}
+                className={`border rounded-lg p-3 shadow-lg transition-all group relative ${match.name === 'Gran Final'
+                    ? 'bg-gradient-to-br from-yellow-900/20 to-black border-yellow-500/50 hover:border-yellow-400'
+                    : phase.name === 'Finales'
+                        ? 'bg-[#1a1a20] border-purple-500/30 hover:border-purple-400'
+                        : 'bg-[#1a1a20] border-white/10 hover:border-blue-500/30'
+                    }`}
+            >
+                {/* Match Header */}
+                <div className="flex justify-between items-center mb-3">
+                    <div className="flex items-center gap-2">
+                        <span className={`text-[10px] px-2 py-0.5 rounded ${match.name === 'Gran Final' ? 'bg-yellow-500/20 text-yellow-300' : 'bg-black/40 text-white/40'}`}>
+                            #{match.globalId}
+                        </span>
+                        {!isSimulation && (
+                            <button
+                                onClick={() => handleDeleteMatch(phase.id, match.id)}
+                                className="text-white/10 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
+                                title="Eliminar Partido"
+                            >
+                                <Trash2 size={12} />
+                            </button>
+                        )}
+                        {/* Swap Button */}
+                        <button
+                            onClick={() => handleSwapTeams(phase.id, match.id)}
+                            className="text-white/10 hover:text-blue-400 transition-colors opacity-0 group-hover:opacity-100"
+                            title="Intercambiar Local/Visita"
+                        >
+                            <ArrowLeftRight size={12} />
+                        </button>
+                    </div>
+                    <div className="flex flex-col items-end">
+                        <input
+                            className={`bg-transparent text-xs text-right outline-none w-24 focus:bg-white/5 rounded px-1 ${match.name === 'Gran Final' ? 'text-yellow-200 font-bold' : 'text-white/70 focus:text-white'}`}
+                            value={match.name}
+                            onChange={() => { }}
+                            readOnly={isSimulation}
+                        />
+                        <span className="text-[9px] text-white/30">{match.location}</span>
+                    </div>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                    {/* Visitor */}
+                    <div className="relative">
+                        <div className="text-[10px] text-white/20 uppercase font-bold mb-0.5 ml-1">Visitante</div>
+                        {renderSourceButtonFull(match, 'away', phase.order)}
+                    </div>
+
+                    <div className="flex items-center gap-2 m-auto">
+                        <div className="h-px bg-white/10 flex-1 w-8"></div>
+                        <span className="text-[10px] text-white/10 font-bold">VS</span>
+                        <div className="h-px bg-white/10 flex-1 w-8"></div>
+                    </div>
+
+                    {/* Local */}
+                    <div className="relative">
+                        <div className="text-[10px] text-white/20 uppercase font-bold mb-0.5 ml-1">Local</div>
+                        {renderSourceButtonFull(match, 'home', phase.order)}
+                    </div>
+                </div>
+            </div>
         );
     };
 
@@ -646,42 +794,31 @@ export const BracketStep: React.FC = () => {
     };
     const handleMouseUp = () => isDragging.current = false;
 
-    // -- Touch Events --
-    const lastTouchDistance = useRef<number | null>(null);
+    // Champion Card Logic
+    const renderChampionCard = () => {
+        const finalMatch = phases.find(p => p.name === 'Finales')?.matches?.find(m => m.name === 'Gran Final');
+        if (!finalMatch) return null;
 
-    const handleTouchStart = (e: React.TouchEvent) => {
-        if (e.touches.length === 1) {
-            isDragging.current = true;
-            lastPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-        } else if (e.touches.length === 2) {
-            const dist = Math.hypot(
-                e.touches[0].clientX - e.touches[1].clientX,
-                e.touches[0].clientY - e.touches[1].clientY
-            );
-            lastTouchDistance.current = dist;
-        }
-    };
+        const winnerId = simulationResults[finalMatch.id];
+        if (!winnerId) return null;
 
-    const handleTouchMove = (e: React.TouchEvent) => {
-        if (isDragging.current && e.touches.length === 1) {
-            const dx = e.touches[0].clientX - lastPos.current.x;
-            const dy = e.touches[0].clientY - lastPos.current.y;
-            setPan(p => ({ x: p.x + dx, y: p.y + dy }));
-            lastPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-        } else if (e.touches.length === 2 && lastTouchDistance.current) {
-            const dist = Math.hypot(
-                e.touches[0].clientX - e.touches[1].clientX,
-                e.touches[0].clientY - e.touches[1].clientY
-            );
-            const delta = dist - lastTouchDistance.current;
-            setZoom(z => Math.max(0.2, Math.min(2, z + delta * 0.005)));
-            lastTouchDistance.current = dist;
-        }
-    };
+        const team = teams.find(t => t.id === winnerId);
 
-    const handleTouchEnd = () => {
-        isDragging.current = false;
-        lastTouchDistance.current = null;
+        return (
+            <div className="mt-8 flex flex-col items-center animate-bounce">
+                <div className="text-yellow-500 font-bold uppercase tracking-[0.2em] text-xs mb-2">Campeón</div>
+                <div className="bg-gradient-to-t from-yellow-600 to-yellow-300 p-1 rounded-full shadow-[0_0_30px_rgba(234,179,8,0.5)]">
+                    <div className="bg-black rounded-full p-1">
+                        <div className="w-24 h-24 bg-[#1a1a20] rounded-full flex items-center justify-center border-2 border-yellow-500 overflow-hidden">
+                            {team?.logo_url ? <img src={team.logo_url} className="w-full h-full object-cover" /> : <Trophy size={40} className="text-yellow-500" />}
+                        </div>
+                    </div>
+                </div>
+                <div className="mt-4 bg-yellow-500 text-black px-6 py-2 rounded-full font-black uppercase tracking-widest text-sm shadow-xl">
+                    {team?.name || 'Campeón'}
+                </div>
+            </div>
+        );
     };
 
     return (
@@ -691,39 +828,28 @@ export const BracketStep: React.FC = () => {
                 <div className="flex items-center gap-4">
                     <div className="flex flex-col">
                         <span className="text-white/50 text-xs uppercase tracking-wider font-bold">Diseñador de Torneo</span>
-                        {!state.config.tournament_type ? (
-                            <span className="text-[10px] text-green-400 font-bold uppercase animate-pulse">Free Mode</span>
-                        ) : (
-                            <span className="text-[10px] text-green-400 font-bold uppercase">
-                                {state.config.tournament_type === 'groups' && 'Formato Grupos + Play Off'}
-                                {state.config.tournament_type === 'cup' && 'Eliminacion Directa'}
-                                {state.config.tournament_type === 'double_elimination' && 'Doble Eliminacion'}
-                                {state.config.tournament_type === 'league' && 'Liga'}
-                            </span>
-                        )}
+                        {isSimulation ? <span className="text-[10px] text-yellow-400 font-bold uppercase animate-pulse">MODO SIMULACIÓN</span> : <span className="text-[10px] text-green-400 font-bold uppercase">DISEÑO</span>}
                     </div>
                     <div className="h-4 w-px bg-white/10" />
-                    <button
-                        onClick={() => {
-                            if (confirm("¿Regenerar el bracket? Se perderán los cambios manuales.")) {
-                                generateStructure();
-                            }
-                        }}
-                        className="p-2 bg-white/5 hover:bg-yellow-500/20 text-white/50 hover:text-yellow-500 rounded border border-white/10 transition-colors"
-                        title="Regenerar Estructura"
-                    >
+                    <button onClick={() => {
+                        if (confirm("¿Regenerar el bracket? Se perderán los cambios manuales.")) {
+                            generateStructure();
+                        }
+                    }} className="p-2 bg-white/5 hover:bg-yellow-500/20 text-white/50 hover:text-yellow-500 rounded border border-white/10 transition-colors" title="Regenerar Estructura">
                         <RefreshCcw size={14} />
                     </button>
                     <div className="h-4 w-px bg-white/10" />
-                    <button onClick={() => handleAddPhase('group')} className="px-3 py-1 bg-white/5 hover:bg-green-500/20 text-xs text-white rounded border border-white/10 hover:border-green-500/50 transition-colors">
-                        + Fase de Grupos
+                    <button onClick={() => setIsSimulation(!isSimulation)} className={`p-2 rounded border transition-colors flex items-center gap-2 text-xs font-bold ${isSimulation ? 'bg-yellow-500/20 border-yellow-500 text-yellow-200' : 'bg-white/5 border-white/10 text-white/50 hover:text-white'}`}>
+                        <Play size={14} className={isSimulation ? 'fill-current' : ''} /> {isSimulation ? 'Terminar Simulación' : 'Simular Torneo'}
                     </button>
-                    <button onClick={() => handleAddPhase('elimination')} className="px-3 py-1 bg-white/5 hover:bg-blue-500/20 text-xs text-white rounded border border-white/10 hover:border-blue-500/50 transition-colors">
-                        + Fase Eliminatoria
-                    </button>
-                    <button onClick={() => handleAddPhase('placement')} className="px-3 py-1 bg-white/5 hover:bg-purple-500/20 text-xs text-white rounded border border-white/10 hover:border-purple-500/50 transition-colors">
-                        + Finales
-                    </button>
+                    {!isSimulation && (
+                        <>
+                            <div className="h-4 w-px bg-white/10" />
+                            <button onClick={() => handleAddPhase('group')} className="px-3 py-1 bg-white/5 hover:bg-green-500/20 text-xs text-white rounded border border-white/10 hover:border-green-500/50 transition-colors">+ Fase de Grupos</button>
+                            <button onClick={() => handleAddPhase('elimination')} className="px-3 py-1 bg-white/5 hover:bg-blue-500/20 text-xs text-white rounded border border-white/10 hover:border-blue-500/50 transition-colors">+ Fase Eliminatoria</button>
+                            <button onClick={() => handleAddPhase('placement')} className="px-3 py-1 bg-white/5 hover:bg-purple-500/20 text-xs text-white rounded border border-white/10 hover:border-purple-500/50 transition-colors">+ Finales</button>
+                        </>
+                    )}
                 </div>
                 <div className="flex items-center gap-2">
                     <button onClick={() => setZoom(z => Math.max(0.2, z - 0.1))} className="p-2 text-white/50 hover:text-white"><ZoomOut size={16} /></button>
@@ -732,19 +858,14 @@ export const BracketStep: React.FC = () => {
                 </div>
             </div>
 
-            {/* Infinite Canvas */}
+            {/* Canvas */}
             <div
                 className="flex-1 relative cursor-default touch-none"
                 onWheel={handleWheel}
                 onMouseDown={handleMouseDown}
                 onMouseMove={handleMouseMove}
                 onMouseUp={handleMouseUp}
-                onMouseLeave={handleMouseUp}
-                onTouchStart={handleTouchStart}
-                onTouchMove={handleTouchMove}
-                onTouchEnd={handleTouchEnd}
             >
-                {/* Canvas Area */}
                 <div className="absolute inset-0 overflow-hidden" ref={containerRef}>
                     <div className="absolute inset-0 z-0 opacity-20 pointer-events-none"
                         style={{
@@ -754,216 +875,99 @@ export const BracketStep: React.FC = () => {
                         }}
                     />
 
-                    {/* Content Container */}
                     <div
                         className="absolute top-0 left-0 flex flex-col items-start p-20 gap-16 transition-transform duration-75"
                         style={{ transform: 'translate(' + pan.x + 'px, ' + pan.y + 'px) scale(' + zoom + ')' }}
                     >
-                        {/* Classification Table (Part of Canvas) */}
+                        {/* Classification Table */}
                         <div className="w-full max-w-4xl">
-                            <ClassificationTable phases={phases} />
+                            <ClassificationTable phases={phases} simulationResults={simulationResults} />
                         </div>
 
+                        {/* Phases */}
                         <div className="flex items-start gap-16">
-                            {phases.map((phase, idx) => (
-                                <div
-                                    key={phase.id}
-                                    className="w-80 flex-shrink-0 flex flex-col gap-4"
-                                    onMouseDown={e => e.stopPropagation()} // Prevent pan when clicking phase
-                                >
+                            {phases.map((phase) => (
+                                <div key={phase.id} className={`flex-shrink-0 flex flex-col gap-4 ${phase.name === 'Finales' ? 'w-[800px]' : 'w-80'}`} onMouseDown={e => e.stopPropagation()}>
                                     {/* Phase Header */}
-                                    <div className={`flex items-center justify-between border p-3 rounded-lg group hover:border-white/20 transition-all ${phase.name === 'Finales' ? 'bg-purple-900/10 border-purple-500/30' : 'bg-white/5 border-white/10'
-                                        }`}>
+                                    <div className={`flex items-center justify-between border p-3 rounded-lg group hover:border-white/20 transition-all ${phase.name === 'Finales' ? 'bg-purple-900/10 border-purple-500/30' : 'bg-white/5 border-white/10'}`}>
                                         <div className="flex items-center gap-2">
-                                            <div className="bg-white/10 p-1 rounded cursor-grab active:cursor-grabbing text-white/20 hover:text-white">
-                                                <GripVertical size={14} />
-                                            </div>
-                                            <input
-                                                type="text"
-                                                value={phase.name}
-                                                onChange={(e) => handleUpdatePhaseName(phase.id, e.target.value)}
-                                                className={`bg-transparent text-sm font-bold outline-none w-full ${phase.name === 'Finales' ? 'text-purple-300' : 'text-white'}`}
-                                            />
+                                            <GripVertical size={14} className="text-white/20" />
+                                            <input value={phase.name} onChange={(e) => handleUpdatePhaseName(phase.id, e.target.value)} className="bg-transparent text-sm font-bold outline-none text-white w-full" />
                                         </div>
                                         <div className="flex items-center gap-1">
                                             {phase.order > 0 && (
-                                                <button onClick={() => handleMovePhase(phase.id, 'left')} className="text-white/20 hover:text-white p-1 hover:bg-white/10 rounded" title="Mover a la izquierda">
+                                                <button onClick={() => handleMovePhase(phase.id, 'left')} className="text-white/20 hover:text-white p-1 hover:bg-white/10 rounded">
                                                     <ArrowLeft size={12} />
                                                 </button>
                                             )}
                                             {phase.order < phases.length - 1 && (
-                                                <button onClick={() => handleMovePhase(phase.id, 'right')} className="text-white/20 hover:text-white p-1 hover:bg-white/10 rounded" title="Mover a la derecha">
+                                                <button onClick={() => handleMovePhase(phase.id, 'right')} className="text-white/20 hover:text-white p-1 hover:bg-white/10 rounded">
                                                     <ArrowRight size={12} />
                                                 </button>
                                             )}
                                             {(phase.order > 0 || phase.type === 'group') && (
-                                                <button onClick={() => handleDeletePhase(phase.id)} className="text-white/20 hover:text-red-400 p-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    <Trash2 size={14} />
-                                                </button>
+                                                <button onClick={() => handleDeletePhase(phase.id)} className="p-1 hover:text-red-400 text-white/20"><Trash2 size={14} /></button>
                                             )}
                                         </div>
                                     </div>
 
-                                    {/* Phase Content */}
-                                    <div className={`flex flex-col gap-4 min-h-[500px] border-l pl-4 relative ${phase.name === 'Finales' ? 'border-purple-500/20' : 'border-white/5'}`}>
-                                        {/* Vertical Line Decor */}
-                                        <div className={`absolute left-0 top-0 bottom-0 w-px ${phase.name === 'Finales' ? 'bg-purple-500/20' : 'bg-white/5'}`} />
+                                    {/* Phase Body */}
+                                    {phase.name === 'Finales' ? (
+                                        // Custom Finals Layout
+                                        <div className="grid grid-cols-2 gap-16 items-center min-h-[500px] border-l border-purple-500/20 pl-4 relative">
+                                            {/* Decor */}
+                                            <div className="absolute left-0 top-0 bottom-0 w-px bg-purple-500/20" />
 
-                                        {phase.type === 'group' ? (
-                                            // Group Render (Simplified for Designer)
-                                            // We need to render "slots" representing the groups
-                                            <div className="flex flex-col gap-6">
-                                                {phase.groups?.map((group, gIdx) => (
-                                                    <div key={gIdx} className="bg-[#1a1a20]/50 border border-white/10 rounded-xl p-4 shadow-lg backdrop-blur-sm">
-                                                        <div className="text-sm font-bold text-blue-400 mb-4 uppercase tracking-wider flex justify-between items-center border-b border-white/5 pb-2">
-                                                            <span>Grupo {group.name}</span>
-                                                            <span className="text-[10px] bg-blue-500/10 text-blue-300 px-2 py-0.5 rounded border border-blue-500/20">
-                                                                {group.matches.length} Partidos
-                                                            </span>
-                                                            <button
-                                                                onClick={() => handleDeleteGroup(phase.id, gIdx)}
-                                                                className="p-1 hover:bg-white/10 rounded text-white/30 hover:text-red-400 ml-2"
-                                                                title="Eliminar Grupo"
-                                                            >
-                                                                <Trash2 size={12} />
-                                                            </button>
-                                                        </div>
-
-                                                        {/* Group Matches Grid */}
-                                                        <div className="grid gap-3">
-                                                            {group.matches.map((match: RoundMatch, mIdx: number) => (
-                                                                <div key={match.id} className="bg-[#0f0f13] border border-white/5 rounded-lg p-2 hover:border-blue-500/30 transition-all group/match relative">
-                                                                    <div className="flex justify-between items-center mb-2">
-                                                                        <span className="text-[10px] text-white/30 font-mono">#{match.globalId}</span>
-                                                                        <span className="text-[9px] text-green-400 bg-green-900/20 px-1.5 rounded">{state.config.sets_per_match || 3} Sets</span>
-                                                                    </div>
-
-                                                                    <div className="flex flex-col gap-1.5">
-                                                                        {/* Away */}
-                                                                        <div className="flex items-center justify-between text-xs text-white/70 bg-white/5 p-1 rounded px-2">
-                                                                            <span>{match.sourceAway?.type === 'team' ? getTeamName(match.sourceAway.id, teams) : 'TBD'}</span>
-                                                                            <span className="text-[10px] text-white/20">VIS</span>
-                                                                        </div>
-                                                                        {/* Home */}
-                                                                        <div className="flex items-center justify-between text-xs text-white/70 bg-white/5 p-1 rounded px-2">
-                                                                            <span>{match.sourceHome?.type === 'team' ? getTeamName(match.sourceHome.id, teams) : 'TBD'}</span>
-                                                                            <span className="text-[10px] text-white/20">LOC</span>
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                            ))}
-                                                            {group.matches.length === 0 && (
-                                                                <div className="text-[10px] text-white/20 italic p-1 text-center">Sin partidos generados</div>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                                <button
-                                                    onClick={() => handleAddGroup(phase.id)}
-                                                    className="w-full py-3 border border-dashed border-white/10 rounded-lg text-white/20 hover:text-white hover:border-white/30 text-xs font-bold transition-all flex items-center justify-center gap-2"
-                                                >
-                                                    <Plus size={14} /> Añadir Grupo
-                                                </button>
+                                            {/* Column 1: Semis */}
+                                            <div className="flex flex-col justify-center gap-20">
+                                                {phase.matches?.filter(m => m.name.includes('Semifinal')).map(m => renderMatch(m, phase))}
                                             </div>
-                                        ) : (
-                                            // Matches Render
-                                            phase.matches?.map(match => (
-                                                <div
-                                                    key={match.id}
-                                                    className={`border rounded-lg p-3 shadow-lg transition-all group relative ${match.name === 'Gran Final'
-                                                        ? 'bg-gradient-to-br from-yellow-900/20 to-black border-yellow-500/50 hover:border-yellow-400'
-                                                        : phase.name === 'Finales'
-                                                            ? 'bg-[#1a1a20] border-purple-500/30 hover:border-purple-400'
-                                                            : 'bg-[#1a1a20] border-white/10 hover:border-blue-500/30'
-                                                        }`}
-                                                >
-                                                    {/* Match Header */}
-                                                    <div className="flex justify-between items-center mb-3">
-                                                        <div className="flex items-center gap-2">
-                                                            <span className={`text-[10px] px-2 py-0.5 rounded ${match.name === 'Gran Final' ? 'bg-yellow-500/20 text-yellow-300' : 'bg-black/40 text-white/40'}`}>
-                                                                #{match.globalId}
-                                                            </span>
-                                                            <button
-                                                                onClick={() => handleDeleteMatch(phase.id, match.id)}
-                                                                className="text-white/10 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
-                                                                title="Eliminar Partido"
-                                                            >
-                                                                <Trash2 size={12} />
-                                                            </button>
-                                                        </div>
-                                                        <input
-                                                            className={`bg-transparent text-xs text-right outline-none w-24 focus:bg-white/5 rounded px-1 ${match.name === 'Gran Final' ? 'text-yellow-200 font-bold' : 'text-white/70 focus:text-white'
-                                                                }`}
-                                                            value={match.name}
-                                                            onChange={() => { }} // TODO: Update match name
-                                                        />
+
+                                            {/* Column 2: Final + Champion */}
+                                            <div className="flex flex-col items-center gap-8 translate-y-8">
+                                                {phase.matches?.filter(m => m.name === 'Gran Final').map(m => renderMatch(m, phase))}
+                                                {isSimulation && renderChampionCard()}
+                                                {phase.matches?.filter(m => m.name.includes('3er')).map(m => renderMatch(m, phase))}
+                                            </div>
+                                        </div>
+                                    ) : phase.type === 'group' ? (
+                                        // Group Render
+                                        <div className="flex flex-col gap-6">
+                                            {phase.groups?.map((group, idx) => (
+                                                <div key={idx} className="bg-[#1a1a20]/50 border border-white/10 rounded-xl p-4">
+                                                    <div className="text-sm font-bold text-blue-400 mb-4 px-1 flex justify-between">
+                                                        <span>Grupo {group.name}</span>
+                                                        {!isSimulation && <button onClick={() => handleDeleteGroup(phase.id, idx)} className="text-white/20 hover:text-red-400"><Trash2 size={12} /></button>}
                                                     </div>
-
-                                                    <div className="flex flex-col gap-2">
-                                                        {/* Visitor Slot */}
-                                                        <div className="relative">
-                                                            <div className="text-[10px] text-white/20 uppercase font-bold mb-0.5 ml-1">Visitante</div>
-                                                            {renderSourceButton(match, 'away', phase.order)}
-                                                        </div>
-
-                                                        <div className="flex items-center gap-2 m-auto">
-                                                            <div className="h-px bg-white/10 flex-1 w-8"></div>
-                                                            <span className="text-[10px] text-white/10 font-bold">VS</span>
-                                                            <div className="h-px bg-white/10 flex-1 w-8"></div>
-                                                        </div>
-
-                                                        {/* Local Slot */}
-                                                        <div className="relative">
-                                                            <div className="text-[10px] text-white/20 uppercase font-bold mb-0.5 ml-1">Local</div>
-                                                            {renderSourceButton(match, 'home', phase.order)}
-                                                        </div>
+                                                    <div className="grid gap-3">
+                                                        {group.matches.map(m => renderMatch(m, phase))}
                                                     </div>
-
-                                                    {/* Connectors (Decor) */}
-                                                    <div className="absolute top-1/2 -left-4 w-4 h-px bg-white/10" />
-                                                    <div className="absolute top-1/2 -right-4 w-4 h-px bg-white/10" />
                                                 </div>
-                                            ))
-                                        )}
+                                            ))}
+                                            {!isSimulation && <button onClick={() => handleAddGroup(phase.id)} className="w-full py-3 border border-dashed border-white/10 rounded text-center text-xs text-white/30 hover:text-white">+ Añadir Grupo</button>}
+                                        </div>
+                                    ) : (
+                                        // Standard Elimination
+                                        <div className="flex flex-col gap-4 min-h-[500px] border-l border-white/5 pl-4 relative">
+                                            <div className="absolute left-0 top-0 bottom-0 w-px bg-white/5" />
+                                            {phase.matches?.map(m => renderMatch(m, phase))}
+                                            {!isSimulation && <button onClick={() => handleAddMatchToPhase(phase.id)} className="w-full py-3 border border-dashed border-white/10 rounded text-center text-xs text-white/30 hover:text-white">+ Añadir Partido</button>}
+                                        </div>
+                                    )}
 
-                                        {phase.type !== 'group' && (
-                                            <button
-                                                onClick={() => handleAddMatchToPhase(phase.id)}
-                                                className="w-full py-3 border border-dashed border-white/10 rounded-lg text-white/20 hover:text-white hover:border-white/30 text-xs font-bold transition-all flex items-center justify-center gap-2"
-                                            >
-                                                <Plus size={14} /> Añadir Partido
-                                            </button>
-                                        )}
-                                    </div>
                                 </div>
                             ))}
 
-                            {/* Add Phase Column */}
-                            <div className="h-full flex items-center pt-20">
-                                <button
-                                    onClick={() => handleAddPhase('elimination')}
-                                    className="w-16 h-96 border border-dashed border-white/10 rounded-full flex flex-col items-center justify-center text-white/10 hover:text-white hover:border-white/30 transition-all hover:bg-white/5 gap-4 group"
-                                >
-                                    <span className="uppercase tracking-widest text-xs font-bold whitespace-nowrap" style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>
-                                        Añadir Nueva Ronda
-                                    </span>
-                                    <Plus size={24} className="group-hover:scale-110 transition-transform" />
-                                </button>
-                            </div>
+                            {/* Add Column Button */}
+                            {!isSimulation && (
+                                <div className="h-full flex items-center pt-20">
+                                    <button onClick={() => handleAddPhase('elimination')} className="w-16 h-96 border border-dashed border-white/10 rounded-full text-white/10 flex items-center justify-center hover:bg-white/5"><Plus size={24} /></button>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
             </div>
         </div>
     );
-};
-
-// Helper
-const getTeamName = (id: string | null | undefined, teams: any[]) => {
-    if (!id) return '...';
-    if (id === 'BYE') return 'BYE';
-    // Ensure ID comparison is safe (string vs number?)
-    // Note: teams IDs are UUIDs (strings)
-    const t = teams.find(team => String(team.id) === String(id));
-    return t ? t.name : 'Unknown';
 };

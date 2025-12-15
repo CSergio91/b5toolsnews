@@ -215,7 +215,7 @@ const BuilderWizard = () => {
                 <div className="flex-1 flex overflow-hidden relative">
 
                     {/* Sidebar Navigation (Desktop Only) */}
-                    <aside className="hidden lg:flex w-64 bg-[#111] border-r border-white/5 flex-col py-6">
+                    <aside className="hidden lg:flex w-64 bg-[#111] border-r border-white/5 flex-col py-6 relative z-10">
                         <nav className="space-y-1 px-3 flex-1 overflow-y-auto custom-scrollbar">
                             {steps.map((step, idx) => (
                                 <div key={step.id} className="mb-1">

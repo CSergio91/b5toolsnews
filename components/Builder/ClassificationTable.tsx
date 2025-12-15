@@ -4,6 +4,7 @@ import { useBuilder } from '../../context/BuilderContext';
 
 interface ClassificationTableProps {
     phases: TournamentPhase[];
+    simulationResults?: Record<string, string>;
 }
 
 interface TeamStats {
@@ -16,11 +17,13 @@ interface TeamStats {
     points: number;
 }
 
-export const ClassificationTable: React.FC<ClassificationTableProps> = ({ phases }) => {
+export const ClassificationTable: React.FC<ClassificationTableProps> = ({ phases, simulationResults }) => {
     const { teams, state } = useBuilder();
 
     const stats = useMemo(() => {
         const teamStats: Record<string, TeamStats> = {};
+        const pointsForWin = state.config.points_for_win || 3;
+        const pointsForLoss = state.config.points_for_loss || 0;
 
         // 1. Initialize with all teams found in groups
         phases.forEach(phase => {
@@ -41,12 +44,39 @@ export const ClassificationTable: React.FC<ClassificationTableProps> = ({ phases
                         }
                     });
 
-                    // 2. Calculate Stats from Matches
-                    // NOTE: In the Builder, matches might not have results yet.
-                    // This creates the STRUCTURE. Real stats come from live data usually.
-                    // But if user enters scores in builder (future?), it would update.
-                    // Currently Builder is for Structure. So stats will be 0.
-                    // However, we render the table as requested.
+                    // 2. Calculate Stats from Matches if Simulation Results exist
+                    if (simulationResults) {
+                        group.matches.forEach(match => {
+                            const winnerId = simulationResults[match.id];
+                            if (winnerId) {
+                                // Resolve Home/Away IDs
+                                // Note: Simplified resolution. In real app, source might be complicated.
+                                // For groups, source is usually type: 'team'.
+                                const homeId = match.sourceHome?.type === 'team' ? match.sourceHome.id : null;
+                                const awayId = match.sourceAway?.type === 'team' ? match.sourceAway.id : null;
+
+                                if (homeId && awayId) {
+                                    // Make sure teams exist in stats (safety)
+                                    if (teamStats[homeId] && teamStats[awayId]) {
+                                        teamStats[homeId].played++;
+                                        teamStats[awayId].played++;
+
+                                        if (winnerId === homeId) {
+                                            teamStats[homeId].won++;
+                                            teamStats[homeId].points += pointsForWin;
+                                            teamStats[awayId].lost++;
+                                            teamStats[awayId].points += pointsForLoss;
+                                        } else {
+                                            teamStats[awayId].won++;
+                                            teamStats[awayId].points += pointsForWin;
+                                            teamStats[homeId].lost++;
+                                            teamStats[homeId].points += pointsForLoss;
+                                        }
+                                    }
+                                }
+                            }
+                        });
+                    }
                 });
             }
         });
@@ -57,7 +87,7 @@ export const ClassificationTable: React.FC<ClassificationTableProps> = ({ phases
             return b.points - a.points;
         });
 
-    }, [phases, teams]);
+    }, [phases, teams, simulationResults, state.config.points_for_win, state.config.points_for_loss]);
 
     if (stats.length === 0) return null;
 

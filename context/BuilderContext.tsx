@@ -44,6 +44,21 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
                 return;
             }
 
+            // Check for LocalStorage State Dump
+            const savedState = localStorage.getItem('b5_builder_state');
+            if (!currentId && savedState) {
+                try {
+                    const parsed = JSON.parse(savedState);
+                    // Ensure we have a valid object
+                    if (parsed && parsed.config) {
+                        setState(parsed);
+                        return; // Found local state, skip DB
+                    }
+                } catch (e) {
+                    console.error("Error loading local state", e);
+                }
+            }
+
             if (currentId) {
                 const { data: t, error } = await supabase
                     .from('tournaments')
@@ -80,6 +95,15 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
         };
         loadInitialData();
     }, [initialId]);
+
+    // -- LocalStorage Persistence --
+    React.useEffect(() => {
+        const timeout = setTimeout(() => {
+            localStorage.setItem('b5_builder_state', JSON.stringify(state));
+            if (state.config.id) localStorage.setItem('b5_builder_current_id', state.config.id);
+        }, 1000);
+        return () => clearTimeout(timeout);
+    }, [state]);
 
     const updateConfig = (key: string, value: any) => {
         setState(prev => ({
