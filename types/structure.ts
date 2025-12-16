@@ -6,6 +6,13 @@ export interface ReferenceSource {
     index?: number; // For group pos (1, 2, 3...)
 }
 
+export interface MatchSet {
+    set_number: number;
+    home_score: number;
+    away_score: number;
+    status: 'pending' | 'completed';
+}
+
 export interface RoundMatch {
     id: string; // UUID for internal tracking
     globalId: number; // The official match number (#1, #2...)
@@ -20,6 +27,7 @@ export interface RoundMatch {
     location?: string;
     court?: string;
     refereeId?: string;
+    sets?: MatchSet[]; // Generated sets for scoring
 }
 
 export interface TournamentPhase {
@@ -31,6 +39,13 @@ export interface TournamentPhase {
     matches?: RoundMatch[];
     // For Groups:
     groups?: GroupConfiguration[];
+    // Visual Layout (Canvas)
+    layout?: {
+        x: number;
+        y: number;
+        width?: number;
+        height?: number;
+    };
 }
 
 export interface GroupConfiguration {

@@ -198,7 +198,7 @@ export const ConfigStep: React.FC = () => {
                 </h2>
                 <div className="bg-white/5 p-6 rounded-2xl border border-white/10 space-y-4">
                     <p className="text-white/50 text-sm mb-4">
-                        Define el orden de prioridad para desempatar equipos en la Clasificación.
+                        Define el orden de prioridad para desempatar equipos en la Clasificación. <span className="text-yellow-500 font-bold">Debes activar al menos una regla.</span>
                     </p>
 
                     {/* Rule List */}
@@ -214,7 +214,7 @@ export const ConfigStep: React.FC = () => {
                             // Merge with existing config or default
                             const currentRules = config.tiebreaker_rules && config.tiebreaker_rules.length > 0
                                 ? config.tiebreaker_rules
-                                : defaultRules.map((r, i) => ({ type: r.type as any, order: i, active: true }));
+                                : defaultRules.map((r, i) => ({ type: r.type as any, order: i, active: false }));
 
                             // Sort by order
                             const sortedRules = [...currentRules].sort((a, b) => a.order - b.order);
