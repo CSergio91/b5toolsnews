@@ -82,111 +82,121 @@ const DashboardContent: React.FC = () => {
             <div className="relative z-10 w-full h-full p-4 md:p-6 lg:h-screen lg:p-8 box-border flex flex-col gap-6">
 
                 {/* Header Section */}
-                <div className="flex items-center justify-between shrink-0">
+                <div className="flex items-center justify-between shrink-0 h-[60px]">
                     <div className="flex items-center gap-4">
-                        <div className="bg-gradient-to-br from-purple-600 to-indigo-600 p-2.5 rounded-xl shadow-lg shadow-purple-900/20">
-                            <span className="font-black text-2xl tracking-tighter text-white">B5</span>
+                        <div className="h-10 w-10 shrink-0">
+                            <img src="/logo.png" alt="B5Tools Logo" className="w-full h-full object-contain drop-shadow-[0_0_10px_rgba(168,85,247,0.5)]" />
                         </div>
                         <div>
-                            <div className="flex items-center gap-3 mb-1">
-                                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-red-500/10 border border-red-500/20 text-[10px] font-bold text-red-400 uppercase tracking-wider animate-pulse">
+                            <div className="flex items-center gap-3 mb-0.5">
+                                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-red-500/10 border border-red-500/20 text-[10px] font-bold text-red-500 uppercase tracking-wider animate-pulse">
                                     <Radio size={10} className="animate-pulse" />
                                     En Vivo
                                 </span>
-                                <span className="text-xs text-white/30 font-mono hidden sm:inline-block uppercase tracking-widest">
-                                    {new Date().toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                                <span className="text-[10px] text-white/30 font-mono hidden sm:inline-block uppercase tracking-widest">
+                                    {new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'short' })}
                                 </span>
                             </div>
-                            <h1 className="text-2xl lg:text-4xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white via-gray-200 to-gray-400">
+                            <h1 className="text-xl lg:text-3xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white via-gray-200 to-gray-400 leading-none">
                                 {tournamentTitle}
                             </h1>
                         </div>
                     </div>
-                    {/* Settings Cog or actions could go here */}
+                    {/* B5 Branding */}
+                    <div className="hidden lg:flex flex-col items-end">
+                        <span className="text-[10px] font-bold text-white/30 tracking-[0.2em] uppercase">Powered by</span>
+                        <span className="text-lg font-black tracking-tighter text-white/80">
+                            B5<span className="text-purple-500">Tools</span>
+                        </span>
+                    </div>
                 </div>
 
-                {/* Dashboard Key Content */}
-                <AnimatePresence mode="wait">
-                    <motion.div
-                        key={activeTab}
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -10 }}
-                        transition={{ duration: 0.3 }}
-                        className={`
-                            w-full max-w-[1920px] mx-auto
-                            ${activeTab === 'dashboard'
-                                ? 'lg:flex-1 lg:grid lg:grid-cols-12 lg:grid-rows-12 gap-4 lg:gap-6 lg:min-h-0'
-                                : 'flex-1 flex flex-col min-h-0'}
-                        `}
-                    >
+                {/* Main Content Grid - Full Height - 3 Columns */}
+                <div
+                    className={`
+                        w-full max-w-[2000px] mx-auto
+                        ${activeTab === 'dashboard'
+                            ? 'lg:flex-1 lg:grid lg:grid-cols-12 lg:gap-6 lg:min-h-0'
+                            : 'flex-1 flex flex-col min-h-0'}
+                    `}
+                >
 
-                        {/* --- WIDGET: CLASSIFICATION / LEADERBOARD --- 
-                           Occupies Top Full Row in the grid concept provided in user image (under header).
-                           Row 1-3 (3 rows high out of 12)
-                        */}
-                        <div className={`
-                            lg:col-span-12 lg:row-span-3
-                            ${activeTab !== 'dashboard' && activeTab !== 'leaderboard' ? 'hidden lg:block' : ''}
-                            ${activeTab === 'leaderboard' ? 'flex-1' : ''}
-                        `}>
-                            {/* We wrap in a container that provides the glassmorphism */}
-                            <ErrorBoundary name="Leaderboard">
-                                <LeaderboardWidget teams={teams} config={config} matches={matchesData.matches} isFullPage={activeTab === 'leaderboard'} />
-                            </ErrorBoundary>
-                        </div>
+                    {/* COL 1: Leaderboard (Vertical) - 3/12 cols */}
+                    <div className={`
+                        lg:col-span-3 lg:h-full lg:overflow-hidden
+                        bg-[#121217]/80 backdrop-blur-md rounded-3xl border border-white/5 relative group hover:border-white/10 transition-all flex flex-col
+                        ${activeTab !== 'dashboard' && activeTab !== 'leaderboard' ? 'hidden lg:flex' : ''}
+                        ${activeTab === 'leaderboard' ? 'flex-1' : ''}
+                    `}>
+                        <ErrorBoundary name="Leaderboard">
+                            <LeaderboardWidget teams={teams} config={config} matches={matchesData.matches} isFullPage={true} />
+                        </ErrorBoundary>
+                    </div>
 
-                        {/* --- WIDGET: LIVE MATCHES HERO --- 
-                           Occupies Left Large Area.
-                           Row 4-12 (9 rows high), Col 1-8 (8 cols wide)
-                        */}
+                    {/* COL 2: Center Stage (Live + Upcoming) - 6/12 cols */}
+                    <div className={`
+                        lg:col-span-6 lg:h-full lg:flex lg:flex-col lg:gap-6 lg:overflow-hidden
+                        ${activeTab !== 'dashboard' && activeTab !== 'calendar' ? 'hidden lg:flex' : ''}
+                        ${activeTab === 'calendar' ? 'flex-1' : ''}
+                    `}>
+                        {/* Hero Live Match (60% H) */}
                         <div className={`
-                            lg:col-span-8 lg:row-span-9
+                            flex-grow-[1.5]
                             bg-[#121217]/60 backdrop-blur-md rounded-3xl border border-white/5 overflow-hidden relative group hover:border-white/10 transition-all
-                            ${activeTab !== 'dashboard' && activeTab !== 'dashboard' ? 'hidden lg:block' : ''} 
-                            /* Note: This widget is only primary in dashboard. In other mobile tabs it's hidden */
-                             ${activeTab === 'dashboard' ? 'block' : 'hidden lg:block'}
+                            ${activeTab === 'calendar' ? 'hidden lg:block' : ''}
                         `}>
                             <ErrorBoundary name="LiveMatches">
                                 <LiveMatchesWidget matches={matchesData.matches} teams={teams} />
                             </ErrorBoundary>
                         </div>
 
-                        {/* --- WIDGET: INFO / STATUS --- 
-                           Occupies Right Top of remaining.
-                           Row 4-7 (4 rows high), Col 9-12 (4 cols wide)
-                        */}
+                        {/* Upcoming Matches (40% H) or Full if Calendar Tab */}
                         <div className={`
-                            lg:col-span-4 lg:row-span-4
+                            flex-grow-[1] 
                             bg-[#121217]/60 backdrop-blur-md rounded-3xl border border-white/5 overflow-hidden relative group hover:border-white/10 transition-all
-                            ${activeTab !== 'dashboard' ? 'hidden lg:block' : ''}
+                            ${activeTab === 'calendar' ? 'flex-grow h-full' : ''}
                         `}>
+                            <ErrorBoundary name="Timeline">
+                                <TimelineSchedule matches={matchesData.matches} teams={teams} mode={activeTab === 'calendar' ? 'mobile' : 'desktop'} />
+                            </ErrorBoundary>
+                        </div>
+                    </div>
+
+                    {/* COL 3: Info & Extra - 3/12 cols */}
+                    <div className={`
+                         lg:col-span-3 lg:h-full lg:flex lg:flex-col lg:gap-6 lg:overflow-hidden
+                         ${activeTab !== 'dashboard' && activeTab !== 'bracket' ? 'hidden lg:flex' : ''}
+                         ${activeTab === 'bracket' ? 'flex-1' : ''}
+                    `}>
+                        {/* Info Card */}
+                        <div className="flex-1 bg-[#121217]/60 backdrop-blur-md rounded-3xl border border-white/5 overflow-hidden relative group hover:border-white/10 transition-all">
                             <ErrorBoundary name="Info">
                                 <TournamentInfoCard config={config} teamCount={teams.length} matches={matchesData.matches} />
                             </ErrorBoundary>
                         </div>
 
-                        {/* --- WIDGET: UPCOMING / SCHEDULE --- 
-                           Occupies Right Bottom of remaining.
-                           Row 8-12 (5 rows high), Col 9-12 (4 cols wide)
-                        */}
+                        {/* Ad / Bracket Placeholder */}
                         <div className={`
-                            lg:col-span-4 lg:row-span-5
-                            bg-[#121217]/60 backdrop-blur-md rounded-3xl border border-white/5 overflow-hidden relative group hover:border-white/10 transition-all
-                            ${activeTab !== 'dashboard' && activeTab !== 'calendar' ? 'hidden lg:block' : ''}
-                             ${activeTab === 'calendar' ? 'flex-1 block' : ''}
+                            h-1/3 bg-[#121217]/60 backdrop-blur-md rounded-3xl border border-white/5 overflow-hidden relative group hover:border-white/10 transition-all
+                            ${activeTab === 'bracket' ? 'flex-grow h-full' : ''}
                         `}>
-                            <ErrorBoundary name="Timeline">
-                                <TimelineSchedule matches={matchesData.matches} teams={teams} isCompact={activeTab === 'dashboard'} />
+                            <ErrorBoundary name="Bracket">
+                                <PhasesBracketWidget structure={state.structure} />
                             </ErrorBoundary>
                         </div>
 
-                        {/* --- MOBILE ONLY: BRACKET VIEW --- */}
-                        <div className={`${activeTab === 'bracket' ? 'block flex-1' : 'hidden'}`}>
-                            <PhasesBracketWidget structure={matchesData.structure} />
-                        </div>
+                    </div>
+                </div>
 
-                    </motion.div>
+                {/* Mobile Navigation */}
+                <AnimatePresence mode="wait">
+                    {/* Only show on mobile when content needs scrolling or tabbing */}
+                    <div className="lg:hidden">
+                        {/* Tab Content Rendering handled by CSS visibility classes above for now, 
+                            but for true mobile view we usually just swap the visible div. 
+                            The grid logic above handles 'hidden lg:block' based on tab.
+                         */}
+                    </div>
                 </AnimatePresence>
             </div>
 
