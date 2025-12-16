@@ -19,6 +19,7 @@ import { UnsavedChangesModal } from '../components/UnsavedChangesModal';
 
 const BuilderWizard = () => {
     const { state, setStep, saveTournament } = useBuilder();
+    const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const { addToast } = useToast();
     const [isLoading, setIsLoading] = useState(true);
@@ -159,6 +160,15 @@ const BuilderWizard = () => {
 
 
 
+    const handlePreview = () => {
+        // Force save state to local storage to ensure preview has latest data
+        localStorage.setItem('b5_builder_state', JSON.stringify(state));
+
+        // Open preview in new tab
+        const previewId = id || 'new';
+        window.open(`/torneos/B5ToolsBuilder/${previewId}/previewnew`, '_blank');
+    };
+
     return (
         <>
             <div className="h-screen w-full bg-[#0a0a0a] text-white flex flex-col overflow-hidden">
@@ -196,7 +206,7 @@ const BuilderWizard = () => {
 
                         <button
                             title="Vista Previa del Torneo"
-                            onClick={() => addToast('Vista Previa: Funcionalidad próximamente', 'info')}
+                            onClick={handlePreview}
                             className="p-2 md:px-4 md:py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-full transition-colors flex items-center gap-2"
                         >
                             <MonitorPlay size={18} />

@@ -30,11 +30,14 @@ interface BuilderContextType {
 
 const BuilderContext = createContext<BuilderContextType | undefined>(undefined);
 
-export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string }> = ({ children, initialId }) => {
-    const [state, setState] = useState<BuilderState>(initialBuilderState);
+export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string; initialState?: BuilderState }> = ({ children, initialId, initialState }) => {
+    const [state, setState] = useState<BuilderState>(initialState || initialBuilderState);
 
     // Initial Load: Fetch Tournament Data if ID is present
     React.useEffect(() => {
+        // If we have an explicit initial state (e.g., Preview Mode), we skip loading from LS/DB
+        if (initialState) return;
+
         const loadInitialData = async () => {
             // Prioritize ID passed via Prop (URL), fallback to localStorage only if no prop
             const currentId = initialId || localStorage.getItem('b5_builder_current_id');

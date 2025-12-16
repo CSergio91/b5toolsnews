@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useBuilder } from '../../../../context/BuilderContext';
 
 interface HeaderProps {
   darkMode: boolean;
@@ -6,6 +7,7 @@ interface HeaderProps {
 }
 
 const Header: React.FC<HeaderProps> = ({ darkMode, toggleTheme }) => {
+  const { state } = useBuilder();
   const [currentTime, setCurrentTime] = useState<string>('');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -23,7 +25,7 @@ const Header: React.FC<HeaderProps> = ({ darkMode, toggleTheme }) => {
     { name: 'Schedule', icon: 'calendar_today', id: 'schedule-section' },
     { name: 'Live', icon: 'live_tv', id: 'live-section' },
     { name: 'Standings', icon: 'leaderboard', id: 'leaderboard-section' },
-    { name: 'Stats', icon: 'stats-section', id: 'stats-section' }, // ID updated to match widget
+    { name: 'Stats', icon: 'stats-section', id: 'stats-section' },
   ];
 
   const scrollToSection = (id: string) => {
@@ -34,6 +36,11 @@ const Header: React.FC<HeaderProps> = ({ darkMode, toggleTheme }) => {
       setIsMobileMenuOpen(false);
     }
   };
+
+  const formatDate = (dateUnparsed: string | Date | undefined) => {
+    if (!dateUnparsed) return 'TBD';
+    return new Date(dateUnparsed).toLocaleDateString();
+  }
 
   return (
     <nav className="sticky top-0 z-50 glass-panel shadow-sm transition-colors duration-300">
@@ -51,10 +58,10 @@ const Header: React.FC<HeaderProps> = ({ darkMode, toggleTheme }) => {
             </div>
             <div className="hidden lg:block">
               <h1 className="font-display font-bold text-xl md:text-2xl tracking-wider text-gray-900 dark:text-white uppercase">
-                <span className="text-primary">B5</span>TOOLS
+                {state.config.name || 'TORNEO SIN NOMBRE'}
               </h1>
               <p className="hidden md:block text-xs text-gray-500 dark:text-gray-400 font-medium tracking-wide uppercase">
-                Tournament Live View
+                {state.config.location || 'Ubicación Pendiente'}
               </p>
             </div>
           </div>
