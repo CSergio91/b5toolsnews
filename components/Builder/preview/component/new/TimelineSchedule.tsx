@@ -1,55 +1,109 @@
-import React, { useState, useMemo } from 'react';
-import { useBuilder } from '../../../../../context/BuilderContext';
-import { RoundMatch } from '../../../../../types/structure';
+import React, { useState, useMemo, useEffect } from 'react';
 
 interface Props {
     mode?: 'mobile' | 'desktop';
+    matchesData: { matches: any[], fields: any[] };
+    teams: any[];
 }
 
-export const TimelineSchedule: React.FC<Props> = ({ mode = 'desktop' }) => {
-    const { state } = useBuilder();
+export const TimelineSchedule: React.FC<Props> = ({ mode = 'desktop', matchesData, teams }) => {
 
-    // 1. Extract Matches and Ensure Valid Dates
+    // 1. Process Schedule (Purely from Props)
     const matches = useMemo(() => {
-        return state.matches?.filter((m: any) => m.date).map((m: any) => {
-            const dateStr = m.date;
-            const timeStr = m.start_time || '00:00';
-            const fullDateStr = `${dateStr}T${timeStr}`;
+        const { matches: allMatches, fields } = matchesData;
+        const processedMatches: any[] = [];
 
-            return {
-                ...m,
-                parsedDate: new Date(fullDateStr),
-                field: m.court || m.location || 'Campo Principal'
-            };
-        }) || [];
-    }, [state.matches]);
+        // Helper to calculate time
+        const addMinutes = (timeStr: string, minutes: number) => {
+            const [h, m] = timeStr.split(':').map(Number);
+            const date = new Date();
+            date.setHours(h, m, 0, 0);
+            date.setMinutes(date.getMinutes() + minutes);
+            return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+        };
+
+        if (fields && fields.length > 0) {
+            // A. Logic based on Fields (Calendar Step Data)
+            fields.forEach((field: any) => {
+                let currentTime = field.startTime || '09:00';
+
+                // We assume field.items is the ordered schedule
+                if (field.items && Array.isArray(field.items)) {
+                    field.items.forEach((item: any) => {
+                        if (item.type === 'match' && item.matchId) {
+                            const matchDetails = allMatches.find((m: any) => m.id === item.matchId);
+                            if (matchDetails) {
+                                // Construct the scheduled match
+                                processedMatches.push({
+                                    ...matchDetails,
+                                    parsedDate: new Date(`${item.date}T${currentTime}`),
+                                    field: field.name,
+                                    date: item.date,
+                                    start_time: currentTime
+                                });
+                            }
+                        }
+                        // Increment Time
+                        currentTime = addMinutes(currentTime, item.durationMinutes || 60);
+                    });
+                }
+            });
+        } else {
+            // B. Fallback: Legacy Logic
+            allMatches.forEach((m: any) => {
+                if (m.date) {
+                    const timeStr = m.start_time || '00:00';
+                    processedMatches.push({
+                        ...m,
+                        parsedDate: new Date(`${m.date}T${timeStr}`),
+                        field: m.court || m.location || 'Campo Principal'
+                    });
+                }
+            });
+        }
+
+        return processedMatches;
+    }, [matchesData]);
 
     // 2. Extract Unique Dates for Tabs
     const uniqueDates = useMemo(() => {
         const dates = new Set(matches.map((m: any) => m.parsedDate.toDateString()));
-        return Array.from(dates).sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+        return Array.from(dates).sort((a: any, b: any) => new Date(a).getTime() - new Date(b).getTime());
     }, [matches]);
 
     // State for Selected Date Tab
-    const [selectedDateStr, setSelectedDateStr] = useState<string>(uniqueDates[0] || new Date().toDateString());
+    const [selectedDateStr, setSelectedDateStr] = useState<string>('');
+
+    // Initialize selected date
+    useEffect(() => {
+        if (uniqueDates.length > 0) {
+            if (!selectedDateStr || !uniqueDates.includes(selectedDateStr)) {
+                setSelectedDateStr(uniqueDates[0]);
+            }
+        }
+    }, [uniqueDates, selectedDateStr]);
 
     // 3. Filter Matches by Selected Date
     const currentMatches = useMemo(() => {
+        if (!selectedDateStr) return [];
         return matches.filter(m => m.parsedDate.toDateString() === selectedDateStr);
     }, [matches, selectedDateStr]);
 
-    // 4. Extract Unique Fields (Swimlanes) for this Day
+    // 4. Extract Unique Fields for this Day
     const uniqueFields = useMemo(() => {
+        if (matchesData.fields && matchesData.fields.length > 0) {
+            return matchesData.fields.map(f => f.name);
+        }
         return Array.from(new Set(currentMatches.map(m => m.field))).sort();
-    }, [currentMatches]);
+    }, [currentMatches, matchesData.fields]);
 
     // Helpers
     const getLogo = (id?: string) => {
-        const t = state.teams.find(x => x.id === id);
+        const t = teams.find(x => x.id === id);
         return t?.logo_url || null;
     };
     const getName = (id?: string) => {
-        const t = state.teams.find(x => x.id === id);
+        const t = teams.find(x => x.id === id);
         return t ? t.name : 'Por definir';
     };
 
@@ -92,28 +146,40 @@ export const TimelineSchedule: React.FC<Props> = ({ mode = 'desktop' }) => {
             {/* Swimlanes Container */}
             <div className="flex-1 overflow-y-auto overflow-x-hidden p-6 relative">
                 {currentMatches.length > 0 ? (
-                    <div className="space-y-8">
+                    <div className={mode === 'mobile' ? "flex gap-4 h-full snap-x" : "space-y-8"}>
                         {uniqueFields.map(field => (
-                            <div key={field} className="relative">
+                            <div
+                                key={field}
+                                className={mode === 'mobile'
+                                    ? "snap-center min-w-[320px] w-[85vw] bg-white/5 rounded-2xl p-4 flex flex-col h-full border border-white/10"
+                                    : "relative"
+                                }
+                            >
                                 {/* Swimlane Header */}
                                 <div className="flex items-center gap-4 mb-4">
                                     <div className="h-[1px] flex-1 bg-gradient-to-r from-white/20 to-transparent"></div>
-                                    <span className="px-3 py-1 rounded-full bg-white/10 border border-white/10 text-xs font-bold uppercase text-gray-300 flex items-center gap-2">
+                                    <span className="px-3 py-1 rounded-full bg-white/10 border border-white/10 text-xs font-bold uppercase text-gray-300 flex items-center gap-2 whitespace-nowrap">
                                         <span className="material-icons-round text-[14px] text-green-400">stadium</span>
                                         {field}
                                     </span>
                                     <div className="h-[1px] flex-1 bg-gradient-to-l from-white/20 to-transparent"></div>
                                 </div>
 
-                                {/* Horizontal Scrollable Matches for this Field */}
-                                <div className="flex gap-4 overflow-x-auto pb-4 custom-scrollbar snap-x">
+                                {/* Matches Container */}
+                                <div className={mode === 'mobile'
+                                    ? "flex flex-col gap-4 overflow-y-auto pr-2 custom-scrollbar flex-1 pb-20" // Vertical scroll for mobile matches
+                                    : "flex gap-4 overflow-x-auto pb-4 custom-scrollbar snap-x" // Horizontal scroll for desktop matches
+                                }>
                                     {currentMatches
                                         .filter(m => m.field === field)
                                         .sort((a, b) => a.parsedDate.getTime() - b.parsedDate.getTime())
                                         .map((match, idx) => (
                                             <div
                                                 key={idx}
-                                                className="snap-start min-w-[280px] w-[280px] bg-white dark:bg-[#1e1e24] text-gray-900 dark:text-white rounded-2xl p-5 shadow-lg border border-gray-200 dark:border-white/5 hover:-translate-y-1 transition-transform duration-300 group relative overflow-hidden"
+                                                className={`
+                                                    snap-start bg-white dark:bg-[#1e1e24] text-gray-900 dark:text-white rounded-2xl p-5 shadow-lg border border-gray-200 dark:border-white/5 hover:-translate-y-1 transition-transform duration-300 group relative overflow-hidden
+                                                    ${mode === 'mobile' ? 'w-full min-h-[140px]' : 'min-w-[280px] w-[280px]'}
+                                                `}
                                             >
                                                 {/* Status Indicator Stripe */}
                                                 <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-blue-500"></div>
@@ -174,8 +240,9 @@ export const TimelineSchedule: React.FC<Props> = ({ mode = 'desktop' }) => {
                         <span className="material-icons-round text-6xl mb-4 opacity-20">event_note</span>
                         <p className="text-lg font-medium">No hay partidos para esta fecha.</p>
                     </div>
-                )}
-            </div>
-        </div>
+                )
+                }
+            </div >
+        </div >
     );
 };

@@ -865,6 +865,22 @@ export const BracketStep: React.FC = () => {
         );
     };
 
+    // Touch Events
+    const handleTouchStart = (e: React.TouchEvent) => {
+        if (e.touches.length === 1) {
+            isDragging.current = true;
+            lastPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        }
+    };
+    const handleTouchMove = (e: React.TouchEvent) => {
+        if (!isDragging.current || e.touches.length !== 1) return;
+        const dx = e.touches[0].clientX - lastPos.current.x;
+        const dy = e.touches[0].clientY - lastPos.current.y;
+        setPan(p => ({ x: p.x + dx, y: p.y + dy }));
+        lastPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    };
+    const handleTouchEnd = () => isDragging.current = false;
+
     return (
         <div className="h-full flex flex-col bg-[#0f0f13] relative overflow-hidden">
             {/* Toolbar */}
@@ -924,6 +940,9 @@ export const BracketStep: React.FC = () => {
                 onMouseDown={handleMouseDown}
                 onMouseMove={handleMouseMove}
                 onMouseUp={handleMouseUp}
+                onTouchStart={handleTouchStart}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={handleTouchEnd}
             >
                 <div className="absolute inset-0 overflow-hidden" ref={containerRef}>
                     <div className="absolute inset-0 z-0 opacity-20 pointer-events-none"

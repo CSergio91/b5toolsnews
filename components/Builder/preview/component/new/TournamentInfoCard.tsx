@@ -1,12 +1,15 @@
 import React from 'react';
-import { useBuilder } from '../../../../../context/BuilderContext';
 
 interface Props {
     mode?: 'mobile' | 'desktop';
+    config: any; // Tournament Config
+    teamCount: number;
+    matches: any[];
 }
 
-export const TournamentInfoCard: React.FC<Props> = ({ mode = 'desktop' }) => {
-    const { state } = useBuilder();
+export const TournamentInfoCard: React.FC<Props> = ({ mode = 'desktop', config, teamCount, matches }) => {
+    // Removed useBuilder hook - now pure data
+
 
     const formatDate = (dateString?: string) => {
         if (!dateString) return 'Por definir';
@@ -15,9 +18,9 @@ export const TournamentInfoCard: React.FC<Props> = ({ mode = 'desktop' }) => {
 
     // Calculate Progress (mock logic based on dates or matches)
     const calculateProgress = () => {
-        if (!state.matches || state.matches.length === 0) return 0;
-        const played = state.matches.filter((m: any) => m.home_score !== undefined && m.away_score !== undefined).length; // simplistic check
-        return Math.min(100, Math.round((played / state.matches.length) * 100));
+        if (!matches || matches.length === 0) return 0;
+        const played = matches.filter((m: any) => m.home_score !== undefined && m.away_score !== undefined).length; // simplistic check
+        return Math.min(100, Math.round((played / matches.length) * 100));
     };
     const progress = calculateProgress();
 
@@ -33,9 +36,9 @@ export const TournamentInfoCard: React.FC<Props> = ({ mode = 'desktop' }) => {
                             <h2 className="text-sm font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Información General</h2>
                         </div>
                         <h1 className="text-2xl font-display font-bold leading-tight">
-                            {state.config.name || 'Torneo Sin Nombre'}
+                            {config.name || 'Torneo Sin Nombre'}
                         </h1>
-                        <p className="text-xs text-gray-500 mt-1">Organizado por {state.config.organizer_name || 'B5Tools'}</p>
+                        <p className="text-xs text-gray-500 mt-1">Organizado por {config.organizer_name || 'B5Tools'}</p>
                     </div>
                     <span className="px-3 py-1 rounded-full bg-green-500/10 text-green-500 text-[10px] font-bold uppercase border border-green-500/20">
                         Activo
@@ -47,7 +50,7 @@ export const TournamentInfoCard: React.FC<Props> = ({ mode = 'desktop' }) => {
                     {/* Stat 1: Teams */}
                     <div className="bg-gray-50 dark:bg-white/5 p-4 rounded-2xl flex flex-col justify-center transition-colors hover:bg-gray-100 dark:hover:bg-white/10">
                         <span className="text-[10px] uppercase font-bold text-gray-400 mb-1">Equipos</span>
-                        <span className="text-3xl font-display font-bold text-blue-500">{state.teams.length}</span>
+                        <span className="text-3xl font-display font-bold text-blue-500">{teamCount}</span>
                     </div>
                     {/* Stat 2: Sedes (Mocked or calculated) */}
                     <div className="bg-gray-50 dark:bg-white/5 p-4 rounded-2xl flex flex-col justify-center transition-colors hover:bg-gray-100 dark:hover:bg-white/10">
@@ -64,7 +67,7 @@ export const TournamentInfoCard: React.FC<Props> = ({ mode = 'desktop' }) => {
                         <span className="text-[10px] uppercase font-bold text-gray-400 mb-1">Tipo</span>
                         <div className="flex items-center gap-2">
                             <span className="material-icons-round text-yellow-500 text-sm">emoji_events</span>
-                            <span className="text-lg font-display font-bold text-gray-700 dark:text-gray-200">{state.config.tournament_type || 'Abierto'}</span>
+                            <span className="text-lg font-display font-bold text-gray-700 dark:text-gray-200">{config.tournament_type || 'Abierto'}</span>
                         </div>
                     </div>
                 </div>

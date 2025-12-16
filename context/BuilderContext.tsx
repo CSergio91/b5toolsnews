@@ -102,8 +102,20 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
     // -- LocalStorage Persistence --
     React.useEffect(() => {
         const timeout = setTimeout(() => {
+            // 1. Master State (for Builder Reload)
             localStorage.setItem('b5_builder_state', JSON.stringify(state));
             if (state.config.id) localStorage.setItem('b5_builder_current_id', state.config.id);
+
+            // 2. Section Sub-JSONs (for Preview Consumption as requested)
+            localStorage.setItem('b5_builder_info', JSON.stringify(state.config));
+            localStorage.setItem('b5_builder_teams', JSON.stringify(state.teams));
+            // Include 'fields' from config in the matches JSON as requested for the Calendar logic
+            localStorage.setItem('b5_builder_matches', JSON.stringify({
+                matches: state.matches,
+                structure: state.structure,
+                fields: (state.config as any).fields || []
+            }));
+            localStorage.setItem('b5_builder_participants', JSON.stringify({ rosters: state.rosters, referees: state.referees, admins: state.admins }));
         }, 1000);
         return () => clearTimeout(timeout);
     }, [state]);

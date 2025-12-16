@@ -1,17 +1,17 @@
 import React, { useState } from 'react';
-import { useBuilder } from '../../../../../context/BuilderContext';
 
 interface Props {
     mode?: 'mobile' | 'desktop';
+    matches: any[];
+    teams: any[];
 }
 
-export const LiveMatchesWidget: React.FC<Props> = ({ mode = 'desktop' }) => {
-    const { state } = useBuilder();
+export const LiveMatchesWidget: React.FC<Props> = ({ mode = 'desktop', matches, teams }) => {
     // In builder preview, we likely don't have "Live" matches, just scheduled ones.
     // We will simulate the look of the "Live" section where user requested Dropdown per set.
 
     // Simulating a "Live" match for preview design purposes if list is empty
-    const displayMatches = state.matches?.slice(0, 3) || [];
+    const displayMatches = matches?.slice(0, 3) || [];
 
     // State for expanded accordion items (by match index)
     const [expandedMatch, setExpandedMatch] = useState<number | null>(0);
@@ -50,13 +50,13 @@ export const LiveMatchesWidget: React.FC<Props> = ({ mode = 'desktop' }) => {
                             {/* Team 1 */}
                             <div className="flex flex-col items-center gap-2 w-1/3">
                                 <div className="w-16 h-16 md:w-20 md:h-20 rounded-full bg-white/10 backdrop-blur-md border-2 border-white/20 p-2 shadow-[0_0_20px_rgba(255,255,255,0.1)]">
-                                    {state.teams.find(t => t.id === displayMatches[0].team1_id)?.logo_url ? (
-                                        <img src={state.teams.find(t => t.id === displayMatches[0].team1_id)?.logo_url} className="w-full h-full object-cover rounded-full" />
+                                    {teams.find(t => t.id === displayMatches[0].team1_id)?.logo_url ? (
+                                        <img src={teams.find(t => t.id === displayMatches[0].team1_id)?.logo_url} className="w-full h-full object-cover rounded-full" />
                                     ) : (
-                                        <div className="w-full h-full flex items-center justify-center font-bold text-xl">{getName(state.teams, displayMatches[0].team1_id).substring(0, 2)}</div>
+                                        <div className="w-full h-full flex items-center justify-center font-bold text-xl">{getName(teams, displayMatches[0].team1_id).substring(0, 2)}</div>
                                     )}
                                 </div>
-                                <h3 className="font-bold text-sm md:text-base text-center leading-tight truncate w-full">{getName(state.teams, displayMatches[0].team1_id)}</h3>
+                                <h3 className="font-bold text-sm md:text-base text-center leading-tight truncate w-full">{getName(teams, displayMatches[0].team1_id)}</h3>
                             </div>
 
                             {/* Score */}
@@ -72,13 +72,13 @@ export const LiveMatchesWidget: React.FC<Props> = ({ mode = 'desktop' }) => {
                             {/* Team 2 */}
                             <div className="flex flex-col items-center gap-2 w-1/3">
                                 <div className="w-16 h-16 md:w-20 md:h-20 rounded-full bg-white/10 backdrop-blur-md border-2 border-white/20 p-2 shadow-[0_0_20px_rgba(255,255,255,0.1)]">
-                                    {state.teams.find(t => t.id === displayMatches[0].team2_id)?.logo_url ? (
-                                        <img src={state.teams.find(t => t.id === displayMatches[0].team2_id)?.logo_url} className="w-full h-full object-cover rounded-full" />
+                                    {teams.find(t => t.id === displayMatches[0].team2_id)?.logo_url ? (
+                                        <img src={teams.find(t => t.id === displayMatches[0].team2_id)?.logo_url} className="w-full h-full object-cover rounded-full" />
                                     ) : (
-                                        <div className="w-full h-full flex items-center justify-center font-bold text-xl">{getName(state.teams, displayMatches[0].team2_id).substring(0, 2)}</div>
+                                        <div className="w-full h-full flex items-center justify-center font-bold text-xl">{getName(teams, displayMatches[0].team2_id).substring(0, 2)}</div>
                                     )}
                                 </div>
-                                <h3 className="font-bold text-sm md:text-base text-center leading-tight truncate w-full">{getName(state.teams, displayMatches[0].team2_id)}</h3>
+                                <h3 className="font-bold text-sm md:text-base text-center leading-tight truncate w-full">{getName(teams, displayMatches[0].team2_id)}</h3>
                             </div>
                         </div>
 

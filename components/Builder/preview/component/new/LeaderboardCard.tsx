@@ -1,14 +1,14 @@
 import React from 'react';
-import { useBuilder } from '../../../../../context/BuilderContext';
 
 interface Props {
     mode?: 'mobile' | 'desktop';
+    teams: any[];
 }
 
-export const LeaderboardCard: React.FC<Props> = ({ mode = 'desktop' }) => {
-    const { state } = useBuilder();
+export const LeaderboardCard: React.FC<Props> = ({ mode = 'desktop', teams }) => {
+    // Removed useBuilder
 
-    const sortedTeams = [...state.teams].slice(0, 5); // Top 5
+    const sortedTeams = [...teams].slice(0, 5); // Top 5
 
     return (
         <div className="h-full w-full flex flex-col p-6 bg-white dark:bg-[#1a1a1d] text-gray-900 dark:text-white rounded-3xl relative overflow-hidden shadow-xl border border-gray-200 dark:border-white/5">

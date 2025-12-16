@@ -1,12 +1,13 @@
 import React from 'react';
-import { useBuilder } from '../../../../../context/BuilderContext';
 
 interface Props {
     mode?: 'mobile' | 'desktop';
+    structure: any; // Bracket Structure
 }
 
-export const PhasesBracketWidget: React.FC<Props> = ({ mode = 'desktop' }) => {
-    const { state } = useBuilder();
+export const PhasesBracketWidget: React.FC<Props> = ({ mode = 'desktop', structure }) => {
+    // using structure prop in future logic
+
 
     return (
         <div className="h-full w-full flex flex-col p-6 text-white bg-gradient-to-br from-purple-900/10 to-blue-900/10">
