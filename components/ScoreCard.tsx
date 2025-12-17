@@ -279,31 +279,86 @@ const ResetConfirmModal: React.FC<{
   );
 };
 
+const FieldSelector: React.FC<{
+  onSelectPos: (pos: string) => void;
+  opposingTeam?: TeamData;
+}> = ({ onSelectPos, opposingTeam }) => {
+
+  const getLabel = (pos: string) => {
+    if (!opposingTeam) return pos;
+    // Simple lookup: check starters first for this position
+    const slot = opposingTeam.slots.find(s => s.starter.pos === pos);
+    if (slot && slot.starter.number) return slot.starter.number;
+    return pos;
+  };
+
+  return (
+    <div className="relative w-[240px] h-[240px] mx-auto select-none">
+      {/* SVG Field */}
+      <svg viewBox="0 0 200 200" className="w-full h-full text-amber-600/20 drop-shadow-xl overflow-visible">
+        {/* Diamond */}
+        <path d="M 100 20 L 180 100 L 100 180 L 20 100 Z" fill="currentColor" stroke="white" strokeWidth="2" />
+        {/* Foul Lines */}
+        <line x1="100" y1="180" x2="20" y2="100" stroke="white" strokeWidth="2" strokeDasharray="4" />
+        <line x1="100" y1="180" x2="180" y2="100" stroke="white" strokeWidth="2" strokeDasharray="4" />
+        {/* Infield Arc (Approx) */}
+        <path d="M 45 100 Q 100 45 155 100" fill="none" stroke="white" strokeWidth="1" opacity="0.5" />
+      </svg>
+
+      {/* Position Buttons (Absolute Positioning % based) */}
+      {[
+        { pos: 'C', top: '50%', left: '50%' }, // Center for Mid Fielder
+        { pos: '1B', top: '50%', left: '85%' },
+        { pos: '2B', top: '20%', left: '50%' },
+        { pos: '3B', top: '50%', left: '15%' },
+        { pos: 'SS', top: '30%', left: '25%' } // Adjusted Up and Left
+      ].map((p) => {
+        const label = getLabel(p.pos);
+        return (
+          <button
+            key={p.pos}
+            onClick={(e) => { e.stopPropagation(); onSelectPos(p.pos); }}
+            className="absolute w-10 h-10 -ml-5 -mt-5 bg-white shadow-lg rounded-full flex items-center justify-center border-2 border-amber-600 text-amber-900 font-black text-xs hover:scale-110 active:scale-95 transition-transform z-10"
+            style={{ top: p.top, left: p.left }}
+          >
+            {label}
+          </button>
+        );
+      })}
+      <div className="absolute bottom-0 w-full text-center text-[10px] text-white/40 font-mono">
+        Selecciona quién cometió el error
+      </div>
+    </div>
+  );
+};
+
 const ScoringModal: React.FC<{
   isOpen: boolean;
   onClose: () => void;
-  onSelect: (val: string, isManualReplace?: boolean, errorCulprit?: { team: 'visitor' | 'local', slotIdx: number, type: 'starter' | 'sub' }) => void;
+  onSelect: (val: string, isManualReplace?: boolean, errorCulprit?: { team: 'visitor' | 'local', slotIdx: number, type: 'starter' | 'sub', updatePos?: string }) => void;
   currentValue: string;
   position: { x: number, y: number } | null;
   opposingTeam?: TeamData;
 }> = ({ isOpen, onClose, onSelect, currentValue, position, opposingTeam }) => {
   const modalRef = useRef<HTMLDivElement>(null);
   const [manualValue, setManualValue] = useState(currentValue);
-  const [view, setView] = useState<'main' | 'defensive_error'>('main');
+  const [view, setView] = useState<'main' | 'defensive_error_field' | 'defensive_error_picker'>('main');
+  const [pendingPos, setPendingPos] = useState<string | null>(null);
 
   // Sync state when prop changes or modal opens
   useEffect(() => {
     setManualValue(currentValue);
     setView('main');
+    setPendingPos(null);
   }, [currentValue, isOpen]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent | TouchEvent) => {
+      // Logic handled by backdrop in main component usually, but here keep robust
       if (modalRef.current && !modalRef.current.contains(event.target as Node)) {
         onClose();
       }
     };
-
     if (isOpen) {
       document.addEventListener('mousedown', handleClickOutside);
       document.addEventListener('touchstart', handleClickOutside);
@@ -316,19 +371,28 @@ const ScoringModal: React.FC<{
 
   if (!isOpen || !position) return null;
 
+  // Responsive Layout Logic
   const modalWidth = 280;
-  // Centering logic relative to the cell
-  let left = position.x - (modalWidth / 2);
-  let top = position.y + 10; // 10px below cell
+  const modalHeight = view === 'defensive_error_field' ? 320 : 250; // Taller for field
+  const { innerWidth, innerHeight } = window;
 
-  // Boundary checks
+  // Center horizontally if screen is small (mobile focus)
+  let left = innerWidth < 500 ? (innerWidth - modalWidth) / 2 : position.x - (modalWidth / 2);
+  let top = position.y + 10;
+
+  // Clamp Left
   if (left < 10) left = 10;
-  if (left + modalWidth > window.innerWidth) left = window.innerWidth - modalWidth - 10;
+  if (left + modalWidth > innerWidth - 10) left = innerWidth - modalWidth - 10;
 
-  const modalHeight = 160;
-  if (top + modalHeight > window.innerHeight) {
-    top = position.y - modalHeight - 10; // Flip above if not enough space
+  // Vertical Clamp / Flip
+  if (top + modalHeight > innerHeight - 10) {
+    top = position.y - modalHeight - 10;
+    // If flipping makes it go off-top, just center it vertically or clamp top
+    if (top < 10) top = 10;
   }
+  // Ensure it never exceeds bottom if top was set
+  if (top + modalHeight > innerHeight) top = innerHeight - modalHeight - 10;
+
 
   const actions = [
     { label: 'OUT', val: 'X', icon: <X size={18} />, color: 'bg-red-500/20 text-red-400 border-red-500/50 hover:bg-red-500/40' },
@@ -340,6 +404,38 @@ const ScoringModal: React.FC<{
     { label: 'FIN INN', val: '■', icon: <Square size={18} fill="currentColor" />, color: 'bg-amber-600/20 text-amber-500 border-amber-500/50 hover:bg-amber-500/40' },
   ];
 
+  const handleFieldPos = (pos: string) => {
+    if (!opposingTeam) return;
+
+    // Search for player with this POS
+    let foundSlotIdx = -1;
+    let foundType: 'starter' | 'sub' = 'starter';
+
+    opposingTeam.slots.forEach((slot, idx) => {
+      // Priority to active player (Sub if exists?) - B5 logic usually simplistic, just check starter then sub if marked active
+      // For simplicity, check starter pos. NOTE: Data might not track current 'active' well without deeper logic.
+      // Assuming straightforward assignment.
+      if (slot.starter.pos === pos) {
+        foundSlotIdx = idx;
+        foundType = 'starter';
+      }
+      if (slot.sub.pos === pos) {
+        foundSlotIdx = idx;
+        foundType = 'sub';
+      }
+    });
+
+    if (foundSlotIdx !== -1) {
+      // Found! Assign Error
+      onSelect('E', false, { team: 'local', slotIdx: foundSlotIdx, type: foundType }); // 'local' key placeholder, generic logic up top fixes it
+      onClose();
+    } else {
+      // Not Found -> Fallback Picker
+      setPendingPos(pos);
+      setView('defensive_error_picker');
+    }
+  };
+
   return createPortal(
     <div
       className="fixed z-[9999] animate-in fade-in zoom-in-95 duration-150 no-print"
@@ -347,6 +443,8 @@ const ScoringModal: React.FC<{
       ref={modalRef}
     >
       <div className="bg-slate-900/95 backdrop-blur-md border border-white/20 p-4 rounded-xl shadow-2xl w-[280px] ring-1 ring-black/50">
+
+        {/* VIEW: MAIN */}
         {view === 'main' && (
           <div className="relative z-10">
             <div className="grid grid-cols-3 gap-2 mb-4">
@@ -355,7 +453,7 @@ const ScoringModal: React.FC<{
                   key={action.label}
                   onClick={() => {
                     if (action.val === 'E' && opposingTeam) {
-                      setView('defensive_error');
+                      setView('defensive_error_field');
                     } else {
                       onSelect(action.val);
                       onClose();
@@ -394,35 +492,47 @@ const ScoringModal: React.FC<{
           </div>
         )}
 
-        {view === 'defensive_error' && opposingTeam && (
+        {/* VIEW: FIELD SELECTOR */}
+        {view === 'defensive_error_field' && (
           <div className="relative z-10 animate-in slide-in-from-right duration-200">
             <div className="flex items-center justify-between mb-2 pb-2 border-b border-white/10">
-              <span className="text-xs font-bold text-yellow-400 uppercase">¿Quién cometió el error?</span>
+              <span className="text-xs font-bold text-yellow-400 uppercase">Selecciona Posición</span>
               <button onClick={() => setView('main')} className="text-white/50 hover:text-white"><RotateCcw size={12} /></button>
             </div>
-            <div className="max-h-[200px] overflow-y-auto space-y-1 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+            <FieldSelector onSelectPos={handleFieldPos} opposingTeam={opposingTeam} />
+          </div>
+        )}
+
+        {/* VIEW: FALLBACK PICKER */}
+        {view === 'defensive_error_picker' && opposingTeam && (
+          <div className="relative z-10 animate-in slide-in-from-right duration-200">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex flex-col">
+                <span className="text-[10px] text-red-400 font-bold uppercase">Sin asignación: {pendingPos}</span>
+                <span className="text-xs font-bold text-white">¿Quién estaba en {pendingPos}?</span>
+              </div>
+              <button onClick={() => setView('defensive_error_field')} className="text-white/50 hover:text-white"><RotateCcw size={12} /></button>
+            </div>
+
+            <div className="grid grid-cols-4 gap-2 max-h-[180px] overflow-y-auto">
               {opposingTeam.slots.map((slot, idx) => (
-                <React.Fragment key={idx}>
-                  <button
-                    onClick={() => { onSelect('E', false, { team: 'local', slotIdx: idx, type: 'starter' }); onClose(); }} // Team is placeholder, logic in parent handles it
-                    className="w-full text-left px-2 py-1.5 rounded hover:bg-white/10 flex items-center gap-2 text-xs"
-                  >
-                    <span className="font-mono text-white/50 w-6 text-right">{slot.starter.number || '-'}</span>
-                    <span className="font-bold text-white truncate">{slot.starter.name || `Jugador ${idx + 1}`}</span>
-                    <span className="text-[9px] bg-white/10 px-1 rounded text-white/40">{slot.starter.pos || 'POS'}</span>
-                  </button>
-                  {/* If Sub exists, show them too */}
-                  {(slot.sub.name || slot.sub.number) && (
-                    <button
-                      onClick={() => { onSelect('E', false, { team: 'local', slotIdx: idx, type: 'sub' }); onClose(); }}
-                      className="w-full text-left px-2 py-1.5 rounded hover:bg-white/10 flex items-center gap-2 text-xs pl-6"
-                    >
-                      <span className="font-mono text-white/50 w-6 text-right">{slot.sub.number || '-'}</span>
-                      <span className="font-bold text-white/70 truncate">{slot.sub.name || `Sustituto`}</span>
-                      <span className="text-[9px] bg-white/10 px-1 rounded text-white/40">SUB</span>
-                    </button>
-                  )}
-                </React.Fragment>
+                <button
+                  key={idx}
+                  onClick={() => {
+                    // Assign Error AND Update Position
+                    onSelect('E', false, {
+                      team: 'local', // Logic upstream fixes identifying actual team
+                      slotIdx: idx,
+                      type: 'starter',
+                      updatePos: pendingPos || undefined
+                    });
+                    onClose();
+                  }}
+                  className="bg-white/10 hover:bg-white/20 p-2 rounded flex flex-col items-center justify-center border border-white/10"
+                >
+                  <span className="text-sm font-black text-white">{slot.starter.number || '?'}</span>
+                  <span className="text-[9px] text-white/50 truncate w-full text-center">{slot.starter.name || 'J' + (idx + 1)}</span>
+                </button>
               ))}
             </div>
           </div>
@@ -525,7 +635,8 @@ const ScoreCell: React.FC<{
   onOpenModal: (e: React.MouseEvent | React.TouchEvent) => void;
   disabled?: boolean;
   isLocked?: boolean;
-}> = ({ value, onChange, isEx, onOpenModal, disabled, isLocked }) => {
+  compact?: boolean;
+}> = ({ value, onChange, isEx, onOpenModal, disabled, isLocked, compact }) => {
   const [tempUnlocked, setTempUnlocked] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -586,7 +697,7 @@ const ScoreCell: React.FC<{
         inputMode="text"
         value={baseValue}
         onChange={(e) => !effectivelyLocked && onChange(e.target.value)}
-        className={`w-full h-full bg-transparent text-center text-sm focus:outline-none uppercase transition-all duration-200 ${getStyle(value)} ${effectivelyLocked ? 'opacity-50 blur-[0.5px]' : 'cursor-pointer'}`}
+        className={`w-full h-full bg-transparent text-center ${compact ? 'text-[10px]' : 'text-sm'} focus:outline-none uppercase transition-all duration-200 ${getStyle(value)} ${effectivelyLocked ? 'opacity-50 blur-[0.5px]' : 'cursor-pointer'}`}
         disabled={disabled || effectivelyLocked}
         readOnly={true} // Using Modal primarily
       />
@@ -621,7 +732,7 @@ const LineupGrid: React.FC<{
   teamNameValue: string;
   onTeamNameChange: (val: string) => void;
   teamData: TeamData;
-  onUpdate: (slotIndex: number, type: 'starter' | 'sub', field: keyof PlayerStats | 'score', value: any, inningIndex?: number, atBatIndex?: number) => void;
+  onUpdate: (slotIndex: number, type: 'starter' | 'sub', field: keyof PlayerStats | 'score', value: any, inningIndex?: number, atBatIndex?: number, errorCulprit?: { team: 'visitor' | 'local', slotIdx: number, type: 'starter' | 'sub', updatePos?: string }) => void;
   onAddColumn: (inningIndex: number) => void;
   theme: 'purple' | 'amber';
 
@@ -666,7 +777,7 @@ const LineupGrid: React.FC<{
     setModalOpen(true);
   };
 
-  const handleModalSelect = (val: string, isManualReplace = false, errorCulprit?: { team: 'visitor' | 'local', slotIdx: number, type: 'starter' | 'sub' }) => {
+  const handleModalSelect = (val: string, isManualReplace = false, errorCulprit?: { team: 'visitor' | 'local', slotIdx: number, type: 'starter' | 'sub', updatePos?: string }) => {
     if (activeCell) {
       let newValue = val;
 
@@ -696,12 +807,16 @@ const LineupGrid: React.FC<{
   const structure = teamData.slots[0].starter.scores;
   const totalColumns = structure.reduce((acc, inning) => acc + inning.length, 0);
 
-  const COL_INDEX = 30;
-  const COL_NO = 40;
-  const COL_NAME = 160;
-  const COL_SEX = 50;
-  const COL_POS = 50;
-  const COL_SCORE = 50;
+  // Responsive Layout Constants
+  const compact = isFullScreenMode; // Trigger compact mode when in full screen
+
+  const COL_INDEX = compact ? 22 : 30;
+  const COL_NO = compact ? 28 : 40;
+  const COL_NAME = compact ? 110 : 160;
+  const COL_SEX = compact ? 35 : 50;
+  const COL_POS = compact ? 40 : 50;
+  const COL_SCORE = compact ? 38 : 50;
+
   const LEFT_INDEX = 0;
   const LEFT_NO = COL_INDEX;
   const LEFT_NAME = COL_INDEX + COL_NO;
@@ -842,11 +957,11 @@ const LineupGrid: React.FC<{
 
                     return (
                       <React.Fragment key={playerNum}>
-                        <div className={`${themeColors.stickyBg} flex items-center justify-center ${theme === 'amber' ? 'text-orange-400' : 'text-purple-400'} font-bold border-b border-white/10 text-lg sticky z-10 backdrop-blur-md left-sticky`} style={{ left: LEFT_INDEX }}>{playerNum}</div>
+                        <div className={`${themeColors.stickyBg} flex items-center justify-center ${theme === 'amber' ? 'text-orange-400' : 'text-purple-400'} font-bold border-b border-white/10 ${compact ? 'text-xs' : 'text-lg'} sticky z-10 backdrop-blur-md left-sticky`} style={{ left: LEFT_INDEX }}>{playerNum}</div>
 
                         <div className={`border-b border-r border-white/10 sticky z-10 ${themeColors.stickyBg} backdrop-blur-md left-sticky`} style={{ left: LEFT_NO }}>
                           <input
-                            className="w-full h-full bg-transparent text-center text-xs text-white focus:outline-none font-bold"
+                            className={`w-full h-full bg-transparent text-center ${compact ? 'text-[10px]' : 'text-xs'} text-white focus:outline-none font-bold`}
                             value={slot.starter.number}
                             onChange={(e) => onUpdate(idx, 'starter', 'number', e.target.value)}
                           />
@@ -854,7 +969,7 @@ const LineupGrid: React.FC<{
 
                         <div className={`border-b border-r border-white/10 sticky z-10 ${themeColors.stickyBg} backdrop-blur-md left-sticky`} style={{ left: LEFT_NAME }}>
                           <input
-                            className={`w-full h-full bg-transparent px-2 text-sm text-white focus:outline-none ${themeColors.inputPlaceholder}`}
+                            className={`w-full h-full bg-transparent px-2 ${compact ? 'text-[10px]' : 'text-sm'} text-white focus:outline-none ${themeColors.inputPlaceholder}`}
                             placeholder="Nombre Titular"
                             value={slot.starter.name}
                             onChange={(e) => onUpdate(idx, 'starter', 'name', e.target.value)}
@@ -863,7 +978,7 @@ const LineupGrid: React.FC<{
 
                         <div className={`border-b border-r border-white/10 sticky z-10 ${themeColors.stickyBg} left-sticky`} style={{ left: LEFT_SEX }}>
                           <select
-                            className="w-full h-full bg-transparent text-center text-xs text-white focus:outline-none appearance-none [&>option]:bg-slate-900"
+                            className={`w-full h-full bg-transparent text-center ${compact ? 'text-[10px]' : 'text-xs'} text-white focus:outline-none appearance-none [&>option]:bg-slate-900`}
                             value={slot.starter.gender}
                             onChange={(e) => onUpdate(idx, 'starter', 'gender', e.target.value)}
                           >
@@ -875,7 +990,7 @@ const LineupGrid: React.FC<{
 
                         <div className={`border-b border-r border-white/10 sticky z-10 ${themeColors.stickyBg} left-sticky`} style={{ left: LEFT_POS }}>
                           <select
-                            className="w-full h-full bg-transparent text-center text-xs text-white focus:outline-none appearance-none [&>option]:bg-slate-900"
+                            className={`w-full h-full bg-transparent text-center ${compact ? 'text-[10px]' : 'text-xs'} text-white focus:outline-none appearance-none [&>option]:bg-slate-900`}
                             value={slot.starter.pos}
                             onChange={(e) => onUpdate(idx, 'starter', 'pos', e.target.value)}
                           >
@@ -903,8 +1018,8 @@ const LineupGrid: React.FC<{
                                   onChange={(val) => onUpdate(idx, 'starter', 'score', val, iIdx, atBatIdx)}
                                   onOpenModal={(e) => handleCellClick(e, idx, 'starter', iIdx, atBatIdx, score)}
                                   isEx={iIdx >= 5}
-                                  disabled={false} // Always enable interaction via our custom logic
                                   isLocked={(iIdx < currentInningIdx) && !unlockedInnings.includes(iIdx)}
+                                  compact={compact}
                                 />
                               </div>
                             )
@@ -2443,7 +2558,7 @@ const SingleSetScoreCard: React.FC<{
     }
   };
 
-  const updateTeam = (team: 'visitorTeam' | 'localTeam', index: number, type: 'starter' | 'sub', field: string, value: any, inningIndex?: number, atBatIndex?: number, errorCulprit?: { team: string, slotIdx: number, type: 'starter' | 'sub' }) => {
+  const updateTeam = (team: 'visitorTeam' | 'localTeam', index: number, type: 'starter' | 'sub', field: string, value: any, inningIndex?: number, atBatIndex?: number, errorCulprit?: { team: string, slotIdx: number, type: 'starter' | 'sub', updatePos?: string }) => {
     setState(prev => {
       if (prev.winner) return prev;
 
@@ -2640,6 +2755,11 @@ const SingleSetScoreCard: React.FC<{
         // Use existing opSlots from top scope
         let opSlot = { ...opSlots[errorCulprit.slotIdx] };
         let opPlayer = { ...opSlot[errorCulprit.type] };
+
+        // Update Position if requested
+        if (errorCulprit.updatePos) {
+          opPlayer.pos = errorCulprit.updatePos;
+        }
 
         opPlayer.defError = (opPlayer.defError || 0) + 1;
 
