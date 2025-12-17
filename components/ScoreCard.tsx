@@ -309,9 +309,9 @@ const FieldSelector: React.FC<{
       {[
         { pos: 'C', top: '50%', left: '50%' }, // Center for Mid Fielder
         { pos: '1B', top: '50%', left: '85%' },
-        { pos: '2B', top: '30%', left: '75%' }, // Moved between 1st and 2nd (Top-Right)
+        { pos: '2B', top: '25%', left: '70%' }, // Higher, closer to 2nd base
         { pos: '3B', top: '50%', left: '15%' },
-        { pos: 'SS', top: '30%', left: '25%' } // Adjusted Up and Left
+        { pos: 'SS', top: '25%', left: '30%' } // Higher, closer to 2nd base
       ].map((p) => {
         const label = getLabel(p.pos);
         return (
