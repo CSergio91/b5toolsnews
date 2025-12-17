@@ -309,7 +309,7 @@ const FieldSelector: React.FC<{
       {[
         { pos: 'C', top: '50%', left: '50%' }, // Center for Mid Fielder
         { pos: '1B', top: '50%', left: '85%' },
-        { pos: '2B', top: '20%', left: '50%' },
+        { pos: '2B', top: '30%', left: '75%' }, // Moved between 1st and 2nd (Top-Right)
         { pos: '3B', top: '50%', left: '15%' },
         { pos: 'SS', top: '30%', left: '25%' } // Adjusted Up and Left
       ].map((p) => {
@@ -643,8 +643,9 @@ const ScoreCell: React.FC<{
   // If isLocked prop changes (e.g. inning advances), reset temp state
   useEffect(() => setTempUnlocked(false), [isLocked]);
 
-  const hasRun = value.includes('●');
-  const baseValue = value.replace(/●/g, '').trim();
+  const safeValue = value || '';
+  const hasRun = safeValue.includes('●');
+  const baseValue = safeValue.replace(/[●■⇄]/g, '').trim();
 
   const getStyle = (val: string) => {
     const v = val.toUpperCase();
@@ -955,11 +956,23 @@ const LineupGrid: React.FC<{
                     const playerNum = idx + 1;
                     const isNextBatter = idx === nextBatterIdx;
 
+                    // Determine Active Player (Starter or Sub)
+                    // Active if sub has data OR if substitution marker '⇄' is in starter's history
+                    const hasSubData = !!(slot.sub.name || slot.sub.number);
+                    const scoresFlat = slot.starter.scores ? slot.starter.scores.flat() : [];
+                    const hasSubMarker = scoresFlat.some(s => s && s.includes('⇄'));
+                    const activeType = (hasSubData || hasSubMarker) ? 'sub' : 'starter';
+
+                    // Highlight Classes
+                    const starterRowClass = (isNextBatter && activeType === 'starter') ? 'bg-yellow-500/20' : themeColors.stickyBg;
+                    const subRowClass = (isNextBatter && activeType === 'sub') ? 'bg-yellow-500/20' : (hasSubData ? 'bg-white/5' : themeColors.stickyBg);
+
                     return (
                       <React.Fragment key={playerNum}>
-                        <div className={`${themeColors.stickyBg} flex items-center justify-center ${theme === 'amber' ? 'text-orange-400' : 'text-purple-400'} font-bold border-b border-white/10 ${compact ? 'text-xs' : 'text-lg'} sticky z-10 backdrop-blur-md left-sticky`} style={{ left: LEFT_INDEX }}>{playerNum}</div>
+                        {/* STARTER ROW */}
+                        <div className={`${starterRowClass} flex items-center justify-center ${theme === 'amber' ? 'text-orange-400' : 'text-purple-400'} font-bold border-b border-white/10 ${compact ? 'text-xs' : 'text-lg'} sticky z-10 backdrop-blur-md left-sticky transition-colors duration-300`} style={{ left: LEFT_INDEX }}>{playerNum}</div>
 
-                        <div className={`border-b border-r border-white/10 sticky z-10 ${themeColors.stickyBg} backdrop-blur-md left-sticky`} style={{ left: LEFT_NO }}>
+                        <div className={`border-b border-r border-white/10 sticky z-10 ${starterRowClass} backdrop-blur-md left-sticky transition-colors duration-300`} style={{ left: LEFT_NO }}>
                           <input
                             className={`w-full h-full bg-transparent text-center ${compact ? 'text-[10px]' : 'text-xs'} text-white focus:outline-none font-bold`}
                             value={slot.starter.number}
@@ -967,7 +980,7 @@ const LineupGrid: React.FC<{
                           />
                         </div>
 
-                        <div className={`border-b border-r border-white/10 sticky z-10 ${themeColors.stickyBg} backdrop-blur-md left-sticky`} style={{ left: LEFT_NAME }}>
+                        <div className={`border-b border-r border-white/10 sticky z-10 ${starterRowClass} backdrop-blur-md left-sticky transition-colors duration-300`} style={{ left: LEFT_NAME }}>
                           <input
                             className={`w-full h-full bg-transparent px-2 ${compact ? 'text-[10px]' : 'text-sm'} text-white focus:outline-none ${themeColors.inputPlaceholder}`}
                             placeholder="Nombre Titular"
@@ -976,7 +989,7 @@ const LineupGrid: React.FC<{
                           />
                         </div>
 
-                        <div className={`border-b border-r border-white/10 sticky z-10 ${themeColors.stickyBg} left-sticky`} style={{ left: LEFT_SEX }}>
+                        <div className={`border-b border-r border-white/10 sticky z-10 ${starterRowClass} left-sticky transition-colors duration-300`} style={{ left: LEFT_SEX }}>
                           <select
                             className={`w-full h-full bg-transparent text-center ${compact ? 'text-[10px]' : 'text-xs'} text-white focus:outline-none appearance-none [&>option]:bg-slate-900`}
                             value={slot.starter.gender}
@@ -988,7 +1001,7 @@ const LineupGrid: React.FC<{
                           </select>
                         </div>
 
-                        <div className={`border-b border-r border-white/10 sticky z-10 ${themeColors.stickyBg} left-sticky`} style={{ left: LEFT_POS }}>
+                        <div className={`border-b border-r border-white/10 sticky z-10 ${starterRowClass} left-sticky transition-colors duration-300`} style={{ left: LEFT_POS }}>
                           <select
                             className={`w-full h-full bg-transparent text-center ${compact ? 'text-[10px]' : 'text-xs'} text-white focus:outline-none appearance-none [&>option]:bg-slate-900`}
                             value={slot.starter.pos}
@@ -1006,12 +1019,13 @@ const LineupGrid: React.FC<{
                         {slot.starter.scores.map((inning, iIdx) =>
                           inning.map((score, atBatIdx) => {
                             const isCurrentInning = iIdx === currentInningIdx;
-                            const showHighlight = isNextBatter && isCurrentInning && score === '';
+                            // Highlight blinker ONLY if this is the active type and next batter
+                            const showHighlight = isNextBatter && activeType === 'starter' && isCurrentInning && score === '';
 
                             return (
-                              <div key={`s-${iIdx}-${atBatIdx}`} className={`border-b border-r border-white/10 bg-white/5 relative ${showHighlight ? 'z-20' : ''}`}>
+                              <div key={`s-${iIdx}-${atBatIdx}`} className={`border-b border-r border-white/10 relative ${showHighlight ? 'z-20' : ''} ${starterRowClass}`}>
                                 {showHighlight && (
-                                  <div className="absolute inset-0 pointer-events-none animate-pulse bg-yellow-400/10 ring-2 ring-yellow-400/50 z-20"></div>
+                                  <div className="absolute inset-0 pointer-events-none animate-pulse bg-yellow-400/20 ring-2 ring-yellow-400 z-20 shadow-[0_0_15px_rgba(250,204,21,0.5)]"></div>
                                 )}
                                 <ScoreCell
                                   value={score}
@@ -1026,16 +1040,16 @@ const LineupGrid: React.FC<{
                           })
                         )}
 
-                        {/* Sub Row */}
-                        <div className={`${themeColors.stickyBg} text-[10px] text-white/40 flex items-center justify-center border-b border-white/10 font-bold tracking-wider sticky z-10 backdrop-blur-md left-sticky`} style={{ left: LEFT_INDEX }}>SUB</div>
-                        <div className={`border-b border-r border-white/10 bg-white/5 sticky z-10 ${themeColors.stickyBg} left-sticky`} style={{ left: LEFT_NO }}>
+                        {/* SUB ROW */}
+                        <div className={`${subRowClass} text-[10px] text-white/40 flex items-center justify-center border-b border-white/10 font-bold tracking-wider sticky z-10 backdrop-blur-md left-sticky transition-colors duration-300`} style={{ left: LEFT_INDEX }}>SUB</div>
+                        <div className={`border-b border-r border-white/10 sticky z-10 ${subRowClass} left-sticky transition-colors duration-300`} style={{ left: LEFT_NO }}>
                           <input
                             className="w-full h-full bg-transparent text-center text-xs text-white/70 focus:outline-none"
                             value={slot.sub.number}
                             onChange={(e) => onUpdate(idx, 'sub', 'number', e.target.value)}
                           />
                         </div>
-                        <div className={`border-b border-r border-white/10 bg-white/5 sticky z-10 ${themeColors.stickyBg} left-sticky`} style={{ left: LEFT_NAME }}>
+                        <div className={`border-b border-r border-white/10 sticky z-10 ${subRowClass} left-sticky transition-colors duration-300`} style={{ left: LEFT_NAME }}>
                           <input
                             className={`w-full h-full bg-transparent px-2 text-xs ${themeColors.subText} focus:outline-none ${themeColors.inputPlaceholder}`}
                             placeholder="Sustituto"
@@ -1043,7 +1057,7 @@ const LineupGrid: React.FC<{
                             onChange={(e) => onUpdate(idx, 'sub', 'name', e.target.value)}
                           />
                         </div>
-                        <div className={`border-b border-r border-white/10 bg-white/5 sticky z-10 ${themeColors.stickyBg} left-sticky`} style={{ left: LEFT_SEX }}>
+                        <div className={`border-b border-r border-white/10 sticky z-10 ${subRowClass} left-sticky transition-colors duration-300`} style={{ left: LEFT_SEX }}>
                           <select
                             className="w-full h-full bg-transparent text-center text-xs text-white/70 focus:outline-none appearance-none [&>option]:bg-slate-900"
                             value={slot.sub.gender}
@@ -1054,7 +1068,7 @@ const LineupGrid: React.FC<{
                             <option value="F">F</option>
                           </select>
                         </div>
-                        <div className={`border-b border-r border-white/10 bg-white/5 sticky z-10 ${themeColors.stickyBg} left-sticky`} style={{ left: LEFT_POS }}>
+                        <div className={`border-b border-r border-white/10 sticky z-10 ${subRowClass} left-sticky transition-colors duration-300`} style={{ left: LEFT_POS }}>
                           <select
                             className="w-full h-full bg-transparent text-center text-xs text-white/70 focus:outline-none appearance-none [&>option]:bg-slate-900"
                             value={slot.sub.pos}
@@ -1069,17 +1083,27 @@ const LineupGrid: React.FC<{
                           </select>
                         </div>
                         {slot.sub.scores.map((inning, iIdx) =>
-                          inning.map((score, atBatIdx) => (
-                            <div key={`sub-${iIdx}-${atBatIdx}`} className="border-b border-r border-white/10 bg-white/5">
-                              <ScoreCell
-                                value={score}
-                                onChange={(val) => onUpdate(idx, 'sub', 'score', val, iIdx, atBatIdx)}
-                                onOpenModal={(e) => handleCellClick(e, idx, 'sub', iIdx, atBatIdx, score)}
-                                isEx={iIdx >= 5}
-                                disabled={(iIdx < currentInningIdx) && !unlockedInnings.includes(iIdx)}
-                              />
-                            </div>
-                          ))
+                          inning.map((score, atBatIdx) => {
+                            const isCurrentInning = iIdx === currentInningIdx;
+                            // Highlight blinker if active type is SUB
+                            const showHighlight = isNextBatter && activeType === 'sub' && isCurrentInning && score === '';
+
+                            return (
+                              <div key={`sub-${iIdx}-${atBatIdx}`} className={`border-b border-r border-white/10 relative ${subRowClass}`}>
+                                {showHighlight && (
+                                  <div className="absolute inset-0 pointer-events-none animate-pulse bg-yellow-400/20 ring-2 ring-yellow-400 z-20 shadow-[0_0_15px_rgba(250,204,21,0.5)]"></div>
+                                )}
+                                <ScoreCell
+                                  value={score}
+                                  onChange={(val) => onUpdate(idx, 'sub', 'score', val, iIdx, atBatIdx)}
+                                  onOpenModal={(e) => handleCellClick(e, idx, 'sub', iIdx, atBatIdx, score)}
+                                  isEx={iIdx >= 5}
+                                  disabled={(iIdx < currentInningIdx) && !unlockedInnings.includes(iIdx)}
+                                  compact={compact}
+                                />
+                              </div>
+                            )
+                          })
                         )}
                       </React.Fragment>
                     );
@@ -1593,7 +1617,7 @@ const StatsTable: React.FC<{
     let e = 0; // Reached on Error / Safe
     let defE = p.defError || 0; // Defensive Errors
 
-    p.scores.flat().forEach(val => {
+    (p.scores || []).flat().forEach(val => {
       const v = val.toUpperCase();
       if (v.includes('H')) h++;
       if (v.includes('●')) ca++;
@@ -1620,7 +1644,7 @@ const StatsTable: React.FC<{
           ...sStat
         });
         // Sub
-        if (slot.sub.name || slot.sub.scores.flat().some(x => x)) {
+        if (slot.sub.name || (slot.sub.scores || []).flat().some(x => x)) {
           const subStat = calculateStats(slot.sub);
           rows.push({
             team: tName, type: 'Sub', no: slot.sub.number || '-', name: slot.sub.name || 'Sustituto',
@@ -2341,7 +2365,39 @@ const SingleSetScoreCard: React.FC<{
   useEffect(() => {
     const saved = localStorage.getItem(`b5_scorekeeper_set_${setNum}`);
     if (saved) {
-      try { setState(JSON.parse(saved)); } catch (e) { console.error(e); }
+      try {
+        const parsed = JSON.parse(saved);
+        // Robustness Check: Ensure critical structure exists
+        if (parsed && typeof parsed === 'object') {
+          // 1. Ensure Teams exist with Slots
+          if (!parsed.visitorTeam || !parsed.visitorTeam.slots) parsed.visitorTeam = createEmptyTeam();
+          if (!parsed.localTeam || !parsed.localTeam.slots) parsed.localTeam = createEmptyTeam();
+
+          // 2. Ensure Game Info exists
+          if (!parsed.gameInfo) parsed.gameInfo = { ...initialState.gameInfo };
+
+          // 3. Patch missing scores arrays (Migration for older data)
+          const patchSlots = (slots: any[]) => {
+            if (!Array.isArray(slots)) return [];
+            return slots.map(slot => {
+              if (!slot) return { starter: createEmptyPlayer(), sub: createEmptyPlayer() };
+              if (!slot.starter) slot.starter = createEmptyPlayer();
+              if (!slot.sub) slot.sub = createEmptyPlayer();
+
+              if (!slot.starter.scores) slot.starter.scores = [['']];
+              if (!slot.sub.scores) slot.sub.scores = [['']];
+              return slot;
+            });
+          };
+
+          parsed.visitorTeam.slots = patchSlots(parsed.visitorTeam.slots);
+          parsed.localTeam.slots = patchSlots(parsed.localTeam.slots);
+
+          setState(parsed);
+        }
+      } catch (e) {
+        console.error("Error loading/parsing saved state, reverting to default:", e);
+      }
     }
     setLoaded(true);
   }, []);
@@ -2379,17 +2435,11 @@ const SingleSetScoreCard: React.FC<{
     const countOuts = (team: TeamData, idx: number) => {
       let outs = 0;
       team.slots.forEach(slot => {
-        const v1 = slot.starter.scores[idx] ? slot.starter.scores[idx][0] || '' : ''; // Assuming score is array of strings? No, scores[idx] is string[].
-        // Wait: scores is string[][] (innings -> at-bats).
-        // Actually, let's verify data structure.
-        // scores[inningIdx] is string[] (list of at-bats in that inning).
-        // Iterate FLAT because outs can be anywhere in that inning's array
-        // But wait, structure: starter.scores is string[][].
-        const inningAtBats = slot.starter.scores[idx] || [];
-        inningAtBats.forEach(val => { if (val.toUpperCase().includes('X') && !val.includes('Ex')) outs++; });
+        const inningAtBats = (slot.starter.scores || [])[idx] || [];
+        inningAtBats.forEach(val => { if (val && val.toUpperCase().includes('X') && !val.includes('Ex')) outs++; });
 
-        const subAtBats = slot.sub.scores[idx] || [];
-        subAtBats.forEach(val => { if (val.toUpperCase().includes('X') && !val.includes('Ex')) outs++; });
+        const subAtBats = (slot.sub.scores || [])[idx] || [];
+        subAtBats.forEach(val => { if (val && val.toUpperCase().includes('X') && !val.includes('Ex')) outs++; });
       });
       return outs;
     };
@@ -2408,14 +2458,16 @@ const SingleSetScoreCard: React.FC<{
     }
   }, [state.visitorTeam, state.localTeam, state.winner]);
 
-  const currentInningIdx = state.visitorTeam.slots[0].starter.scores.length - 1;
+  // SAFE GUARD: Ensure slots exist before accessing [0]
+  const vScores = state.visitorTeam.slots?.[0]?.starter?.scores;
+  const currentInningIdx = (vScores && vScores.length > 0) ? vScores.length - 1 : 0;
   const currentInning = currentInningIdx + 1;
 
   const calculateRunsFromGrid = (team: TeamData) => {
     let runs = 0;
     team.slots.forEach(slot => {
-      slot.starter.scores.flat().forEach(val => { if (val.includes('●')) runs++; });
-      slot.sub.scores.flat().forEach(val => { if (val.includes('●')) runs++; });
+      (slot.starter.scores || []).flat().forEach(val => { if (val && val.includes('●')) runs++; });
+      (slot.sub.scores || []).flat().forEach(val => { if (val && val.includes('●')) runs++; });
     });
     return runs;
   };
@@ -2423,8 +2475,8 @@ const SingleSetScoreCard: React.FC<{
   const countHits = (team: TeamData) => {
     let hits = 0;
     team.slots.forEach(slot => {
-      slot.starter.scores.flat().forEach(val => { if (val.includes('H')) hits++; });
-      slot.sub.scores.flat().forEach(val => { if (val.includes('H')) hits++; });
+      (slot.starter.scores || []).flat().forEach(val => { if (val && val.includes('H')) hits++; });
+      (slot.sub.scores || []).flat().forEach(val => { if (val && val.includes('H')) hits++; });
     });
     return hits;
   };
@@ -2432,18 +2484,20 @@ const SingleSetScoreCard: React.FC<{
   const countTotalPlays = (team: TeamData) => {
     let plays = 0;
     team.slots.forEach(slot => {
-      slot.starter.scores.flat().forEach(val => { if (val.trim()) plays++; });
+      (slot.starter.scores || []).flat().forEach(val => { if (val && val.trim() && !val.includes('⇄')) plays++; });
       // Subs share the slot, so their plays count towards the slot's turn usually, 
       // but simple logic: count all non-empty cells in the grid to determine rotation is standard.
       // Better logic: Find the LAST non-empty cell across the whole team history.
       // Simplified Logic for "Next Batter": Total Plays % 9 (or roster size).
-      slot.sub.scores.flat().forEach(val => { if (val.trim()) plays++; });
+      (slot.sub.scores || []).flat().forEach(val => { if (val && val.trim() && !val.includes('⇄')) plays++; });
     });
     return plays;
   };
 
-  const visitorNextBatterIdx = countTotalPlays(state.visitorTeam) % state.visitorTeam.slots.length;
-  const localNextBatterIdx = countTotalPlays(state.localTeam) % state.localTeam.slots.length;
+  const vSlotsLen = state.visitorTeam.slots?.length || 1;
+  const lSlotsLen = state.localTeam.slots?.length || 1;
+  const visitorNextBatterIdx = countTotalPlays(state.visitorTeam) % (vSlotsLen > 0 ? vSlotsLen : 1);
+  const localNextBatterIdx = countTotalPlays(state.localTeam) % (lSlotsLen > 0 ? lSlotsLen : 1);
 
   const visitorRunsManual = state.inningScores.visitor.reduce((acc, curr) => acc + (parseInt(curr) || 0), 0);
   const localRunsManual = state.inningScores.local.reduce((acc, curr) => acc + (parseInt(curr) || 0), 0);
@@ -2460,8 +2514,8 @@ const SingleSetScoreCard: React.FC<{
   const countOutsForInning = (team: TeamData, iIdx: number) => {
     let outs = 0;
     team.slots.forEach(slot => {
-      slot.starter.scores[iIdx].forEach(val => { if (val.trim().toUpperCase().includes('X') && !val.includes('Ex')) outs++; });
-      slot.sub.scores[iIdx].forEach(val => { if (val.trim().toUpperCase().includes('X') && !val.includes('Ex')) outs++; });
+      ((slot.starter.scores || [])[iIdx] || []).forEach(val => { if (val && val.trim().toUpperCase().includes('X') && !val.includes('Ex')) outs++; });
+      ((slot.sub.scores || [])[iIdx] || []).forEach(val => { if (val && val.trim().toUpperCase().includes('X') && !val.includes('Ex')) outs++; });
     });
     return Math.min(outs, 3);
   };

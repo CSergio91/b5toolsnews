@@ -32,6 +32,75 @@ const ToastNotification: React.FC<{ message: string; isVisible: boolean; onClose
     );
 };
 
+// Basic Error Boundary to catch crashes
+interface ErrorBoundaryProps {
+    children: React.ReactNode;
+}
+
+interface ErrorBoundaryState {
+    hasError: boolean;
+    error: Error | null;
+    errorInfo: React.ErrorInfo | null;
+}
+
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+    public readonly state: ErrorBoundaryState = {
+        hasError: false,
+        error: null,
+        errorInfo: null
+    };
+
+    constructor(props: ErrorBoundaryProps) {
+        super(props);
+    }
+
+    static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+        return { hasError: true, error, errorInfo: null };
+    }
+
+    componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+        console.error("ScoreKeeper Crash:", error, errorInfo);
+        this.setState({ errorInfo });
+    }
+
+    render() {
+        if (this.state.hasError) {
+            return (
+                <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white p-8">
+                    <div className="max-w-2xl w-full bg-red-900/20 border border-red-500/50 p-6 rounded-xl">
+                        <h1 className="text-2xl font-bold text-red-400 mb-4">Algo salió mal en el ScoreKeeper</h1>
+                        <p className="mb-4">Se ha producido un error inesperado. Por favor, reporta este mensaje al desarrollador.</p>
+                        <div className="bg-black/50 p-4 rounded-lg overflow-auto max-h-[400px] font-mono text-xs text-red-200 whitespace-pre-wrap">
+                            {this.state.error && this.state.error.toString()}
+                            <br />
+                            {this.state.errorInfo && this.state.errorInfo.componentStack}
+                        </div>
+                        <button
+                            onClick={() => window.location.reload()}
+                            className="mt-6 px-4 py-2 bg-red-600 hover:bg-red-500 rounded-lg font-bold"
+                        >
+                            Recargar Página
+                        </button>
+                        <button
+                            onClick={() => {
+                                localStorage.removeItem('b5_scorekeeper_set_1');
+                                localStorage.removeItem('b5_scorekeeper_set_2');
+                                localStorage.removeItem('b5_scorekeeper_set_3');
+                                window.location.reload();
+                            }}
+                            className="mt-6 ml-4 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg font-bold border border-white/20"
+                        >
+                            Borrar Datos y Recargar (Reset Total)
+                        </button>
+                    </div>
+                </div>
+            );
+        }
+
+        return this.props.children;
+    }
+}
+
 export const ScoreKeeperPage: React.FC = () => {
     const navigate = useNavigate();
     const [isConnected, setIsConnected] = React.useState<boolean | null>(null);
@@ -88,7 +157,9 @@ export const ScoreKeeperPage: React.FC = () => {
 
 
                 <main className="transition-opacity duration-500 ease-in-out">
-                    <ScoreCard />
+                    <ErrorBoundary>
+                        <ScoreCard />
+                    </ErrorBoundary>
                 </main>
 
                 <footer className="mt-12 text-center text-white/30 text-xs pb-4 no-print">
