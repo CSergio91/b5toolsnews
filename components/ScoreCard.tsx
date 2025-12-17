@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { GlassInput, GlassTitle } from './GlassInput';
 import { SubscriptionModal } from './SubscriptionModal';
@@ -333,7 +333,8 @@ const ScoringModal: React.FC<{
   const actions = [
     { label: 'OUT', val: 'X', icon: <X size={18} />, color: 'bg-red-500/20 text-red-400 border-red-500/50 hover:bg-red-500/40' },
     { label: 'HIT', val: 'H', icon: <CheckCircle2 size={18} />, color: 'bg-green-500/20 text-green-400 border-green-500/50 hover:bg-green-500/40' },
-    { label: 'SAFE/ERR', val: 'S', icon: <AlertCircle size={18} />, color: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/50 hover:bg-yellow-500/40' },
+    { label: 'S', val: 'S', icon: <span className="font-black text-base">S</span>, color: 'bg-white/10 text-white border-white/50 hover:bg-white/20' },
+    { label: 'ERR', val: 'E', icon: <AlertCircle size={18} />, color: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/50 hover:bg-yellow-500/40' },
     { label: 'CARRERA', val: '●', icon: <Circle size={18} fill="currentColor" />, color: 'bg-rose-600 text-white border-rose-400 hover:bg-rose-500 shadow-[0_0_10px_rgba(225,29,72,0.5)]' },
     { label: 'SUB', val: '⇄', icon: <ArrowRightLeft size={18} />, color: 'bg-purple-500/20 text-purple-400 border-purple-500/50 hover:bg-purple-500/40' },
     { label: 'FIN INN', val: '■', icon: <Square size={18} fill="currentColor" />, color: 'bg-amber-600/20 text-amber-500 border-amber-500/50 hover:bg-amber-500/40' },
@@ -353,7 +354,7 @@ const ScoringModal: React.FC<{
                 <button
                   key={action.label}
                   onClick={() => {
-                    if (action.val === 'S' && opposingTeam) {
+                    if (action.val === 'E' && opposingTeam) {
                       setView('defensive_error');
                     } else {
                       onSelect(action.val);
@@ -403,7 +404,7 @@ const ScoringModal: React.FC<{
               {opposingTeam.slots.map((slot, idx) => (
                 <React.Fragment key={idx}>
                   <button
-                    onClick={() => { onSelect('S', false, { team: 'local', slotIdx: idx, type: 'starter' }); onClose(); }} // Team is placeholder, logic in parent handles it
+                    onClick={() => { onSelect('E', false, { team: 'local', slotIdx: idx, type: 'starter' }); onClose(); }} // Team is placeholder, logic in parent handles it
                     className="w-full text-left px-2 py-1.5 rounded hover:bg-white/10 flex items-center gap-2 text-xs"
                   >
                     <span className="font-mono text-white/50 w-6 text-right">{slot.starter.number || '-'}</span>
@@ -413,7 +414,7 @@ const ScoringModal: React.FC<{
                   {/* If Sub exists, show them too */}
                   {(slot.sub.name || slot.sub.number) && (
                     <button
-                      onClick={() => { onSelect('S', false, { team: 'local', slotIdx: idx, type: 'sub' }); onClose(); }}
+                      onClick={() => { onSelect('E', false, { team: 'local', slotIdx: idx, type: 'sub' }); onClose(); }}
                       className="w-full text-left px-2 py-1.5 rounded hover:bg-white/10 flex items-center gap-2 text-xs pl-6"
                     >
                       <span className="font-mono text-white/50 w-6 text-right">{slot.sub.number || '-'}</span>
@@ -502,46 +503,99 @@ const AdvanceInningModal: React.FC<{
 };
 
 
+const EditOverlay: React.FC<{ onClick: (e: React.MouseEvent | React.TouchEvent) => void }> = ({ onClick }) => (
+  <div
+    className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-[1px] cursor-pointer z-20 group transition-all duration-200 opacity-0 hover:opacity-100"
+    onClick={(e) => {
+      e.stopPropagation(); // Prevent bubbling to parent click (which might open modal)
+      onClick(e);
+    }}
+    title="Tocame para editar"
+  >
+    <div className="bg-white/90 p-1.5 rounded-full shadow-lg transform group-hover:scale-110 group-active:scale-95 transition-all duration-200">
+      <Pencil size={14} className="text-black" />
+    </div>
+  </div>
+);
+
 const ScoreCell: React.FC<{
   value: string;
   onChange: (val: string) => void;
   isEx?: boolean;
   onOpenModal: (e: React.MouseEvent | React.TouchEvent) => void;
   disabled?: boolean;
-}> = ({ value, onChange, isEx, onOpenModal, disabled }) => {
+  isLocked?: boolean;
+}> = ({ value, onChange, isEx, onOpenModal, disabled, isLocked }) => {
+  const [tempUnlocked, setTempUnlocked] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // If isLocked prop changes (e.g. inning advances), reset temp state
+  useEffect(() => setTempUnlocked(false), [isLocked]);
 
   const hasRun = value.includes('●');
   const baseValue = value.replace(/●/g, '').trim();
 
   const getStyle = (val: string) => {
     const v = val.toUpperCase();
-    if (v.includes('X')) return 'text-red-500 font-bold bg-red-500/5';
-    if (v.includes('H')) return 'text-green-400 font-bold bg-green-500/5';
-    if (v.includes('S')) return 'text-yellow-400 font-bold bg-yellow-500/5';
-    if (v.includes('■')) return 'text-amber-500 flex items-center justify-center scale-150';
-    if (v.includes('⇄')) return 'text-purple-400 flex items-center justify-center';
-    return 'text-white';
+    if (v.includes('X')) return 'text-red-500 font-bold';
+    if (v.includes('H')) return 'text-green-400 font-bold';
+    if (v.includes('BB')) return 'text-blue-400 font-bold';
+    if (v.includes('S')) return 'text-white font-bold';
+    if (v.includes('E')) return 'text-yellow-400 font-bold';
+    if (v.includes('E')) return 'text-yellow-400 font-bold';
+    if (v.includes('K')) return 'text-red-400';
+    return 'text-white/70';
   };
 
-  const displayValue = baseValue.startsWith('S-') ? 'E' + baseValue.substring(1) : baseValue.replace('■', '');
+  const effectivelyLocked = isLocked && !tempUnlocked;
+
+  const handleUnlock = (e: React.MouseEvent | React.TouchEvent) => {
+    setTempUnlocked(true);
+    // Focus the container to catch blur events
+    setTimeout(() => containerRef.current?.focus(), 50);
+  };
+
+  const handleBlur = (e: React.FocusEvent) => {
+    // If focus moves INSIDE the container (e.g. to the input), do NOT re-lock
+    if (containerRef.current?.contains(e.relatedTarget as Node)) return;
+
+    // Only re-lock if it was temporarily unlocked
+    if (tempUnlocked) {
+      // Small timeout to allow click events to process if moving focus
+      setTimeout(() => setTempUnlocked(false), 200);
+    }
+  };
 
   return (
     <div
-      onClick={!disabled ? (e) => onOpenModal(e) : undefined}
-      className={`w-full h-full min-w-[50px] min-h-[50px] border-r border-b border-white/10 relative group transition-colors touch-manipulation
-        ${isEx ? 'bg-white/5' : ''} 
-        ${disabled ? 'opacity-50 cursor-not-allowed bg-black/20' : 'cursor-pointer hover:bg-white/10'}`}
+      ref={containerRef}
+      tabIndex={tempUnlocked ? 0 : -1} // Make focusable only when unlocked to catch blur
+      onClick={(e) => {
+        // Standard open modal logic, ONLY if not effectively locked
+        if (!effectivelyLocked) onOpenModal(e);
+      }}
+      onBlur={handleBlur}
+      className={`relative w-full h-full min-h-[40px] flex items-center justify-center outline-none ${isEx ? 'bg-indigo-900/10' : ''}`}
     >
-      {disabled && (
-        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-10 z-0 pointer-events-none">
-          <Lock size={12} />
-        </div>
-      )}
-      <div className={`w-full h-full flex items-center justify-center text-xs font-mono select-none relative z-10 ${getStyle(baseValue)}`}>
-        <span className="z-10">{displayValue}</span>
-        {hasRun && (
-          <span className="absolute text-rose-500 text-[10px] bottom-0.5 right-0.5 flex items-center justify-center leading-none drop-shadow-[0_0_5px_rgba(225,29,72,0.8)] z-20">
-            <Circle size={10} fill="currentColor" />
+
+      {/* 2-Step Logic: Show Overlay if Locked */}
+      {effectivelyLocked && <EditOverlay onClick={handleUnlock} />}
+
+      <input
+        type="text"
+        inputMode="text"
+        value={baseValue}
+        onChange={(e) => !effectivelyLocked && onChange(e.target.value)}
+        className={`w-full h-full bg-transparent text-center text-sm focus:outline-none uppercase transition-all duration-200 ${getStyle(value)} ${effectivelyLocked ? 'opacity-50 blur-[0.5px]' : 'cursor-pointer'}`}
+        disabled={disabled || effectivelyLocked}
+        readOnly={true} // Using Modal primarily
+      />
+
+      {/* Visual Markers */}
+      <div className={`absolute inset-0 pointer-events-none flex items-center justify-center transition-opacity duration-200 ${effectivelyLocked ? 'opacity-40' : 'opacity-100'}`}>
+        {value.includes('⇄') && (
+          <span className="absolute top-0.5 right-0.5 text-purple-400 z-20">
+            <ArrowRightLeft size={10} />
           </span>
         )}
         {value.includes('■') && (
@@ -549,8 +603,13 @@ const ScoreCell: React.FC<{
             <Square size={8} fill="currentColor" />
           </span>
         )}
-        {value === '●' && (
+        {/* Logic: If strictly just a run, show Big Dot. If it HAS run but isn't just '●', show Small Dot */}
+        {value === '●' ? (
           <span className="text-rose-500 text-2xl flex items-center justify-center leading-none drop-shadow-[0_0_8px_rgba(225,29,72,0.8)]">●</span>
+        ) : hasRun && (
+          <span className="absolute text-rose-500 text-[10px] bottom-0.5 right-0.5 flex items-center justify-center leading-none drop-shadow-[0_0_5px_rgba(225,29,72,0.8)] z-20">
+            <Circle size={10} fill="currentColor" />
+          </span>
         )}
       </div>
     </div>
@@ -569,11 +628,9 @@ const LineupGrid: React.FC<{
   currentInningIdx: number;
   nextBatterIdx: number;
   opposingTeam: TeamData;
-
-  isFullScreen?: boolean; // Deprecated - kept for compatibility if needed but logic removed
-  onToggleFullScreen?: () => void; // Deprecated
-  renderOverlay?: () => React.ReactNode; // Deprecated
-}> = ({ title, teamNameValue, onTeamNameChange, teamData, onUpdate, onAddColumn, theme, currentInningIdx, nextBatterIdx, opposingTeam, onAdvanceInning }) => {
+  onAdvanceInning: () => void;
+  isFullScreenMode?: boolean; // New prop for sizing logic
+}> = ({ title, teamNameValue, onTeamNameChange, teamData, onUpdate, onAddColumn, theme, currentInningIdx, nextBatterIdx, opposingTeam, onAdvanceInning, isFullScreenMode }) => {
   // isFullScreen, onToggleFullScreen, renderOverlay props are intentionally ignored to enforce external handling
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -699,7 +756,7 @@ const LineupGrid: React.FC<{
                 </div>
               </div>
 
-              <div className={`overflow-x-auto rounded-lg border border-white/10 bg-black/20 shadow-inner scrollbar-thin ${theme === 'purple' ? 'scrollbar-thumb-purple-600/50' : 'scrollbar-thumb-orange-600/50'} scrollbar-track-transparent pb-2 print-overflow-visible`}>
+              <div className={`overflow-auto rounded-lg border border-white/10 bg-black/20 shadow-inner scrollbar-thin ${theme === 'purple' ? 'scrollbar-thumb-purple-600/50' : 'scrollbar-thumb-orange-600/50'} scrollbar-track-transparent pb-2 print-overflow-visible ${isFullScreenMode ? 'flex-1 h-full' : ''}`}>
                 <div
                   className="grid min-w-max"
                   style={{
@@ -846,7 +903,8 @@ const LineupGrid: React.FC<{
                                   onChange={(val) => onUpdate(idx, 'starter', 'score', val, iIdx, atBatIdx)}
                                   onOpenModal={(e) => handleCellClick(e, idx, 'starter', iIdx, atBatIdx, score)}
                                   isEx={iIdx >= 5}
-                                  disabled={(iIdx < currentInningIdx) && !unlockedInnings.includes(iIdx)}
+                                  disabled={false} // Always enable interaction via our custom logic
+                                  isLocked={(iIdx < currentInningIdx) && !unlockedInnings.includes(iIdx)}
                                 />
                               </div>
                             )
@@ -926,6 +984,8 @@ const LineupGrid: React.FC<{
 };
 
 // --- NEW FULL SCREEN SCORE SHEET COMPONENT ---
+import { ChevronDown, ChevronUp } from 'lucide-react';
+
 const ScoreSheetFullScreen: React.FC<{
   isOpen: boolean;
   onClose: () => void;
@@ -945,10 +1005,21 @@ const ScoreSheetFullScreen: React.FC<{
   liveStatusProps: LiveGameStatusProps;
 }> = ({ isOpen, onClose, title, setNum, visitorData, localData, gameInfo, updateGameInfo, updateTeam, handleAddColumn, currentInningIdx, visitorNextBatterIdx, localNextBatterIdx, onAdvanceInning, liveStatusProps }) => {
   const [activeTeam, setActiveTeam] = useState<'visitor' | 'local'>('visitor');
+  const [isHeaderVisible, setIsHeaderVisible] = useState(true);
+
+  // Auto-hide header after 1s
+  useEffect(() => {
+    if (isOpen) {
+      setIsHeaderVisible(true);
+      const timer = setTimeout(() => {
+        setIsHeaderVisible(false);
+      }, 2000); // 2 seconds to give user time to orient
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     if (isOpen) {
-      // Small delay to ensure render ensures smooth transition, but direct is fine on click.
       // Auto-trigger immersive mode
       const enterFullScreen = async () => {
         try {
@@ -981,46 +1052,69 @@ const ScoreSheetFullScreen: React.FC<{
   if (!isOpen) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[200] bg-[#121214] flex flex-col h-[100dvh] w-screen overflow-hidden">
-      {/* 1. Top Bar */}
-      <div className="flex items-center justify-between px-4 py-2 bg-[#1e1e24] border-b border-white/10 shrink-0">
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-white/40 uppercase tracking-widest hidden md:inline">Juego</span>
-            <span className="text-sm font-black text-white">{setNum}</span>
+    <div className="fixed inset-0 z-[200] bg-[#121214] flex flex-col h-[100dvh] w-screen overflow-hidden text-white select-none">
+
+      {/* --- SLIDING HEADER CONTAINER (Game Info + Live Status) --- */}
+      <div
+        className={`fixed top-0 left-0 w-full z-40 transition-transform duration-500 ease-in-out bg-[#1e1e24] shadow-2xl border-b border-white/10 ${isHeaderVisible ? 'translate-y-0' : '-translate-y-full'}`}
+      >
+        {/* Top Info Bar */}
+        <div className="flex items-center justify-between px-4 py-2 border-b border-white/5">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-white/40 uppercase tracking-widest hidden md:inline">Juego</span>
+              <span className="text-sm font-black text-white">{setNum}</span>
+            </div>
+            <div className="h-4 w-px bg-white/10" />
+            <h2 className="text-sm md:text-lg font-bold text-white truncate max-w-[150px] md:max-w-md">{title}</h2>
           </div>
-          <div className="h-4 w-px bg-white/10" />
-          <h2 className="text-sm md:text-lg font-bold text-white truncate max-w-[150px] md:max-w-md">{title}</h2>
+          {/* Placeholder for spacing, keeping layout balanced */}
+          <div className="w-[200px]"></div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="flex bg-black/20 p-1 rounded-lg">
-            <button
-              onClick={() => setActiveTeam('visitor')}
-              className={`px-3 py-1.5 rounded-md text-xs font-bold uppercase transition-all ${activeTeam === 'visitor' ? 'bg-purple-600 text-white shadow' : 'text-white/40 hover:text-white'}`}
-            >
-              Visita
-            </button>
-            <button
-              onClick={() => setActiveTeam('local')}
-              className={`px-3 py-1.5 rounded-md text-xs font-bold uppercase transition-all ${activeTeam === 'local' ? 'bg-amber-600 text-white shadow' : 'text-white/40 hover:text-white'}`}
-            >
-              Local
-            </button>
-          </div>
-
-          <button onClick={onClose} className="w-10 h-10 flex items-center justify-center rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white transition-colors border border-red-500/30">
-            <X size={20} />
-          </button>
-        </div>
+        {/* Live Game Status (Full Width) */}
+        <LiveGameStatus {...liveStatusProps} inline={true} />
       </div>
 
-      {/* 2. Main Content Area */}
-      <div className="flex-1 overflow-auto bg-[#121214] relative">
+      {/* --- PERSISTENT CONTROLS (Always Visible) --- */}
+      <div className="fixed top-2 right-4 z-50 flex items-center gap-2">
 
-        {/* Orientation Warning Overlay (Visible only in Portrait AND Mobile) */}
-        {/* We use md:hidden to only show on mobile. portrait:flex to show in portrait. landscape:hidden to HIDE in landscape explicitly. */}
-        <div className="absolute inset-0 z-50 bg-[#1e1e24] flex flex-col items-center justify-center gap-6 p-8 text-center md:hidden portrait:flex landscape:hidden">
+        {/* Toggle Header Button */}
+        <button
+          onClick={() => setIsHeaderVisible(!isHeaderVisible)}
+          className="w-10 h-9 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 text-white backdrop-blur-md border border-white/10 transition-colors"
+        >
+          {isHeaderVisible ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+        </button>
+
+        {/* Team Switcher */}
+        <div className="flex bg-black/40 backdrop-blur-md p-1 rounded-lg border border-white/10">
+          <button
+            onClick={() => setActiveTeam('visitor')}
+            className={`px-4 py-1.5 rounded-md text-xs font-bold uppercase transition-all ${activeTeam === 'visitor' ? 'bg-purple-600 text-white shadow-lg' : 'text-white/50 hover:text-white hover:bg-white/5'}`}
+          >
+            Visita
+          </button>
+          <button
+            onClick={() => setActiveTeam('local')}
+            className={`px-4 py-1.5 rounded-md text-xs font-bold uppercase transition-all ${activeTeam === 'local' ? 'bg-amber-600 text-white shadow-lg' : 'text-white/50 hover:text-white hover:bg-white/5'}`}
+          >
+            Local
+          </button>
+        </div>
+
+        {/* Close Button */}
+        <button onClick={onClose} className="w-10 h-10 flex items-center justify-center rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white transition-colors border border-red-500/30 backdrop-blur-md">
+          <X size={20} />
+        </button>
+      </div>
+
+
+      {/* --- MAIN CONTENT (Full Screen Grid) --- */}
+      <div className="flex-1 w-full h-full relative overflow-hidden bg-[#121214]">
+
+        {/* Orientation Warning Overlay */}
+        <div className="absolute inset-0 z-[60] bg-[#1e1e24] flex flex-col items-center justify-center gap-6 p-8 text-center md:hidden portrait:flex landscape:hidden">
           <RotateCcw size={48} className="text-indigo-400 animate-spin-slow duration-[3s]" />
           <div className="max-w-xs">
             <h3 className="text-xl font-bold text-white mb-2">Gira tu dispositivo</h3>
@@ -1028,19 +1122,13 @@ const ScoreSheetFullScreen: React.FC<{
           </div>
         </div>
 
-        {/* Live Game Status (Compact) */}
-        <div className="sticky top-0 z-40 w-full bg-[#1e1e24]/90 backdrop-blur-sm border-b border-white/10 hidden md:block landscape:block">
-          <LiveGameStatus {...liveStatusProps} inline={true} />
-        </div>
+        {/* Lineup Grid Container - FORCED FULL SIZE NO SCROLL */}
+        <div className="w-full h-full p-2 pt-16 md:pt-4 flex flex-col">
+          {/* Note: pt-16 added to account for buttons if needed, but in FS mode with hidden header, we want max space. 
+              The persist buttons are top-right. The content can go up. */}
 
-        {/* Lineup Grid Container */}
-        <div className="min-w-[100vw] min-h-full p-2 portrait:hidden md:portrait:block">
-          {/* 
-                 Note: We render both but hide one to preserve state if we wanted, 
-                 but simple conditional rendering is better for performance here 
-                 unless we need to keep scroll position. Let's restart scroll. 
-               */}
-          <div className="mx-auto max-w-[1400px]">
+          <div className="flex-1 w-full h-full overflow-hidden flex flex-col relative">
+            {/* Wrapper to handle potential scale if needed, but for now just flex-1 */}
             {activeTeam === 'visitor' ? (
               <LineupGrid
                 title="Alineación Visitante"
@@ -1054,6 +1142,7 @@ const ScoreSheetFullScreen: React.FC<{
                 nextBatterIdx={visitorNextBatterIdx}
                 opposingTeam={localData}
                 onAdvanceInning={onAdvanceInning}
+                isFullScreenMode={true}
               />
             ) : (
               <LineupGrid
@@ -1068,6 +1157,7 @@ const ScoreSheetFullScreen: React.FC<{
                 nextBatterIdx={localNextBatterIdx}
                 opposingTeam={visitorData}
                 onAdvanceInning={onAdvanceInning}
+                isFullScreenMode={true}
               />
             )}
           </div>
@@ -1392,12 +1482,12 @@ const StatsTable: React.FC<{
       const v = val.toUpperCase();
       if (v.includes('H')) h++;
       if (v.includes('●')) ca++;
-      if (v.includes('S')) e++;
+      if (v.includes('E')) e++;
 
       // Calculating VB: Hit + Out + Error 
       // Note: This is a simplified logic for B5 based on provided nomenclature
       // Exclude 'EX' from VB
-      if ((v.includes('H') || v.includes('X') || v.includes('S')) && !v.includes('EX')) vb++;
+      if ((v.includes('H') || v.includes('X') || v.includes('E') || v.includes('S')) && !v.includes('EX')) vb++;
     });
 
     const ave = vb > 0 ? (h / vb).toFixed(3) : '.000';
@@ -1799,69 +1889,90 @@ const AdvancedStatsPanel: React.FC<{
     setCustomCharts(prev => prev.filter(c => c.id !== id));
   };
 
-  // --- Helper: Calculate MVP ---
-  const getMVP = (team: TeamData) => {
-    let bestPlayer = { name: '', number: '', h: 0, ca: 0, vb: 0, ave: 0, score: -1 };
+  // --- OPTIMIZATION START ---
+  // Memoize heavy calculations to prevent updates when panel is closed or charts disabled.
+  // This satisfies the requirement: "que mientras el toogle este desactivado los graficos no se esten actualizando"
 
-    const processPlayer = (p: PlayerStats) => {
-      let vb = 0, h = 0, ca = 0;
-      p.scores.flat().forEach(val => {
-        const v = val.toUpperCase();
-        if (v.includes('H')) h++;
-        if (v.includes('●')) ca++;
-        // Exclude 'EX' (Extra Inning Runner) from VB. 'EX' contains 'X', so we must check !v.includes('EX')
-        if ((v.includes('H') || v.includes('X') || v.includes('S')) && !v.includes('EX')) vb++;
-      });
-      const ave = vb > 0 ? (h / vb) : 0;
-      const score = (h * 3) + (ca * 2) + (ave * 10);
+  const shouldCalculate = isOpen && chartsEnabled;
 
-      if (score > bestPlayer.score && vb > 0) {
-        bestPlayer = { name: p.name || 'Sin Nombre', number: p.number, h, ca, vb, ave, score };
-      }
-    };
+  const { visitorMVP, localMVP } = useMemo(() => {
+    if (!shouldCalculate) return { visitorMVP: null, localMVP: null };
 
-    team.slots.forEach(slot => {
-      processPlayer(slot.starter);
-      processPlayer(slot.sub);
-    });
+    // --- Helper: Calculate MVP ---
+    const getMVP = (team: TeamData) => {
+      let bestPlayer = { name: '', number: '', h: 0, ca: 0, vb: 0, ave: 0, score: -1 };
 
-    return bestPlayer.score > -1 ? bestPlayer : null;
-  };
-
-  const visitorMVP = getMVP(visitor);
-  const localMVP = getMVP(local);
-
-  // --- Helper: Calculate Team Totals ---
-  const getTeamStats = (team: TeamData) => {
-    let vb = 0, h = 0, ca = 0, e = 0;
-    team.slots.forEach(slot => {
-      [slot.starter, slot.sub].forEach(p => {
+      const processPlayer = (p: PlayerStats) => {
+        let vb = 0, h = 0, ca = 0;
         p.scores.flat().forEach(val => {
           const v = val.toUpperCase();
           if (v.includes('H')) h++;
           if (v.includes('●')) ca++;
-          if (v.includes('S')) e++;
-          // Exclude 'EX' from VB
-          if ((v.includes('H') || v.includes('X') || v.includes('S')) && !v.includes('EX')) vb++;
+          // Exclude 'EX' (Extra Inning Runner) from VB. 'EX' contains 'X', so we must check !v.includes('EX')
+          if ((v.includes('H') || v.includes('X') || v.includes('E') || v.includes('S')) && !v.includes('EX')) vb++;
+        });
+        const ave = vb > 0 ? (h / vb) : 0;
+        const score = (h * 3) + (ca * 2) + (ave * 10);
+
+        if (score > bestPlayer.score && vb > 0) {
+          bestPlayer = { name: p.name || 'Sin Nombre', number: p.number, h, ca, vb, ave, score };
+        }
+      };
+
+      team.slots.forEach(slot => {
+        processPlayer(slot.starter);
+        processPlayer(slot.sub);
+      });
+
+      return bestPlayer.score > -1 ? bestPlayer : null;
+    };
+
+    return {
+      visitorMVP: getMVP(visitor),
+      localMVP: getMVP(local)
+    };
+  }, [shouldCalculate, visitor, local]); // Re-calc only if needed and data changes
+
+  const { vStats, lStats } = useMemo(() => {
+    if (!shouldCalculate) return { vStats: { vb: 0, h: 0, ca: 0, e: 0, ave: 0 }, lStats: { vb: 0, h: 0, ca: 0, e: 0, ave: 0 } };
+
+    // --- Helper: Calculate Team Totals ---
+    const getTeamStats = (team: TeamData) => {
+      let vb = 0, h = 0, ca = 0, e = 0;
+      team.slots.forEach(slot => {
+        [slot.starter, slot.sub].forEach(p => {
+          p.scores.flat().forEach(val => {
+            const v = val.toUpperCase();
+            if (v.includes('H')) h++;
+            if (v.includes('●')) ca++;
+            if (v.includes('E')) e++;
+            // Exclude 'EX' from VB
+            if ((v.includes('H') || v.includes('X') || v.includes('E') || v.includes('S')) && !v.includes('EX')) vb++;
+          });
         });
       });
-    });
-    return {
-      vb,
-      h,
-      ca,
-      e: Number.isNaN(e) ? 0 : e, // Ensure no NaN
-      ave: vb > 0 ? (h / vb) : 0
+      return {
+        vb,
+        h,
+        ca,
+        e: Number.isNaN(e) ? 0 : e, // Ensure no NaN
+        ave: vb > 0 ? (h / vb) : 0
+      };
     };
-  };
 
-  const vStats = getTeamStats(visitor);
-  const lStats = getTeamStats(local);
+    return {
+      vStats: getTeamStats(visitor),
+      lStats: getTeamStats(local)
+    };
+  }, [shouldCalculate, visitor, local]);
 
   // General Chart Default Data
   const defaultMetrics = ['VB', 'H', 'CA', 'AVE'];
 
   const getChartData = (metrics: string[]) => {
+    // If not calculating, return empty structures to prevent errors if render happens, though likely unused.
+    if (!shouldCalculate) return { dataV: [], dataL: [] };
+
     const maxVal = Math.max(vStats.vb, lStats.vb, 10);
     const dataV = metrics.map(m => {
       if (m === 'VB') return vStats.vb;
@@ -1929,26 +2040,41 @@ const AdvancedStatsPanel: React.FC<{
             </div>
 
             {/* --- MVP Section --- */}
-            <div>
-              <h3 className="text-sm font-bold text-white/40 uppercase tracking-widest mb-3">Jugadores Destacados (MVP)</h3>
-              <div className="grid grid-cols-2 gap-3">
-                {/* Visitor MVP */}
-                <div className="relative overflow-hidden p-3 rounded-xl bg-gradient-to-br from-purple-900/50 to-purple-600/20 border border-purple-500/30">
-                  <div className="text-[10px] font-bold text-purple-300 mb-1">{visitorName || 'VISITANTE'}</div>
-                  <div className="text-sm font-bold text-white truncate">{visitorMVP?.name || '---'}</div>
-                  <div className="text-xl font-black text-purple-400 mt-1">{visitorMVP?.ave.toFixed(3)}</div>
-                </div>
-                {/* Local MVP */}
-                <div className="relative overflow-hidden p-3 rounded-xl bg-gradient-to-br from-amber-900/50 to-amber-600/20 border border-amber-500/30">
-                  <div className="text-[10px] font-bold text-amber-300 mb-1">{localName || 'LOCAL'}</div>
-                  <div className="text-sm font-bold text-white truncate">{localMVP?.name || '---'}</div>
-                  <div className="text-xl font-black text-amber-400 mt-1">{localMVP?.ave.toFixed(3)}</div>
+            {shouldCalculate ? (
+              <div>
+                <h3 className="text-sm font-bold text-white/40 uppercase tracking-widest mb-3">Jugadores Destacados (MVP)</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  {/* Visitor MVP */}
+                  <div className="relative overflow-hidden p-3 rounded-xl bg-gradient-to-br from-purple-900/50 to-purple-600/20 border border-purple-500/30">
+                    <div className="text-[10px] font-bold text-purple-300 mb-1">{visitorName || 'VISITANTE'}</div>
+                    <div className="text-sm font-bold text-white truncate">{visitorMVP?.name || '---'}</div>
+                    <div className="text-xl font-black text-purple-400 mt-1">{visitorMVP?.ave?.toFixed(3) || '.000'}</div>
+                  </div>
+                  {/* Local MVP */}
+                  <div className="relative overflow-hidden p-3 rounded-xl bg-gradient-to-br from-amber-900/50 to-amber-600/20 border border-amber-500/30">
+                    <div className="text-[10px] font-bold text-amber-300 mb-1">{localName || 'LOCAL'}</div>
+                    <div className="text-sm font-bold text-white truncate">{localMVP?.name || '---'}</div>
+                    <div className="text-xl font-black text-amber-400 mt-1">{localMVP?.ave?.toFixed(3) || '.000'}</div>
+                  </div>
                 </div>
               </div>
-            </div>
+            ) : (
+              // INFO MESSAGE WHEN DISABLED
+              (!chartsEnabled && isOpen) && (
+                <div className="flex flex-col items-center justify-center p-8 bg-white/5 border border-white/10 border-dashed rounded-xl text-center animate-in fade-in duration-500">
+                  <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center mb-3">
+                    <TrendingUp size={24} className="text-white/30" />
+                  </div>
+                  <h3 className="text-sm font-bold text-white mb-1">Módulo Detenido</h3>
+                  <p className="text-xs text-white/50 max-w-[200px]">
+                    Para ver estadísticas y gráficos en tiempo real, activa el módulo usando el interruptor superior.
+                  </p>
+                </div>
+              )
+            )}
 
             {/* --- Charts Section (Toggleable) --- */}
-            {chartsEnabled && (
+            {shouldCalculate && (
               <div className="animate-in fade-in slide-in-from-bottom duration-500">
 
                 {/* --- General Chart --- */}
@@ -2368,7 +2494,7 @@ const SingleSetScoreCard: React.FC<{
         const vUpper = value.toUpperCase();
         if (vUpper.includes('X')) actionDesc = 'OUT';
         if (vUpper.includes('H')) actionDesc = 'HIT';
-        if (vUpper.includes('S')) actionDesc = 'ERROR (Salvado)';
+        if (vUpper.includes('E')) actionDesc = 'ERROR (Salvado)';
         if (vUpper.includes('●')) actionDesc = actionDesc ? actionDesc + ' + CARRERA' : 'CARRERA';
         if (value === 'Ex1B') actionDesc = 'Corredor en 1B por Extrainning';
         if (value === 'Ex2B') actionDesc = 'Corredor en 2B por Extrainning';
@@ -2444,8 +2570,8 @@ const SingleSetScoreCard: React.FC<{
           nextInningScores[isVisitor ? 'visitor' : 'local'] = targetScores;
         }
 
-        const hadError = prevValue.includes('S');
-        const hasError = value.includes('S');
+        const hadError = prevValue.includes('E');
+        const hasError = value.includes('E');
         const errorTeam = team === 'visitorTeam' ? 'local' : 'visitor';
 
         if (!hadError && hasError) {
@@ -3024,7 +3150,7 @@ const SingleSetScoreCard: React.FC<{
                 <span className="font-black text-green-400 text-sm">H</span> <span className="text-white/80">Hit</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="font-black text-yellow-400 text-sm">S</span> <span className="text-white/80">Salvado (Error)</span>
+                <span className="font-black text-yellow-400 text-sm">E</span> <span className="text-white/80">Error</span>
               </div>
               <div className="flex items-center gap-2 col-span-2 border-t border-white/5 pt-2 mt-1">
                 <ArrowRightLeft size={14} className="text-purple-300" /> <span className="text-white/80">Sustitución</span>
@@ -3186,9 +3312,9 @@ const GeneralStatsModal: React.FC<{ isOpen: boolean, onClose: () => void }> = ({
               const v = val.toUpperCase();
               if (v.includes('H')) data.h++;
               if (v.includes('●')) data.ca++;
-              if (v.includes('S')) data.e++;
+              if (v.includes('E')) data.e++;
               // Exclude 'EX' from VB
-              if ((v.includes('H') || v.includes('X') || v.includes('S')) && !v.includes('EX')) data.vb++;
+              if ((v.includes('H') || v.includes('X') || v.includes('E') || v.includes('S')) && !v.includes('EX')) data.vb++;
             });
           });
         });
@@ -3218,7 +3344,7 @@ const GeneralStatsModal: React.FC<{ isOpen: boolean, onClose: () => void }> = ({
         [slot.starter, slot.sub].forEach((p: any) => {
           p.scores.flat().forEach((val: string) => {
             if (val.toUpperCase().includes('H')) vHits++;
-            if (val.toUpperCase().includes('S')) vErrors++; // Assuming S is Error on Base? Or just check set.errors if reliable?
+            if (val.toUpperCase().includes('E')) vErrors++; // Assuming S is Error on Base? Or just check set.errors if reliable?
             // Actually set.errors might be string "0" in state, let's trust set.errors if available, but for players stats we counted manually.
             // Let's use the explicit counters from the set state if available for consistency with top bar
           });
@@ -3228,7 +3354,7 @@ const GeneralStatsModal: React.FC<{ isOpen: boolean, onClose: () => void }> = ({
         [slot.starter, slot.sub].forEach((p: any) => {
           p.scores.flat().forEach((val: string) => {
             if (val.toUpperCase().includes('H')) lHits++;
-            if (val.toUpperCase().includes('S')) lErrors++;
+            if (val.toUpperCase().includes('E')) lErrors++;
           });
         });
       });
@@ -3450,8 +3576,8 @@ const PrintableMatchStats: React.FC = () => {
               const v = val.toUpperCase();
               if (v.includes('H')) data.h++;
               if (v.includes('●')) data.ca++;
-              if (v.includes('S')) data.e++;
-              if (v.includes('H') || v.includes('X') || v.includes('S')) data.vb++;
+              if (v.includes('E')) data.e++;
+              if (v.includes('H') || v.includes('X') || v.includes('E') || v.includes('S')) data.vb++;
             });
           });
         });
@@ -3476,8 +3602,8 @@ const PrintableMatchStats: React.FC = () => {
         return h;
       };
 
-      set.visitorTeam.slots.forEach((slot: any) => { [slot.starter, slot.sub].forEach((p: any) => { p.scores.flat().forEach((val: string) => { if (val.toUpperCase().includes('S')) vErrors++; }); }); });
-      set.localTeam.slots.forEach((slot: any) => { [slot.starter, slot.sub].forEach((p: any) => { p.scores.flat().forEach((val: string) => { if (val.toUpperCase().includes('S')) lErrors++; }); }); });
+      set.visitorTeam.slots.forEach((slot: any) => { [slot.starter, slot.sub].forEach((p: any) => { p.scores.flat().forEach((val: string) => { if (val.toUpperCase().includes('E')) vErrors++; }); }); });
+      set.localTeam.slots.forEach((slot: any) => { [slot.starter, slot.sub].forEach((p: any) => { p.scores.flat().forEach((val: string) => { if (val.toUpperCase().includes('E')) lErrors++; }); }); });
 
       const vH = countHits(set.visitorTeam);
       const lH = countHits(set.localTeam);
