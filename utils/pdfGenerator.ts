@@ -24,38 +24,38 @@ export const generatePDF = async (element: HTMLElement, options: PDFGeneratorOpt
 
     // Create a wrapper to apply specific print styling and structure
     const wrapper = document.createElement('div');
-    wrapper.className = 'pdf-export-wrapper bg-[#0f172a] text-white p-8 font-sans';
+    wrapper.className = 'pdf-export-wrapper bg-white text-black p-8 font-sans'; // White Background
     wrapper.style.width = '100%';
     wrapper.style.minHeight = '100vh';
 
     // --- 1. HEADER (Logo + Brand) ---
     const header = document.createElement('div');
-    header.className = 'flex items-center justify-between border-b border-white/20 pb-4 mb-6';
+    header.className = 'flex items-center justify-between border-b-2 border-black pb-4 mb-6';
     header.innerHTML = `
     <div class="flex items-center gap-4">
       <img src="/logo.png" alt="B5Tools" class="h-12 w-12 object-contain" />
       <div>
-        <h1 class="text-2xl font-bold text-white tracking-wide">B5Tools</h1>
-        <p class="text-sm text-white/60 uppercase tracking-widest">Score Professional</p>
+        <h1 class="text-2xl font-black text-black tracking-wide">B5Tools</h1>
+        <p class="text-sm text-gray-500 uppercase tracking-widest font-bold">Score Professional</p>
       </div>
     </div>
     <div class="text-right">
-      <p class="text-xs text-white/40">Reporte Oficial</p>
+      <p class="text-xs text-gray-400 font-bold">Reporte Oficial</p>
     </div>
   `;
 
     // --- 2. FOOTER (Branding + Date) ---
     const footer = document.createElement('div');
-    footer.className = 'flex items-center justify-between border-t border-white/20 pt-4 mt-8';
+    footer.className = 'flex items-center justify-between border-t border-gray-200 pt-4 mt-8';
     const date = new Date().toLocaleDateString('es-ES', {
         year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'
     });
     footer.innerHTML = `
-    <p class="text-xs text-white/40">Generado con B5Tools • 2025 • All rights reserved</p>
-    <p class="text-xs text-white/40">${date}</p>
+    <p class="text-xs text-gray-400">Generado con B5Tools • 2025 • All rights reserved</p>
+    <p class="text-xs text-gray-400 font-mono">${date}</p>
   `;
 
-    // --- 3. ASSEMBLE ---
+    // --- 3. ASSEMBLE & MOUNT ---
     // Apply fix for dark mode text colors in the cloned content
     // We force text colors to ensure readability on the dark PDF background
     // Apply fix for dark mode text colors in the cloned content
@@ -95,30 +95,22 @@ export const generatePDF = async (element: HTMLElement, options: PDFGeneratorOpt
     wrapper.appendChild(content);
     wrapper.appendChild(footer);
 
+    // CRITICAL FIX: Append to body so html2canvas can calculate layout!
+    // We place it off-screen fixed or absolute to ensure it renders but doesn't mess up scroll
+    wrapper.style.position = 'fixed';
+    wrapper.style.top = '0';
+    wrapper.style.left = '0';
+    wrapper.style.zIndex = '-9999'; // Behind everything
+    document.body.appendChild(wrapper);
+
     // Opt configuration
     const opt = {
         margin: margin,
         filename: filename,
         image: { type: 'jpeg', quality: imageQuality },
-        html2canvas: {
-            scale: scale,
-            useCORS: true,
-            backgroundColor: '#0f172a', // Enforce dark background in canvas
-            logging: false
-        },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        html2canvas: { scale: scale, useCORS: true, backgroundColor: '#ffffff', scrollY: 0 },
+        jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' }
     };
-
-    // Generate
-    // Note: We used to rely on 'element' but now we use 'wrapper'. 
-    // However, wrapper needs to be in the DOM to be rendered correctly by some engines, 
-    // but html2pdf can handle off-screen elements if passed directly. 
-    // Better practice: Append to body hidden, render, remove.
-
-    wrapper.style.position = 'absolute';
-    wrapper.style.left = '-9999px';
-    wrapper.style.top = '0';
-    document.body.appendChild(wrapper);
 
     try {
         await html2pdf().set(opt).from(wrapper).save();

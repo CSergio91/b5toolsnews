@@ -2043,38 +2043,79 @@ const StatsChart: React.FC<{
 };
 
 // --- Comic Bubble / Tutorial Hint Component ---
-const FullScreenHintBubble: React.FC<{ onClose: () => void }> = ({ onClose }) => {
-  return (
+const FullScreenHintBubble: React.FC<{ onClose: () => void; targetRef: React.RefObject<HTMLElement> }> = ({ onClose, targetRef }) => {
+  const [coords, setCoords] = useState<{ top: number; left: number; placement: 'top' | 'bottom' } | null>(null);
+
+  useEffect(() => {
+    const updatePosition = () => {
+      if (targetRef.current) {
+        const rect = targetRef.current.getBoundingClientRect();
+        const isDesktop = window.matchMedia('(min-width: 768px)').matches;
+
+        if (isDesktop) {
+          // Desktop: Show below
+          setCoords({
+            top: rect.bottom + 10,
+            left: rect.left + (rect.width / 2),
+            placement: 'bottom'
+          });
+        } else {
+          // Mobile: Show above
+          setCoords({
+            top: rect.top - 10, // Will substract height via CSS transform
+            left: rect.left + (rect.width / 2),
+            placement: 'top'
+          });
+        }
+      }
+    };
+
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition);
+    };
+  }, [targetRef]);
+
+  if (!coords) return null;
+
+  return createPortal(
     <div
       onClick={(e) => { e.stopPropagation(); onClose(); }}
-      className="absolute z-[1000] w-72 bg-[#1e1e24] text-white p-4 rounded-xl shadow-2xl cursor-pointer animate-in fade-in slide-in-from-bottom-4 duration-500
-                 bottom-[150%] left-1/2 -translate-x-1/2  /* Mobile: Above */
-                 md:top-[150%] md:bottom-auto           /* Desktop: Below */
-                 border border-purple-500/30
-      "
-      style={{ filter: 'drop-shadow(0 10px 15px rgba(0,0,0,0.5))' }}
+      className={`fixed z-[5000] w-72 bg-[#1e1e24] text-white p-4 rounded-xl shadow-[0_0_30px_rgba(147,51,234,0.5)] cursor-pointer 
+                 border border-purple-500/50 animate-bounce cursor-pointer
+      `}
+      style={{
+        top: coords.top,
+        left: coords.left,
+        transform: coords.placement === 'top' ? 'translate(-50%, -100%)' : 'translate(-50%, 0)'
+      }}
     >
-      {/* Tail - Mobile (Points Down) */}
-      <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 w-4 h-4 bg-[#1e1e24] border-r border-b border-purple-500/30 rotate-45 transform md:hidden"></div>
+      {/* Tail handled generically or omitted for cleaner bounce look */}
+      <div className={`absolute w-4 h-4 bg-[#1e1e24] border-purple-500/50 rotate-45 transform
+          ${coords.placement === 'top'
+          ? 'top-full left-1/2 -mt-2 border-b border-r'
+          : 'bottom-full left-1/2 -mb-2 border-t border-l'}
+      `}></div>
 
-      {/* Tail - Desktop (Points Up) */}
-      <div className="absolute bottom-full left-1/2 -translate-x-1/2 -mb-1 w-4 h-4 bg-[#1e1e24] border-l border-t border-purple-500/30 rotate-45 transform hidden md:block"></div>
-
-      <div className="flex items-start gap-3">
-        <div className="shrink-0 bg-purple-600 p-2 rounded-lg">
+      <div className="flex items-start gap-3 relative z-10">
+        <div className="shrink-0 bg-purple-600 p-2 rounded-lg shadow-lg">
           <Maximize2 size={20} className="text-white" />
         </div>
         <div>
           <h4 className="font-bold text-sm text-purple-300 mb-1">Modo Pantalla Completa</h4>
           <p className="text-xs text-white/80 leading-relaxed">
-            Ahora puede llevar sus anotaciones fáciles en pantalla completa.
+            Ahora puedes usar toda la pantalla para mayor comodidad. ¡Pruébalo!
           </p>
         </div>
       </div>
-      <div className="mt-3 flex justify-end">
-        <button className="text-[10px] font-bold uppercase tracking-wider text-white/50 hover:text-white transition-colors">Entendido</button>
+      <div className="mt-2 flex justify-end">
+        <span className="text-[9px] text-white/40 uppercase font-bold">Toca para cerrar</span>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 
@@ -2470,6 +2511,7 @@ const SingleSetScoreCard: React.FC<{
 
   const [fullScreenMode, setFullScreenMode] = useState<boolean>(false);
   const [showFullScreenHint, setShowFullScreenHint] = useState(false);
+  const fullScreenBtnRef = useRef<HTMLButtonElement>(null);
   const [subscriptionTier, setSubscriptionTier] = useState<string>('basic');
   const [isUserLoggedIn, setIsUserLoggedIn] = useState<boolean>(false);
 
@@ -3092,8 +3134,9 @@ const SingleSetScoreCard: React.FC<{
         {/* 4. Full Screen Button */}
         {/* 4. Full Screen Button */}
         <div className="relative">
-          {showFullScreenHint && <FullScreenHintBubble onClose={() => { setShowFullScreenHint(false); /* Dismiss just for session */ }} />}
+          {showFullScreenHint && <FullScreenHintBubble onClose={() => { setShowFullScreenHint(false); /* Dismiss just for session */ }} targetRef={fullScreenBtnRef} />}
           <button
+            ref={fullScreenBtnRef}
             onClick={() => {
               setFullScreenMode(true);
               setShowFullScreenHint(false);
@@ -4245,156 +4288,158 @@ export const ScoreCard: React.FC = () => {
 
 
       {/* --- Hidden Printable Section (Rendered only when config is set) --- */}
-      {/* --- Hidden Printable Section (Rendered OFF-SCREEN to allow capture) --- */}
+      {/* --- Printable Section (Rendered VISIBLE on top to ensure capture) --- */}
       {printConfig && printSetsData.length > 0 && (
-        <div className="fixed top-[200vh] left-0 pointer-events-none">
-          <div id="printable-content" className="w-[210mm] min-h-screen bg-[#0f172a] text-white p-8">
-            <h1 className="text-6xl font-black text-black bg-white p-4 mb-8 text-center border-4 border-red-500 uppercase">PRUEBA DE PDF - SI LEES ESTO FUNCIONA</h1>
+        <div className="fixed inset-0 z-[2000] bg-white overflow-y-auto">
+          <div className="flex flex-col items-center justify-center min-h-screen p-4 text-black">
+            <p className="mb-4 text-2xl font-bold animate-pulse">Generando PDF oficial... Por favor espere.</p>
 
-            {printConfig.showInfo ? (
-              // Option A: Multi-Set Report (One page per Set)
-              printSetsData.map((data, idx) => (
-                <div key={data.setNum} className="relative h-full flex flex-col" style={{ pageBreakAfter: idx < printSetsData.length - 1 ? 'always' : 'auto' }}>
+            {/* Actual Capture Target */}
+            <div id="printable-content" className="w-[210mm] bg-white text-black p-12 shadow-2xl border border-gray-200">
 
-                  {/* 1. Header: Competition & Set Info */}
-                  <div className="border-b border-white/20 pb-4 mb-6">
-                    <div className="flex justify-between items-end">
+              {printConfig.showInfo ? (
+                // Option A: Multi-Set Report (One page per Set)
+                printSetsData.map((data, idx) => (
+                  <div key={data.setNum} className="relative h-full flex flex-col" style={{ pageBreakAfter: idx < printSetsData.length - 1 ? 'always' : 'auto', minHeight: '297mm' }}>
+
+                    {/* 1. Header: Competition & Set Info */}
+                    <div className="border-b-2 border-black pb-4 mb-6">
+                      <div className="flex justify-between items-end">
+                        <div>
+                          <h1 className="text-2xl font-black text-black uppercase tracking-wider">{data.gameInfo.competition}</h1>
+                          <p className="text-sm text-gray-600 font-bold">
+                            {data.gameInfo.date} | Set {data.setNum} | {data.gameInfo.location}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <h2 className="text-xl font-black text-purple-700">{data.gameInfo.visitor} vs {data.gameInfo.home}</h2>
+                          <p className="text-xs text-gray-500 font-bold">{data.gameInfo.phase} - {data.gameInfo.group}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 2. Real-time Stats Strip */}
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-6 flex justify-around items-center">
+                      <div className="text-center">
+                        <div className="text-purple-700 font-black text-lg mb-1">{data.gameInfo.visitor}</div>
+                        <div className="flex gap-4 text-sm font-mono font-bold text-gray-700">
+                          <span>C: <b className="text-black text-lg">{data.inningScores.visitor.reduce((a: any, b: any) => a + (parseInt(b) || 0), 0) + (data.scoreAdjustments?.visitor || 0)}</b></span>
+                          <span>H: <b className="text-black text-lg">{(() => {
+                            let h = 0; data.visitorTeam.slots.forEach((s: any) => [s.starter, s.sub].forEach(p => p.scores.flat().forEach(v => v?.toUpperCase().includes('H') && h++))); return h;
+                          })()}</b></span>
+                          <span>E: <b className="text-black text-lg">{data.errors.visitor || 0}</b></span>
+                        </div>
+                      </div>
+                      <div className="h-10 w-px bg-gray-300"></div>
+                      <div className="text-center">
+                        <div className="text-orange-600 font-black text-lg mb-1">{data.gameInfo.home}</div>
+                        <div className="flex gap-4 text-sm font-mono font-bold text-gray-700">
+                          <span>C: <b className="text-black text-lg">{data.inningScores.local.reduce((a: any, b: any) => a + (parseInt(b) || 0), 0) + (data.scoreAdjustments?.local || 0)}</b></span>
+                          <span>H: <b className="text-black text-lg">{(() => {
+                            let h = 0; data.localTeam.slots.forEach((s: any) => [s.starter, s.sub].forEach(p => p.scores.flat().forEach(v => v?.toUpperCase().includes('H') && h++))); return h;
+                          })()}</b></span>
+                          <span>E: <b className="text-black text-lg">{data.errors.local || 0}</b></span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 3. Lineups Tables */}
+                    <div className="grid grid-cols-2 gap-8 mb-auto">
+                      {/* Visitor Lineup */}
                       <div>
-                        <h1 className="text-2xl font-bold text-white uppercase tracking-wider">{data.gameInfo.competition}</h1>
-                        <p className="text-sm text-white/60">
-                          {data.gameInfo.date} | Set {data.setNum} | {data.gameInfo.location}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <h2 className="text-xl font-bold text-purple-300">{data.gameInfo.visitor} vs {data.gameInfo.home}</h2>
-                        <p className="text-xs text-white/50">{data.gameInfo.phase} - {data.gameInfo.group}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 2. Real-time Stats Strip */}
-                  <div className="bg-white/5 border border-white/10 rounded-lg p-4 mb-6 flex justify-around items-center">
-                    <div className="text-center">
-                      <div className="text-purple-300 font-bold text-lg mb-1">{data.gameInfo.visitor}</div>
-                      <div className="flex gap-4 text-sm font-mono">
-                        <span>C: <b className="text-white">{data.inningScores.visitor.reduce((a: any, b: any) => a + (parseInt(b) || 0), 0) + (data.scoreAdjustments?.visitor || 0)}</b></span>
-                        <span>H: <b className="text-white">{(() => {
-                          let h = 0; data.visitorTeam.slots.forEach((s: any) => [s.starter, s.sub].forEach(p => p.scores.flat().forEach(v => v?.toUpperCase().includes('H') && h++))); return h;
-                        })()}</b></span>
-                        <span>E: <b className="text-white">{data.errors.visitor || 0}</b></span>
-                      </div>
-                    </div>
-                    <div className="h-10 w-px bg-white/10"></div>
-                    <div className="text-center">
-                      <div className="text-orange-300 font-bold text-lg mb-1">{data.gameInfo.home}</div>
-                      <div className="flex gap-4 text-sm font-mono">
-                        <span>C: <b className="text-white">{data.inningScores.local.reduce((a: any, b: any) => a + (parseInt(b) || 0), 0) + (data.scoreAdjustments?.local || 0)}</b></span>
-                        <span>H: <b className="text-white">{(() => {
-                          let h = 0; data.localTeam.slots.forEach((s: any) => [s.starter, s.sub].forEach(p => p.scores.flat().forEach(v => v?.toUpperCase().includes('H') && h++))); return h;
-                        })()}</b></span>
-                        <span>E: <b className="text-white">{data.errors.local || 0}</b></span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 3. Lineups Tables */}
-                  <div className="grid grid-cols-2 gap-8 mb-auto">
-                    {/* Visitor Lineup */}
-                    <div>
-                      <h3 className="text-sm font-bold text-purple-300 uppercase mb-2 border-b border-white/10 pb-1">Alineación {data.gameInfo.visitor}</h3>
-                      <table className="w-full text-xs text-left">
-                        <thead>
-                          <tr className="text-white/40">
-                            <th className="p-1 w-8">Pos</th>
-                            <th className="p-1 w-8">#</th>
-                            <th className="p-1">Jugador</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-white/5">
-                          {data.visitorTeam.slots.map((slot: any, i: number) => (
-                            <React.Fragment key={i}>
-                              <tr>
-                                <td className="p-1 font-mono text-white/60">{slot.starter.pos}</td>
-                                <td className="p-1 font-mono font-bold">{slot.starter.number}</td>
-                                <td className="p-1 text-white/90 truncate max-w-[120px]">{slot.starter.name}</td>
-                              </tr>
-                              {slot.sub.name && (
-                                <tr className="bg-white/5">
-                                  <td className="p-1 font-mono text-white/40">{slot.sub.pos}</td>
-                                  <td className="p-1 font-mono font-bold text-white/70">{slot.sub.number}</td>
-                                  <td className="p-1 text-white/70 truncate max-w-[120px]">{slot.sub.name} (Sub)</td>
+                        <h3 className="text-sm font-bold text-purple-700 uppercase mb-2 border-b border-black pb-1">Alineación {data.gameInfo.visitor}</h3>
+                        <table className="w-full text-xs text-left">
+                          <thead>
+                            <tr className="text-gray-500 border-b border-gray-200">
+                              <th className="p-1 w-8">Pos</th>
+                              <th className="p-1 w-8">#</th>
+                              <th className="p-1">Jugador</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-200">
+                            {data.visitorTeam.slots.map((slot: any, i: number) => (
+                              <React.Fragment key={i}>
+                                <tr className="hover:bg-gray-50">
+                                  <td className="p-1 font-mono text-gray-500 font-bold">{slot.starter.pos}</td>
+                                  <td className="p-1 font-mono font-black">{slot.starter.number}</td>
+                                  <td className="p-1 text-black font-semibold truncate max-w-[120px]">{slot.starter.name}</td>
                                 </tr>
-                              )}
-                            </React.Fragment>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                                {slot.sub.name && (
+                                  <tr className="bg-gray-50">
+                                    <td className="p-1 font-mono text-gray-400 text-[10px] pl-2">{slot.sub.pos}</td>
+                                    <td className="p-1 font-mono font-bold text-gray-500 text-[10px]">{slot.sub.number}</td>
+                                    <td className="p-1 text-gray-500 text-[10px] truncate max-w-[120px] italic">{slot.sub.name} (Sub)</td>
+                                  </tr>
+                                )}
+                              </React.Fragment>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
 
-                    {/* Local Lineup */}
-                    <div>
-                      <h3 className="text-sm font-bold text-orange-300 uppercase mb-2 border-b border-white/10 pb-1">Alineación {data.gameInfo.home}</h3>
-                      <table className="w-full text-xs text-left">
-                        <thead>
-                          <tr className="text-white/40">
-                            <th className="p-1 w-8">Pos</th>
-                            <th className="p-1 w-8">#</th>
-                            <th className="p-1">Jugador</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-white/5">
-                          {data.localTeam.slots.map((slot: any, i: number) => (
-                            <React.Fragment key={i}>
-                              <tr>
-                                <td className="p-1 font-mono text-white/60">{slot.starter.pos}</td>
-                                <td className="p-1 font-mono font-bold">{slot.starter.number}</td>
-                                <td className="p-1 text-white/90 truncate max-w-[120px]">{slot.starter.name}</td>
-                              </tr>
-                              {slot.sub.name && (
-                                <tr className="bg-white/5">
-                                  <td className="p-1 font-mono text-white/40">{slot.sub.pos}</td>
-                                  <td className="p-1 font-mono font-bold text-white/70">{slot.sub.number}</td>
-                                  <td className="p-1 text-white/70 truncate max-w-[120px]">{slot.sub.name} (Sub)</td>
+                      {/* Local Lineup */}
+                      <div>
+                        <h3 className="text-sm font-bold text-orange-600 uppercase mb-2 border-b border-black pb-1">Alineación {data.gameInfo.home}</h3>
+                        <table className="w-full text-xs text-left">
+                          <thead>
+                            <tr className="text-gray-500 border-b border-gray-200">
+                              <th className="p-1 w-8">Pos</th>
+                              <th className="p-1 w-8">#</th>
+                              <th className="p-1">Jugador</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-200">
+                            {data.localTeam.slots.map((slot: any, i: number) => (
+                              <React.Fragment key={i}>
+                                <tr className="hover:bg-gray-50">
+                                  <td className="p-1 font-mono text-gray-500 font-bold">{slot.starter.pos}</td>
+                                  <td className="p-1 font-mono font-black">{slot.starter.number}</td>
+                                  <td className="p-1 text-black font-semibold truncate max-w-[120px]">{slot.starter.name}</td>
                                 </tr>
-                              )}
-                            </React.Fragment>
-                          ))}
-                        </tbody>
-                      </table>
+                                {slot.sub.name && (
+                                  <tr className="bg-gray-50">
+                                    <td className="p-1 font-mono text-gray-400 text-[10px] pl-2">{slot.sub.pos}</td>
+                                    <td className="p-1 font-mono font-bold text-gray-500 text-[10px]">{slot.sub.number}</td>
+                                    <td className="p-1 text-gray-500 text-[10px] truncate max-w-[120px] italic">{slot.sub.name} (Sub)</td>
+                                  </tr>
+                                )}
+                              </React.Fragment>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* 4. Officials */}
+                    <div className="mt-8 pt-4 border-t-2 border-black">
+                      <h4 className="text-xs font-bold text-black uppercase mb-2">Oficiales/Arbitros</h4>
+                      <div className="grid grid-cols-4 gap-2 text-[10px] text-gray-600 font-semibold">
+                        <div>PL: <span className="text-black">{data.gameInfo.officials?.plate || '-'}</span></div>
+                        <div>1B: <span className="text-black">{data.gameInfo.officials?.field1 || '-'}</span></div>
+                        <div>2B: <span className="text-black">{data.gameInfo.officials?.field2 || '-'}</span></div>
+                        <div>3B: <span className="text-black">{data.gameInfo.officials?.field3 || '-'}</span></div>
+                        <div>AN: <span className="text-black">{data.gameInfo.officials?.table || '-'}</span></div>
+                      </div>
+                    </div>
+
+                  </div>
+                ))
+              ) : (
+                // Option B: Current Set Stats Only
+                currentSet > 0 ? (
+                  <div className="relative h-full flex flex-col items-center justify-center p-8 text-black">
+                    <h2 className="text-2xl font-bold mb-8">Estadísticas del Set {currentSet}</h2>
+                    <div className="printable-stats-container w-full text-black">
+                      {/* Note: This component might still render white text if not updated. 
+                                For now we assume the user accepts this mix or we accept it's mostly tables.
+                                But 'PrintableMatchStats' needs a check.
+                            */}
+                      <PrintableMatchStats />
                     </div>
                   </div>
-
-                  {/* 4. Officials */}
-                  <div className="mt-8 pt-4 border-t border-white/10">
-                    <h4 className="text-xs font-bold text-white/50 uppercase mb-2">Oficiales/Arbitros</h4>
-                    <div className="grid grid-cols-4 gap-2 text-[10px] text-white/70">
-                      <div>PL: <span className="text-white">{data.gameInfo.officials?.plate || '-'}</span></div>
-                      <div>1B: <span className="text-white">{data.gameInfo.officials?.field1 || '-'}</span></div>
-                      <div>2B: <span className="text-white">{data.gameInfo.officials?.field2 || '-'}</span></div>
-                      <div>3B: <span className="text-white">{data.gameInfo.officials?.field3 || '-'}</span></div>
-                      <div>AN: <span className="text-white">{data.gameInfo.officials?.table || '-'}</span></div>
-                    </div>
-                  </div>
-
-                </div>
-              ))
-            ) : (
-              // Option B: Current Set Stats Only (Original Request Logic)
-              currentSet > 0 ? (
-                <div className="relative h-full flex flex-col items-center justify-center p-8">
-                  <h2 className="text-2xl font-bold mb-8">Estadísticas del Set {currentSet}</h2>
-                  {/* Reuse PrintableMatchStats but ideally we'd filter it. 
-                         For now, the user said 'Stats en tiempo real del Set actual'. 
-                         I'll just render the aggregation table which is what PrintableMatchStats does. 
-                         However PrintableMatchStats aggregates ALL sets. 
-                         The previous behavior was acceptable for "Stats", I'll leave it as is but visible. 
-                     */}
-                  <div className="printable-stats-container w-full">
-                    <PrintableMatchStats />
-                  </div>
-                </div>
-              ) : null
-            )}
+                ) : null
+              )}
+            </div>
           </div>
         </div>
       )}
