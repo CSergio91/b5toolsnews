@@ -44,7 +44,8 @@ import {
   Check,
   Zap,
   Crown,
-  Ban
+  Ban,
+  Menu as MenuIcon,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -2038,26 +2039,38 @@ const StatsChart: React.FC<{
 
 };
 
-// --- Comic Bubble Hint Component ---
+// --- Comic Bubble / Tutorial Hint Component ---
 const FullScreenHintBubble: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   return (
     <div
       onClick={(e) => { e.stopPropagation(); onClose(); }}
-      className="absolute z-[1000] w-64 p-4 bg-white text-black rounded-[2rem] shadow-2xl cursor-pointer animate-bounce-slow
-                 bottom-[140%] left-1/2 -translate-x-1/2  /* Mobile: Above (bottom header) */
-                 md:top-[140%] md:bottom-auto          /* Desktop: Below (top header) */
+      className="absolute z-[1000] w-72 bg-[#1e1e24] text-white p-4 rounded-xl shadow-2xl cursor-pointer animate-in fade-in slide-in-from-bottom-4 duration-500
+                 bottom-[150%] left-1/2 -translate-x-1/2  /* Mobile: Above */
+                 md:top-[150%] md:bottom-auto           /* Desktop: Below */
+                 border border-purple-500/30
       "
-      style={{ filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.3))' }}
+      style={{ filter: 'drop-shadow(0 10px 15px rgba(0,0,0,0.5))' }}
     >
       {/* Tail - Mobile (Points Down) */}
-      <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 w-6 h-6 bg-white rotate-45 transform md:hidden clip-path-polygon"></div>
+      <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 w-4 h-4 bg-[#1e1e24] border-r border-b border-purple-500/30 rotate-45 transform md:hidden"></div>
 
       {/* Tail - Desktop (Points Up) */}
-      <div className="absolute bottom-full left-1/2 -translate-x-1/2 -mb-1 w-6 h-6 bg-white rotate-45 transform hidden md:block clip-path-polygon"></div>
+      <div className="absolute bottom-full left-1/2 -translate-x-1/2 -mb-1 w-4 h-4 bg-[#1e1e24] border-l border-t border-purple-500/30 rotate-45 transform hidden md:block"></div>
 
-      <p className="text-sm font-bold text-center leading-tight comic-font">
-        Ahora puede Anotar sus partidos desde Pantalla completa, da click aqui para probar
-      </p>
+      <div className="flex items-start gap-3">
+        <div className="shrink-0 bg-purple-600 p-2 rounded-lg">
+          <Maximize2 size={20} className="text-white" />
+        </div>
+        <div>
+          <h4 className="font-bold text-sm text-purple-300 mb-1">Modo Pantalla Completa</h4>
+          <p className="text-xs text-white/80 leading-relaxed">
+            Ahora puede llevar sus anotaciones fáciles en pantalla completa.
+          </p>
+        </div>
+      </div>
+      <div className="mt-3 flex justify-end">
+        <button className="text-[10px] font-bold uppercase tracking-wider text-white/50 hover:text-white transition-colors">Entendido</button>
+      </div>
     </div>
   );
 };
@@ -2449,6 +2462,7 @@ const SingleSetScoreCard: React.FC<{
   const [showStats, setShowStats] = useState(false);
   const [showAdvancedStats, setShowAdvancedStats] = useState(false);
   const [showAdvanceModal, setShowAdvanceModal] = useState(false);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
 
   const [fullScreenMode, setFullScreenMode] = useState<boolean>(false);
   const [showFullScreenHint, setShowFullScreenHint] = useState(false);
@@ -2456,8 +2470,14 @@ const SingleSetScoreCard: React.FC<{
   const [isUserLoggedIn, setIsUserLoggedIn] = useState<boolean>(false);
 
   useEffect(() => {
-    const hasSeen = localStorage.getItem('hasSeenFullScreenHint');
-    if (!hasSeen) setShowFullScreenHint(true);
+    // --- Persistence Logic: Show only first 3 times or until actioned ---
+    const hasActioned = localStorage.getItem('hasUsedFullScreen') === 'true';
+    const viewCount = parseInt(localStorage.getItem('fullScreenHintViews') || '0');
+
+    if (!hasActioned && viewCount < 3) {
+      setShowFullScreenHint(true);
+      localStorage.setItem('fullScreenHintViews', (viewCount + 1).toString());
+    }
 
     supabase.auth.getUser().then(async ({ data }) => {
       if (data.user) {
@@ -3052,7 +3072,8 @@ const SingleSetScoreCard: React.FC<{
       <div className="flex flex-row items-center gap-1 md:gap-2 px-2 py-2 w-full overflow-x-auto scrollbar-hide md:max-w-[1400px] md:mx-auto">
 
         {/* 1. Logo */}
-        <div className="shrink-0 hidden md:block">
+        {/* 1. Logo - Visible on Mobile now, Back Action */}
+        <div className="shrink-0 cursor-pointer" onClick={() => window.history.back()}>
           <img src="/logo.png" alt="B5Tools" className="h-8 w-8 object-contain" />
         </div>
 
@@ -3069,16 +3090,19 @@ const SingleSetScoreCard: React.FC<{
         {/* 4. Full Screen Button */}
         {/* 4. Full Screen Button */}
         <div className="relative">
-          {showFullScreenHint && <FullScreenHintBubble onClose={() => { setShowFullScreenHint(false); localStorage.setItem('hasSeenFullScreenHint', 'true'); }} />}
+          {showFullScreenHint && <FullScreenHintBubble onClose={() => { setShowFullScreenHint(false); /* Dismiss just for session */ }} />}
           <button
             onClick={() => {
               setFullScreenMode(true);
-              if (showFullScreenHint) {
-                setShowFullScreenHint(false);
-                localStorage.setItem('hasSeenFullScreenHint', 'true');
-              }
+              setShowFullScreenHint(false);
+              localStorage.setItem('hasUsedFullScreen', 'true'); // Actioned! Never show again.
             }}
-            className="shrink-0 p-2 rounded-md bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 flex items-center gap-2 transition-colors relative z-[1001]"
+            className={`shrink-0 p-2 rounded-md flex items-center gap-2 transition-all duration-500 relative z-[1001]
+              ${showFullScreenHint
+                ? 'bg-purple-600 text-white shadow-[0_0_20px_rgba(147,51,234,0.6)] ring-2 ring-purple-400 ring-offset-2 ring-offset-[#1e1e24]'
+                : 'bg-blue-500/10 text-blue-400 hover:bg-blue-500/20'
+              }
+            `}
             title="Pantalla Completa"
           >
             <Maximize2 size={18} className="stroke-[3]" />
@@ -3118,50 +3142,79 @@ const SingleSetScoreCard: React.FC<{
 
         <div className="flex-1 min-w-[10px]"></div>
 
-        {/* 6. Swap Button */}
-        <button
-          onClick={swapTeams}
-          className="shrink-0 p-2 rounded-full bg-orange-500/10 text-orange-400 hover:bg-orange-500/20"
-          title="Alternar Equipos"
-        >
-          <ArrowRightLeft size={18} />
-        </button>
+        {/* --- DESKTOP ACTIONS (Inline) --- */}
+        <div className="hidden md:flex items-center gap-2">
 
-        {/* 7. Sidebar Toggle */}
-        <button
-          onClick={() => setShowSidebar(!showSidebar)}
-          className="shrink-0 p-2 rounded-full bg-white/5 text-white/70 hover:text-white"
-          title={showSidebar ? "Ocultar Panel" : "Mostrar Panel"}
-        >
-          {showSidebar ? <PanelRightClose size={18} /> : <PanelRightOpen size={18} />}
-        </button>
+          {/* 6. Swap Button */}
+          <button onClick={swapTeams} className="shrink-0 p-2 rounded-full bg-orange-500/10 text-orange-400 hover:bg-orange-500/20" title="Alternar Equipos">
+            <ArrowRightLeft size={18} />
+          </button>
 
-        {/* 8. Stats Toggle */}
-        <button
-          onClick={() => setShowStats(!showStats)}
-          className={`shrink-0 p-2 rounded-full transition-colors ${showStats ? 'bg-indigo-500 text-white shadow-lg' : 'bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20'}`}
-          title="Estadísticas"
-        >
-          <LineChart size={18} />
-        </button>
+          {/* 7. Sidebar Toggle */}
+          <button onClick={() => setShowSidebar(!showSidebar)} className="shrink-0 p-2 rounded-full bg-white/5 text-white/70 hover:text-white" title={showSidebar ? "Ocultar Panel" : "Mostrar Panel"}>
+            {showSidebar ? <PanelRightClose size={18} /> : <PanelRightOpen size={18} />}
+          </button>
 
-        {/* 9. General Stats (Advanced) */}
-        <button
-          onClick={() => setShowAdvancedStats(!showAdvancedStats)}
-          className={`shrink-0 p-2 rounded-full transition-colors ${showAdvancedStats ? 'bg-pink-500 text-white shadow-lg' : 'bg-pink-500/10 text-pink-400 hover:bg-pink-500/20'}`}
-          title="Estadísticas Generales"
-        >
-          <BarChart size={18} />
-        </button>
+          {/* 8. Stats */}
+          <button onClick={() => setShowStats(!showStats)} className={`shrink-0 p-2 rounded-full transition-colors ${showStats ? 'bg-indigo-500 text-white shadow-lg' : 'bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20'}`} title="Estadísticas">
+            <LineChart size={18} />
+          </button>
 
-        {/* 10. Print Button */}
-        <button
-          onClick={handlePrint}
-          className="shrink-0 p-2 rounded-full bg-green-500/10 text-green-300 hover:bg-green-500/20"
-          title="Imprimir"
-        >
-          <Printer size={18} />
-        </button>
+          {/* 9. Advanced Stats */}
+          <button onClick={() => setShowAdvancedStats(!showAdvancedStats)} className={`shrink-0 p-2 rounded-full transition-colors ${showAdvancedStats ? 'bg-pink-500 text-white shadow-lg' : 'bg-pink-500/10 text-pink-400 hover:bg-pink-500/20'}`} title="Estadísticas Avanzadas">
+            <BarChart size={18} />
+          </button>
+
+          {/* 10. Print */}
+          <button onClick={handlePrint} className="shrink-0 p-2 rounded-full bg-green-500/10 text-green-300 hover:bg-green-500/20" title="Imprimir">
+            <Printer size={18} />
+          </button>
+        </div>
+
+        {/* --- MOBILE ACTIONS (Combined Menu) --- */}
+        <div className="md:hidden flex items-center gap-2 relative">
+          {/* Always show Swap on Mobile (Critical) */}
+          <button onClick={swapTeams} className="shrink-0 p-2 rounded-full bg-orange-500/10 text-orange-400" title="Alternar Equipos">
+            <ArrowRightLeft size={18} />
+          </button>
+
+          {/* Hamburger Trigger */}
+          <button
+            onClick={() => setShowMobileMenu(!showMobileMenu)}
+            className={`shrink-0 p-2 rounded-lg transition-colors ${showMobileMenu ? 'bg-white/20 text-white' : 'bg-white/5 text-white/70'}`}
+          >
+            <MenuIcon size={20} />
+          </button>
+
+          {/* Mobile Dropdown Menu */}
+          {showMobileMenu && (
+            <>
+              <div className="fixed inset-0 z-[200] bg-black/50" onClick={() => setShowMobileMenu(false)} />
+              <div className="fixed bottom-24 right-4 w-56 bg-[#1e1e24] border border-white/10 rounded-xl shadow-2xl p-2 z-[201] flex flex-col gap-1 animate-in fade-in zoom-in-95 duration-200 origin-bottom-right">
+
+                <button onClick={() => { setShowSidebar(!showSidebar); setShowMobileMenu(false); }} className="p-3 rounded-lg hover:bg-white/5 flex items-center gap-3 text-sm text-white/80">
+                  {showSidebar ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}
+                  <span>{showSidebar ? 'Ocultar Panel' : 'Mostrar Panel'}</span>
+                </button>
+
+                <button onClick={() => { setShowStats(!showStats); setShowMobileMenu(false); }} className={`p-3 rounded-lg flex items-center gap-3 text-sm ${showStats ? 'bg-indigo-500 text-white' : 'hover:bg-white/5 text-white/80'}`}>
+                  <LineChart size={16} /> <span>Estadísticas</span>
+                </button>
+
+                <button onClick={() => { setShowAdvancedStats(!showAdvancedStats); setShowMobileMenu(false); }} className={`p-3 rounded-lg flex items-center gap-3 text-sm ${showAdvancedStats ? 'bg-pink-500 text-white' : 'hover:bg-white/5 text-white/80'}`}>
+                  <BarChart size={16} /> <span>Avanzadas</span>
+                </button>
+
+                <div className="h-px bg-white/10 my-1"></div>
+
+                <button onClick={() => { handlePrint(); setShowMobileMenu(false); }} className="p-3 rounded-lg hover:bg-white/5 flex items-center gap-3 text-sm text-green-400">
+                  <Printer size={16} /> <span>Imprimir / PDF</span>
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+
 
       </div>
     </div>
@@ -4068,9 +4121,9 @@ export const ScoreCard: React.FC = () => {
   }, []);
 
   const handleSetChange = (set: number) => {
-    setLoading(true);
+    // setLoading(true); // Removed to prevent header flash/reload perception
     setCurrentSet(set);
-    setTimeout(() => setLoading(false), 50);
+    // setTimeout(() => setLoading(false), 50);
   };
 
   const handleWinnerUpdate = (winner: { name: string; score: string; isVisitor: boolean } | null) => {
