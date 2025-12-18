@@ -811,12 +811,12 @@ const LineupGrid: React.FC<{
   // Responsive Layout Constants
   const compact = isFullScreenMode; // Trigger compact mode when in full screen
 
-  const COL_INDEX = compact ? 22 : 30;
-  const COL_NO = compact ? 28 : 40;
-  const COL_NAME = compact ? 110 : 160;
-  const COL_SEX = compact ? 35 : 50;
-  const COL_POS = compact ? 40 : 50;
-  const COL_SCORE = compact ? 38 : 50;
+  const COL_INDEX = compact ? 18 : 30;
+  const COL_NO = compact ? 24 : 40;
+  const COL_NAME = compact ? 90 : 160;
+  const COL_SEX = compact ? 28 : 50;
+  const COL_POS = compact ? 32 : 50;
+  const COL_SCORE = compact ? 34 : 50;
 
   const LEFT_INDEX = 0;
   const LEFT_NO = COL_INDEX;
@@ -895,7 +895,7 @@ const LineupGrid: React.FC<{
                     return (
                       <div
                         key={iIdx}
-                        className={`border-b border-l border-white/20 shadow-sm flex flex-col items-center justify-between py-1 px-1 
+                        className={`border-b border-l border-white/20 shadow-sm flex flex-col items-center justify-between ${compact ? 'py-0' : 'py-1'} px-1 
                           ${isExtra ? 'bg-indigo-900/50 text-indigo-200' : themeColors.headerBg + ' ' + themeColors.headerText} 
                           ${effectiveLocked ? 'opacity-50' : 'opacity-100'} 
                           transition-all duration-300 relative`}
@@ -970,7 +970,7 @@ const LineupGrid: React.FC<{
                     return (
                       <React.Fragment key={playerNum}>
                         {/* STARTER ROW */}
-                        <div className={`${starterRowClass} flex items-center justify-center ${theme === 'amber' ? 'text-orange-400' : 'text-purple-400'} font-bold border-b border-white/10 ${compact ? 'text-xs' : 'text-lg'} sticky z-10 backdrop-blur-md left-sticky transition-colors duration-300`} style={{ left: LEFT_INDEX }}>{playerNum}</div>
+                        <div className={`${starterRowClass} flex items-center justify-center ${theme === 'amber' ? 'text-orange-400' : 'text-purple-400'} font-bold border-b border-white/10 ${compact ? 'text-[10px]' : 'text-lg'} sticky z-10 backdrop-blur-md left-sticky transition-colors duration-300`} style={{ left: LEFT_INDEX }}>{playerNum}</div>
 
                         <div className={`border-b border-r border-white/10 sticky z-10 ${starterRowClass} backdrop-blur-md left-sticky transition-colors duration-300`} style={{ left: LEFT_NO }}>
                           <input
@@ -1146,6 +1146,47 @@ const ScoreSheetFullScreen: React.FC<{
   const [activeTeam, setActiveTeam] = useState<'visitor' | 'local'>('visitor');
   const [isHeaderVisible, setIsHeaderVisible] = useState(true);
 
+  // Scaling State
+  const containerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+
+  // Auto-Scale Logic
+  useEffect(() => {
+    const handleResize = () => {
+      if (containerRef.current && contentRef.current) {
+        const container = containerRef.current;
+        const content = contentRef.current;
+
+        const { width: containerWidth, height: containerHeight } = container.getBoundingClientRect();
+
+        // Use scrollWidth/Height to capture full size includin overflow
+        const contentWidth = content.scrollWidth;
+        const contentHeight = content.scrollHeight;
+
+        if (contentWidth > 0 && contentHeight > 0) {
+          const scaleX = containerWidth / contentWidth;
+          const scaleY = containerHeight / contentHeight;
+
+          // Use Math.min to ensure it fits BOTH dimensions (as requested: "if fields added it autsocales")
+          // We use 0.98 to provide a safe margin
+          const newScale = Math.min(scaleX, scaleY) * 0.98;
+          setScale(newScale);
+        }
+      }
+    };
+
+    // Trigger on mount, resize, and activeTeam change (content change)
+    window.addEventListener('resize', handleResize);
+    // Slight delay to allow DOM to render
+    const timer = setTimeout(handleResize, 100);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      clearTimeout(timer);
+    };
+  }, [activeTeam, isHeaderVisible, isOpen]);
+
   // Auto-hide header after 1s
   useEffect(() => {
     if (isOpen) {
@@ -1262,43 +1303,51 @@ const ScoreSheetFullScreen: React.FC<{
         </div>
 
         {/* Lineup Grid Container - FORCED FULL SIZE NO SCROLL */}
-        <div className="w-full h-full p-2 pt-16 md:pt-4 flex flex-col">
+        <div className="w-full h-full p-2 pt-16 md:pt-4 portrait:pt-20 landscape:p-0 flex flex-col">
           {/* Note: pt-16 added to account for buttons if needed, but in FS mode with hidden header, we want max space. 
               The persist buttons are top-right. The content can go up. */}
 
-          <div className="flex-1 w-full h-full overflow-hidden flex flex-col relative">
-            {/* Wrapper to handle potential scale if needed, but for now just flex-1 */}
-            {activeTeam === 'visitor' ? (
-              <LineupGrid
-                title="Alineación Visitante"
-                teamNameValue={gameInfo.visitor}
-                onTeamNameChange={(val) => updateGameInfo('visitor', val)}
-                teamData={visitorData}
-                onUpdate={(idx, type, field, val, iIdx, abIdx, errorCulprit) => updateTeam('visitorTeam', idx, type, field, val, iIdx, abIdx, errorCulprit)}
-                onAddColumn={(iIdx) => handleAddColumn(iIdx, 'visitor')}
-                theme="purple"
-                currentInningIdx={currentInningIdx}
-                nextBatterIdx={visitorNextBatterIdx}
-                opposingTeam={localData}
-                onAdvanceInning={onAdvanceInning}
-                isFullScreenMode={true}
-              />
-            ) : (
-              <LineupGrid
-                title="Alineación Local"
-                teamNameValue={gameInfo.home}
-                onTeamNameChange={(val) => updateGameInfo('home', val)}
-                teamData={localData}
-                onUpdate={(idx, type, field, val, iIdx, abIdx, errorCulprit) => updateTeam('localTeam', idx, type, field, val, iIdx, abIdx, errorCulprit)}
-                onAddColumn={(iIdx) => handleAddColumn(iIdx, 'local')}
-                theme="amber"
-                currentInningIdx={currentInningIdx}
-                nextBatterIdx={localNextBatterIdx}
-                opposingTeam={visitorData}
-                onAdvanceInning={onAdvanceInning}
-                isFullScreenMode={true}
-              />
-            )}
+          <div ref={containerRef} className="flex-1 w-full h-full overflow-hidden flex items-center justify-start relative pl-2">
+            <div
+              ref={contentRef}
+              style={{
+                transform: `scale(${scale})`,
+                transformOrigin: 'left center', // Anchor left
+                width: 'max-content'
+              }}
+            >
+              {activeTeam === 'visitor' ? (
+                <LineupGrid
+                  title="Alineación Visitante"
+                  teamNameValue={gameInfo.visitor}
+                  onTeamNameChange={(val) => updateGameInfo('visitor', val)}
+                  teamData={visitorData}
+                  onUpdate={(idx, type, field, val, iIdx, abIdx, errorCulprit) => updateTeam('visitorTeam', idx, type, field, val, iIdx, abIdx, errorCulprit)}
+                  onAddColumn={(iIdx) => handleAddColumn(iIdx, 'visitor')}
+                  theme="purple"
+                  currentInningIdx={currentInningIdx}
+                  nextBatterIdx={visitorNextBatterIdx}
+                  opposingTeam={localData}
+                  onAdvanceInning={onAdvanceInning}
+                  isFullScreenMode={true}
+                />
+              ) : (
+                <LineupGrid
+                  title="Alineación Local"
+                  teamNameValue={gameInfo.home}
+                  onTeamNameChange={(val) => updateGameInfo('home', val)}
+                  teamData={localData}
+                  onUpdate={(idx, type, field, val, iIdx, abIdx, errorCulprit) => updateTeam('localTeam', idx, type, field, val, iIdx, abIdx, errorCulprit)}
+                  onAddColumn={(iIdx) => handleAddColumn(iIdx, 'local')}
+                  theme="amber"
+                  currentInningIdx={currentInningIdx}
+                  nextBatterIdx={localNextBatterIdx}
+                  opposingTeam={visitorData}
+                  onAdvanceInning={onAdvanceInning}
+                  isFullScreenMode={true}
+                />
+              )}
+            </div>
           </div>
         </div>
       </div>
