@@ -46,8 +46,10 @@ import {
   Crown,
   Ban,
   Menu as MenuIcon,
+  Download,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { generatePDF } from '../utils/pdfGenerator';
 
 // --- Types for State Management ---
 
@@ -239,7 +241,8 @@ const ResetConfirmModal: React.FC<{
   isOpen: boolean;
   onConfirm: () => void;
   onCancel: () => void;
-}> = ({ isOpen, onConfirm, onCancel }) => {
+  onPrint: () => void;
+}> = ({ isOpen, onConfirm, onCancel, onPrint }) => {
   if (!isOpen) return null;
 
   return (
@@ -258,10 +261,10 @@ const ResetConfirmModal: React.FC<{
 
         <div className="flex flex-col gap-3">
           <button
-            onClick={() => window.print()}
+            onClick={onPrint}
             className="w-full px-4 py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 rounded-lg border border-blue-500/30 font-semibold transition-colors flex items-center justify-center gap-2 mb-2"
           >
-            <Printer size={16} /> Guardar PDF / Imprimir
+            <Download size={16} /> Guardar PDF / Imprimir
           </button>
 
           <div className="flex gap-3 justify-center">
@@ -2454,7 +2457,8 @@ const SingleSetScoreCard: React.FC<{
   currentSet: number;
   setWinners: ({ name: string; score: string; isVisitor: boolean } | null)[];
   onSetChange: (set: number) => void;
-}> = ({ setNum, onWinnerUpdate, currentSet, setWinners, onSetChange }) => {
+  onPrint: () => void;
+}> = ({ setNum, onWinnerUpdate, currentSet, setWinners, onSetChange, onPrint }) => {
   const [state, setState] = useState<ScoreCardState>(initialState);
   const [loaded, setLoaded] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true);
@@ -3061,9 +3065,7 @@ const SingleSetScoreCard: React.FC<{
 
 
 
-  const handlePrint = () => {
-    window.print();
-  };
+
 
   return (<>
     {/* --- Sticky Tab Navigation (Moved Up) --- */}
@@ -3166,8 +3168,8 @@ const SingleSetScoreCard: React.FC<{
           </button>
 
           {/* 10. Print */}
-          <button onClick={handlePrint} className="shrink-0 p-2 rounded-full bg-green-500/10 text-green-300 hover:bg-green-500/20" title="Imprimir">
-            <Printer size={18} />
+          <button onClick={onPrint} className="shrink-0 p-2 rounded-full bg-green-500/10 text-green-300 hover:bg-green-500/20" title="Descargar PDF">
+            <Download size={18} />
           </button>
         </div>
 
@@ -3207,8 +3209,8 @@ const SingleSetScoreCard: React.FC<{
 
                 <div className="h-px bg-white/10 my-1"></div>
 
-                <button onClick={() => { handlePrint(); setShowMobileMenu(false); }} className="p-3 rounded-lg hover:bg-white/5 flex items-center gap-3 text-sm text-green-400">
-                  <Printer size={16} /> <span>Imprimir / PDF</span>
+                <button onClick={() => { onPrint(); setShowMobileMenu(false); }} className="p-3 rounded-lg hover:bg-white/5 flex items-center gap-3 text-sm text-green-400">
+                  <Download size={16} /> <span>Descargar PDF</span>
                 </button>
               </div>
             </>
@@ -3253,7 +3255,7 @@ const SingleSetScoreCard: React.FC<{
       `}</style>
 
       <WinnerModal winner={state.winner} onClose={() => setState(prev => ({ ...prev, winner: null }))} />
-      <ResetConfirmModal isOpen={showResetConfirm} onConfirm={confirmReset} onCancel={() => setShowResetConfirm(false)} />
+      <ResetConfirmModal isOpen={showResetConfirm} onConfirm={confirmReset} onCancel={() => setShowResetConfirm(false)} onPrint={onPrint} />
       <AdvanceInningModal
         isOpen={showAdvanceModal}
         onConfirm={confirmAdvanceInning}
@@ -4006,7 +4008,7 @@ const PrintConfigModal: React.FC<{
       <div className="bg-slate-900 border border-white/10 p-6 rounded-2xl shadow-2xl max-w-sm w-full no-print">
         <div className="flex justify-between items-center mb-6">
           <h3 className="text-xl font-bold text-white flex items-center gap-2">
-            <Printer className="text-purple-400" /> Descargar PDF
+            <Download className="text-purple-400" /> Descargar PDF
           </h3>
           <button onClick={onClose} className="text-white/50 hover:text-white"><X size={20} /></button>
         </div>
@@ -4096,22 +4098,47 @@ export const ScoreCard: React.FC = () => {
   const [matchWinner, setMatchWinner] = useState<{ name: string; score: string; setsWon: number } | null>(null);
   const [printConfigModalOpen, setPrintConfigModalOpen] = useState(false);
   const [printConfig, setPrintConfig] = useState<PrintConfig | null>(null);
+  const [printSetsData, setPrintSetsData] = useState<any[]>([]);
   const [generalStatsOpen, setGeneralStatsOpen] = useState(false);
 
   // New View Mode State for Mobile/Tablet Optimization
 
 
-  const handlePrintRequest = () => {
+  const handlePrint = () => {
     setPrintConfigModalOpen(true);
   };
 
-  const executePrint = (config: PrintConfig) => {
+  const executePrint = async (config: PrintConfig) => {
     setPrintConfigModalOpen(false);
+
+    // Load ALL sets for Multi-Set Report
+    try {
+      const setsData = [];
+      for (let i = 1; i <= 3; i++) {
+        const saved = localStorage.getItem(`b5_scorekeeper_set_${i}`);
+        if (saved) {
+          setsData.push({ setNum: i, ...JSON.parse(saved) });
+        }
+      }
+      setPrintSetsData(setsData);
+    } catch (e) { console.error("Error loading print data", e); }
+
     setPrintConfig(config);
-    // Give React time to render the print view
-    setTimeout(() => {
-      window.print();
-    }, 100);
+
+    // Allow React to render the printable content first
+    setTimeout(async () => {
+      const element = document.getElementById('printable-content');
+      if (element) {
+        // Show loading via toast (optional, user will see the print ref temporarily if we don't hide it)
+        // Ideally we should use a global loader or toast here.
+        await generatePDF(element, {
+          filename: `Reporte_Partido_${new Date().toISOString().split('T')[0]}.pdf`
+        });
+        setPrintConfig(null); // Cleanup
+      } else {
+        console.error("Printable content not found");
+      }
+    }, 500);
   };
 
   useEffect(() => {
@@ -4204,6 +4231,7 @@ export const ScoreCard: React.FC = () => {
               currentSet={currentSet}
               setWinners={setWinners}
               onSetChange={handleSetChange}
+              onPrint={handlePrint}
             />
           </div>
 
@@ -4215,6 +4243,161 @@ export const ScoreCard: React.FC = () => {
       )}
 
 
+
+      {/* --- Hidden Printable Section (Rendered only when config is set) --- */}
+      {/* --- Hidden Printable Section (Rendered OFF-SCREEN to allow capture) --- */}
+      {printConfig && printSetsData.length > 0 && (
+        <div className="fixed top-[200vh] left-0 pointer-events-none">
+          <div id="printable-content" className="w-[210mm] min-h-screen bg-[#0f172a] text-white p-8">
+            <h1 className="text-6xl font-black text-black bg-white p-4 mb-8 text-center border-4 border-red-500 uppercase">PRUEBA DE PDF - SI LEES ESTO FUNCIONA</h1>
+
+            {printConfig.showInfo ? (
+              // Option A: Multi-Set Report (One page per Set)
+              printSetsData.map((data, idx) => (
+                <div key={data.setNum} className="relative h-full flex flex-col" style={{ pageBreakAfter: idx < printSetsData.length - 1 ? 'always' : 'auto' }}>
+
+                  {/* 1. Header: Competition & Set Info */}
+                  <div className="border-b border-white/20 pb-4 mb-6">
+                    <div className="flex justify-between items-end">
+                      <div>
+                        <h1 className="text-2xl font-bold text-white uppercase tracking-wider">{data.gameInfo.competition}</h1>
+                        <p className="text-sm text-white/60">
+                          {data.gameInfo.date} | Set {data.setNum} | {data.gameInfo.location}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <h2 className="text-xl font-bold text-purple-300">{data.gameInfo.visitor} vs {data.gameInfo.home}</h2>
+                        <p className="text-xs text-white/50">{data.gameInfo.phase} - {data.gameInfo.group}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 2. Real-time Stats Strip */}
+                  <div className="bg-white/5 border border-white/10 rounded-lg p-4 mb-6 flex justify-around items-center">
+                    <div className="text-center">
+                      <div className="text-purple-300 font-bold text-lg mb-1">{data.gameInfo.visitor}</div>
+                      <div className="flex gap-4 text-sm font-mono">
+                        <span>C: <b className="text-white">{data.inningScores.visitor.reduce((a: any, b: any) => a + (parseInt(b) || 0), 0) + (data.scoreAdjustments?.visitor || 0)}</b></span>
+                        <span>H: <b className="text-white">{(() => {
+                          let h = 0; data.visitorTeam.slots.forEach((s: any) => [s.starter, s.sub].forEach(p => p.scores.flat().forEach(v => v?.toUpperCase().includes('H') && h++))); return h;
+                        })()}</b></span>
+                        <span>E: <b className="text-white">{data.errors.visitor || 0}</b></span>
+                      </div>
+                    </div>
+                    <div className="h-10 w-px bg-white/10"></div>
+                    <div className="text-center">
+                      <div className="text-orange-300 font-bold text-lg mb-1">{data.gameInfo.home}</div>
+                      <div className="flex gap-4 text-sm font-mono">
+                        <span>C: <b className="text-white">{data.inningScores.local.reduce((a: any, b: any) => a + (parseInt(b) || 0), 0) + (data.scoreAdjustments?.local || 0)}</b></span>
+                        <span>H: <b className="text-white">{(() => {
+                          let h = 0; data.localTeam.slots.forEach((s: any) => [s.starter, s.sub].forEach(p => p.scores.flat().forEach(v => v?.toUpperCase().includes('H') && h++))); return h;
+                        })()}</b></span>
+                        <span>E: <b className="text-white">{data.errors.local || 0}</b></span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 3. Lineups Tables */}
+                  <div className="grid grid-cols-2 gap-8 mb-auto">
+                    {/* Visitor Lineup */}
+                    <div>
+                      <h3 className="text-sm font-bold text-purple-300 uppercase mb-2 border-b border-white/10 pb-1">Alineación {data.gameInfo.visitor}</h3>
+                      <table className="w-full text-xs text-left">
+                        <thead>
+                          <tr className="text-white/40">
+                            <th className="p-1 w-8">Pos</th>
+                            <th className="p-1 w-8">#</th>
+                            <th className="p-1">Jugador</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5">
+                          {data.visitorTeam.slots.map((slot: any, i: number) => (
+                            <React.Fragment key={i}>
+                              <tr>
+                                <td className="p-1 font-mono text-white/60">{slot.starter.pos}</td>
+                                <td className="p-1 font-mono font-bold">{slot.starter.number}</td>
+                                <td className="p-1 text-white/90 truncate max-w-[120px]">{slot.starter.name}</td>
+                              </tr>
+                              {slot.sub.name && (
+                                <tr className="bg-white/5">
+                                  <td className="p-1 font-mono text-white/40">{slot.sub.pos}</td>
+                                  <td className="p-1 font-mono font-bold text-white/70">{slot.sub.number}</td>
+                                  <td className="p-1 text-white/70 truncate max-w-[120px]">{slot.sub.name} (Sub)</td>
+                                </tr>
+                              )}
+                            </React.Fragment>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Local Lineup */}
+                    <div>
+                      <h3 className="text-sm font-bold text-orange-300 uppercase mb-2 border-b border-white/10 pb-1">Alineación {data.gameInfo.home}</h3>
+                      <table className="w-full text-xs text-left">
+                        <thead>
+                          <tr className="text-white/40">
+                            <th className="p-1 w-8">Pos</th>
+                            <th className="p-1 w-8">#</th>
+                            <th className="p-1">Jugador</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5">
+                          {data.localTeam.slots.map((slot: any, i: number) => (
+                            <React.Fragment key={i}>
+                              <tr>
+                                <td className="p-1 font-mono text-white/60">{slot.starter.pos}</td>
+                                <td className="p-1 font-mono font-bold">{slot.starter.number}</td>
+                                <td className="p-1 text-white/90 truncate max-w-[120px]">{slot.starter.name}</td>
+                              </tr>
+                              {slot.sub.name && (
+                                <tr className="bg-white/5">
+                                  <td className="p-1 font-mono text-white/40">{slot.sub.pos}</td>
+                                  <td className="p-1 font-mono font-bold text-white/70">{slot.sub.number}</td>
+                                  <td className="p-1 text-white/70 truncate max-w-[120px]">{slot.sub.name} (Sub)</td>
+                                </tr>
+                              )}
+                            </React.Fragment>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* 4. Officials */}
+                  <div className="mt-8 pt-4 border-t border-white/10">
+                    <h4 className="text-xs font-bold text-white/50 uppercase mb-2">Oficiales/Arbitros</h4>
+                    <div className="grid grid-cols-4 gap-2 text-[10px] text-white/70">
+                      <div>PL: <span className="text-white">{data.gameInfo.officials?.plate || '-'}</span></div>
+                      <div>1B: <span className="text-white">{data.gameInfo.officials?.field1 || '-'}</span></div>
+                      <div>2B: <span className="text-white">{data.gameInfo.officials?.field2 || '-'}</span></div>
+                      <div>3B: <span className="text-white">{data.gameInfo.officials?.field3 || '-'}</span></div>
+                      <div>AN: <span className="text-white">{data.gameInfo.officials?.table || '-'}</span></div>
+                    </div>
+                  </div>
+
+                </div>
+              ))
+            ) : (
+              // Option B: Current Set Stats Only (Original Request Logic)
+              currentSet > 0 ? (
+                <div className="relative h-full flex flex-col items-center justify-center p-8">
+                  <h2 className="text-2xl font-bold mb-8">Estadísticas del Set {currentSet}</h2>
+                  {/* Reuse PrintableMatchStats but ideally we'd filter it. 
+                         For now, the user said 'Stats en tiempo real del Set actual'. 
+                         I'll just render the aggregation table which is what PrintableMatchStats does. 
+                         However PrintableMatchStats aggregates ALL sets. 
+                         The previous behavior was acceptable for "Stats", I'll leave it as is but visible. 
+                     */}
+                  <div className="printable-stats-container w-full">
+                    <PrintableMatchStats />
+                  </div>
+                </div>
+              ) : null
+            )}
+          </div>
+        </div>
+      )}
 
       <MatchWinnerModal matchWinner={matchWinner} onClose={() => setMatchWinner(null)} />
       <GeneralStatsModal isOpen={generalStatsOpen} onClose={() => setGeneralStatsOpen(false)} />
