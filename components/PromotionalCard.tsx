@@ -82,7 +82,11 @@ export const PromotionalCard: React.FC<PromotionalCardProps> = ({ isVisible, onC
 
     return (
         <div
-            className={`fixed bottom-0 md:bottom-6 right-0 md:right-6 z-[9999] w-full md:w-[360px] perspective-1000 transition-all duration-500 ease-out transform ${isVisible ? 'translate-y-0 md:translate-x-0 opacity-100' : 'translate-y-[120%] md:translate-x-[120%] opacity-0'}`}
+            className={`fixed bottom-4 left-0 right-0 mx-auto z-[2000] w-[90%] max-w-[320px] md:max-w-sm perspective-1000 transition-all duration-500 ease-out transform 
+            ${isVisible
+                    ? 'translate-y-0 opacity-100' // Visible: In place
+                    : 'translate-y-[120%] opacity-0' // Hidden: Slide down
+                }`}
         >
             {/* Card Container with 3D Transform */}
             <div className={`relative w-full transition-transform duration-700 transform-style-3d ${isFlipped ? 'rotate-y-180' : ''}`}>

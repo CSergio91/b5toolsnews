@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { GlassInput, GlassTitle } from './GlassInput';
-import { SubscriptionModal } from './SubscriptionModal';
+import { SubscriptionModal, SubscriptionPlans, useSubscription } from './SubscriptionModal';
 import {
   Clock,
   ArrowRightLeft,
@@ -40,7 +40,11 @@ import {
   PlusCircle,
   HelpCircle,
   TrendingUp,
-  Home
+  Home,
+  Check,
+  Zap,
+  Crown,
+  Ban
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -2031,6 +2035,59 @@ const StatsChart: React.FC<{
       }
     </div >
   );
+
+};
+
+// --- Comic Bubble Hint Component ---
+const FullScreenHintBubble: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+  return (
+    <div
+      onClick={(e) => { e.stopPropagation(); onClose(); }}
+      className="absolute z-[1000] w-64 p-4 bg-white text-black rounded-[2rem] shadow-2xl cursor-pointer animate-bounce-slow
+                 bottom-[140%] left-1/2 -translate-x-1/2  /* Mobile: Above (bottom header) */
+                 md:top-[140%] md:bottom-auto          /* Desktop: Below (top header) */
+      "
+      style={{ filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.3))' }}
+    >
+      {/* Tail - Mobile (Points Down) */}
+      <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 w-6 h-6 bg-white rotate-45 transform md:hidden clip-path-polygon"></div>
+
+      {/* Tail - Desktop (Points Up) */}
+      <div className="absolute bottom-full left-1/2 -translate-x-1/2 -mb-1 w-6 h-6 bg-white rotate-45 transform hidden md:block clip-path-polygon"></div>
+
+      <p className="text-sm font-bold text-center leading-tight comic-font">
+        Ahora puede Anotar sus partidos desde Pantalla completa, da click aqui para probar
+      </p>
+    </div>
+  );
+};
+
+
+// --- Inline Subscription View using Reuseable Component ---
+const PanelSubscriptionView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+  const { currentTier, loading, handleUpdatePlan } = useSubscription();
+
+  return (
+    <div className="absolute inset-0 bg-[#0f0e1a] z-50 flex flex-col animate-in fade-in slide-in-from-right duration-300">
+      <div className="p-4 border-b border-white/10 flex items-center justify-between bg-gradient-to-r from-purple-900/40 to-slate-900">
+        <h3 className="font-bold text-white flex items-center gap-2">
+          <Ban size={18} className="text-purple-400" /> Mejorar Plan
+        </h3>
+        <button onClick={onClose} className="p-1 hover:bg-white/10 rounded-full text-white/50 hover:text-white"><X size={18} /></button>
+      </div>
+      <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+        <SubscriptionPlans
+          currentTier={currentTier}
+          onUpdate={(tier) => {
+            handleUpdatePlan(tier);
+            // Optionally close on success or let user close
+          }}
+          loading={loading}
+          mode="inline"
+        />
+      </div>
+    </div>
+  );
 };
 
 const AdvancedStatsPanel: React.FC<{
@@ -2041,7 +2098,8 @@ const AdvancedStatsPanel: React.FC<{
   visitorName: string;
   localName: string;
   plan: string;
-}> = ({ isOpen, onClose, visitor, local, visitorName, localName, plan }) => {
+  isUserLoggedIn: boolean;
+}> = ({ isOpen, onClose, visitor, local, visitorName, localName, plan, isUserLoggedIn }) => {
   const [customCharts, setCustomCharts] = useState<{ id: number, type: 'line' | 'bar', metrics: string[] }[]>([]);
   const [newChartMode, setNewChartMode] = useState(false);
   const [newChartType, setNewChartType] = useState<'line' | 'bar'>('bar');
@@ -2050,11 +2108,18 @@ const AdvancedStatsPanel: React.FC<{
   const [chartsEnabled, setChartsEnabled] = useState(false); // Default to false if restricted
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
 
+  const [showUpgrade, setShowUpgrade] = useState(false);
+
   const isPro = plan === 'pro' || plan === 'ultra';
 
   const handleToggle = () => {
+    if (!isUserLoggedIn) {
+      window.location.href = '/dashboard?login=true'; // Redirect to dashboard with optional param
+      return;
+    }
+
     if (!isPro) {
-      setShowSubscriptionModal(true);
+      setShowUpgrade(true);
       return;
     }
     setChartsEnabled(!chartsEnabled);
@@ -2188,7 +2253,10 @@ const AdvancedStatsPanel: React.FC<{
       {isOpen && <div className="fixed inset-0 bg-black/50 z-[190] backdrop-blur-sm" onClick={onClose} />}
 
       {/* Panel */}
-      <div className={`fixed top-0 right-0 h-full w-full md:w-[450px] bg-[#1a1a20] shadow-2xl z-[200] transform transition-all duration-300 overflow-y-auto ${isOpen ? 'translate-x-0 opacity-100 visible' : 'translate-x-[110%] opacity-0 invisible'}`}>
+      <div className={`fixed top-0 right-0 h-full w-full md:w-[450px] bg-[#1a1a20] shadow-2xl transform transition-all duration-300 overflow-y-auto ${isOpen ? 'translate-x-0 opacity-100 z-[200] pointer-events-auto' : 'translate-x-[20px] opacity-0 z-[-1] pointer-events-none'}`}>
+        {/* Internal Upgrade View */}
+        {showUpgrade && <PanelSubscriptionView onClose={() => setShowUpgrade(false)} />}
+
         <div className="p-5 pb-20">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-xl font-bold bg-gradient-to-r from-purple-400 to-amber-400 bg-clip-text text-transparent flex items-center gap-2">
@@ -2383,11 +2451,17 @@ const SingleSetScoreCard: React.FC<{
   const [showAdvanceModal, setShowAdvanceModal] = useState(false);
 
   const [fullScreenMode, setFullScreenMode] = useState<boolean>(false);
+  const [showFullScreenHint, setShowFullScreenHint] = useState(false);
   const [subscriptionTier, setSubscriptionTier] = useState<string>('basic');
+  const [isUserLoggedIn, setIsUserLoggedIn] = useState<boolean>(false);
 
   useEffect(() => {
+    const hasSeen = localStorage.getItem('hasSeenFullScreenHint');
+    if (!hasSeen) setShowFullScreenHint(true);
+
     supabase.auth.getUser().then(async ({ data }) => {
       if (data.user) {
+        setIsUserLoggedIn(true);
         const { data: profile } = await supabase
           .from('profiles')
           .select('subscription_tier')
@@ -2397,14 +2471,19 @@ const SingleSetScoreCard: React.FC<{
         if (profile?.subscription_tier) {
           setSubscriptionTier(profile.subscription_tier);
         }
+      } else {
+        setIsUserLoggedIn(false);
       }
     });
 
     const handleSubscriptionUpdate = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
+        setIsUserLoggedIn(true);
         const { data: profile } = await supabase.from('profiles').select('subscription_tier').eq('id', user.id).single();
         if (profile) setSubscriptionTier(profile.subscription_tier);
+      } else {
+        setIsUserLoggedIn(false);
       }
     };
     window.addEventListener('subscription-updated', handleSubscriptionUpdate);
@@ -2966,129 +3045,133 @@ const SingleSetScoreCard: React.FC<{
     window.print();
   };
 
-  return (
-    <div className="w-full bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-4 md:p-8 shadow-2xl relative transition-all duration-300 mb-20 pt-24 md:pt-16 print-container">
+  return (<>
+    {/* --- Sticky Tab Navigation (Moved Up) --- */}
+    {/* Mobile: Fixed Bottom, Desktop: Sticky Top */}
+    <div className="fixed bottom-0 left-0 right-0 z-[999] bg-[#1e1e24] shadow-[0_-4px_10px_rgba(0,0,0,0.3)] border-t border-white/10 md:sticky md:top-0 md:bg-[#1e1e24] md:shadow-md md:mb-0 md:border-b md:border-t-0 md:w-full md:rounded-t-2xl no-print">
+      <div className="flex flex-row items-center gap-1 md:gap-2 px-2 py-2 w-full overflow-x-auto scrollbar-hide md:max-w-[1400px] md:mx-auto">
 
-      {/* --- Sticky Tab Navigation (Refactored) --- */}
-      <div className="sticky top-0 z-[50] bg-[#1e1e24] shadow-md no-print w-[calc(100%+2rem)] -ml-4 -mt-24 md:-mt-16 md:w-[calc(100%+4rem)] md:-ml-8 mb-6 border-b border-white/10">
-        <div className="flex flex-row items-center gap-1 md:gap-2 px-2 py-2 w-full overflow-x-auto scrollbar-hide">
+        {/* 1. Logo */}
+        <div className="shrink-0 hidden md:block">
+          <img src="/logo.png" alt="B5Tools" className="h-8 w-8 object-contain" />
+        </div>
 
-          {/* 1. Logo */}
-          <div className="shrink-0 hidden md:block">
-            <img src="/logo.png" alt="B5Tools" className="h-8 w-8 object-contain" />
-          </div>
+        {/* 3. Restart Button */}
+        <button
+          onClick={handleReset}
+          className="shrink-0 p-2 rounded-md bg-red-500/10 text-red-400 hover:bg-red-500/20 flex items-center gap-2 transition-colors"
+          title="Reiniciar Partido"
+        >
+          <RotateCcw size={18} />
+          <span className="hidden md:inline text-xs font-bold uppercase">Reiniciar</span>
+        </button>
 
-          {/* 2. Home Button */}
+        {/* 4. Full Screen Button */}
+        {/* 4. Full Screen Button */}
+        <div className="relative">
+          {showFullScreenHint && <FullScreenHintBubble onClose={() => { setShowFullScreenHint(false); localStorage.setItem('hasSeenFullScreenHint', 'true'); }} />}
           <button
-            onClick={() => window.location.href = '/'}
-            className="shrink-0 p-2 rounded-full bg-white/5 text-white/70 hover:text-white"
-            title="Ir al Inicio"
-          >
-            <Home size={18} />
-          </button>
-
-          {/* Separator */}
-          <div className="h-6 w-px bg-white/10 shrink-0 mx-1"></div>
-
-          {/* 3. Restart Button */}
-          <button
-            onClick={handleReset}
-            className="shrink-0 p-2 rounded-md bg-red-500/10 text-red-400 hover:bg-red-500/20 flex items-center gap-2 transition-colors"
-            title="Reiniciar Partido"
-          >
-            <RotateCcw size={18} />
-            <span className="hidden md:inline text-xs font-bold uppercase">Reiniciar</span>
-          </button>
-
-          {/* 4. Full Screen Button */}
-          <button
-            onClick={() => setFullScreenMode(true)}
-            className="shrink-0 p-2 rounded-md bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 flex items-center gap-2 transition-colors"
+            onClick={() => {
+              setFullScreenMode(true);
+              if (showFullScreenHint) {
+                setShowFullScreenHint(false);
+                localStorage.setItem('hasSeenFullScreenHint', 'true');
+              }
+            }}
+            className="shrink-0 p-2 rounded-md bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 flex items-center gap-2 transition-colors relative z-[1001]"
             title="Pantalla Completa"
           >
-            <Maximize2 size={18} />
+            <Maximize2 size={18} className="stroke-[3]" />
             <span className="hidden md:inline text-xs font-bold uppercase">Pantalla Completa</span>
           </button>
-
-          {/* 5. Sets Tabs */}
-          <div className="flex flex-row gap-1 shrink-0 ml-2">
-            {[1, 2, 3].map(sNum => {
-              const winner = setWinners[sNum - 1];
-              let label = `Set ${sNum}`;
-              let scoreLabel = '';
-              if (winner && winner.name) {
-                label = `S${sNum}`;
-                scoreLabel = winner.score;
-              }
-
-              return (
-                <button
-                  key={sNum}
-                  onClick={() => onSetChange(sNum)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase whitespace-nowrap flex items-center gap-1
-                        ${currentSet === sNum
-                      ? 'bg-purple-600 text-white shadow-sm'
-                      : 'bg-white/5 text-white/50 hover:bg-white/10'
-                    }`}
-                >
-                  <span className={currentSet === sNum ? '' : 'hidden md:inline'}>{label}</span>
-                  <span className={currentSet === sNum ? 'hidden' : 'md:hidden'}>{sNum}</span>
-                  {scoreLabel && <span className="text-[10px] opacity-80 bg-black/20 px-1 rounded">{scoreLabel}</span>}
-                </button>
-              );
-            })}
-          </div>
-
-
-          <div className="flex-1 min-w-[10px]"></div>
-
-          {/* 6. Swap Button */}
-          <button
-            onClick={swapTeams}
-            className="shrink-0 p-2 rounded-full bg-orange-500/10 text-orange-400 hover:bg-orange-500/20"
-            title="Alternar Equipos"
-          >
-            <ArrowRightLeft size={18} />
-          </button>
-
-          {/* 7. Sidebar Toggle */}
-          <button
-            onClick={() => setShowSidebar(!showSidebar)}
-            className="shrink-0 p-2 rounded-full bg-white/5 text-white/70 hover:text-white"
-            title={showSidebar ? "Ocultar Panel" : "Mostrar Panel"}
-          >
-            {showSidebar ? <PanelRightClose size={18} /> : <PanelRightOpen size={18} />}
-          </button>
-
-          {/* 8. Stats Toggle */}
-          <button
-            onClick={() => setShowStats(!showStats)}
-            className={`shrink-0 p-2 rounded-full transition-colors ${showStats ? 'bg-indigo-500 text-white shadow-lg' : 'bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20'}`}
-            title="Estadísticas"
-          >
-            <LineChart size={18} />
-          </button>
-
-          {/* 9. General Stats (Advanced) */}
-          <button
-            onClick={() => setShowAdvancedStats(!showAdvancedStats)}
-            className={`shrink-0 p-2 rounded-full transition-colors ${showAdvancedStats ? 'bg-pink-500 text-white shadow-lg' : 'bg-pink-500/10 text-pink-400 hover:bg-pink-500/20'}`}
-            title="Estadísticas Generales"
-          >
-            <BarChart size={18} />
-          </button>
-
-          {/* 10. Print Button */}
-          <button
-            onClick={handlePrint}
-            className="shrink-0 p-2 rounded-full bg-green-500/10 text-green-300 hover:bg-green-500/20"
-            title="Imprimir"
-          >
-            <Printer size={18} />
-          </button>
-
         </div>
+
+        {/* 5. Sets Tabs */}
+        <div className="flex flex-row gap-1 shrink-0 ml-2">
+          {[1, 2, 3].map(sNum => {
+            const winner = setWinners[sNum - 1];
+            let label = `Set ${sNum}`;
+            let scoreLabel = '';
+            if (winner && winner.name) {
+              label = `S${sNum}`;
+              scoreLabel = winner.score;
+            }
+
+            return (
+              <button
+                key={sNum}
+                onClick={() => onSetChange(sNum)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase whitespace-nowrap flex items-center gap-1 transition-all duration-300
+                        ${currentSet === sNum
+                    ? 'bg-purple-600 text-white shadow-[0_-4px_10px_rgba(147,51,234,0.5)] -translate-y-1 md:shadow-[0_4px_10px_rgba(147,51,234,0.5)] md:translate-y-1'
+                    : 'bg-white/5 text-white/50 hover:bg-white/10'
+                  }`}
+              >
+                <span className={currentSet === sNum ? '' : 'hidden md:inline'}>{label}</span>
+                <span className={currentSet === sNum ? 'hidden' : 'md:hidden'}>{sNum}</span>
+                {scoreLabel && <span className="text-[10px] opacity-80 bg-black/20 px-1 rounded">{scoreLabel}</span>}
+              </button>
+            );
+          })}
+        </div>
+
+
+        <div className="flex-1 min-w-[10px]"></div>
+
+        {/* 6. Swap Button */}
+        <button
+          onClick={swapTeams}
+          className="shrink-0 p-2 rounded-full bg-orange-500/10 text-orange-400 hover:bg-orange-500/20"
+          title="Alternar Equipos"
+        >
+          <ArrowRightLeft size={18} />
+        </button>
+
+        {/* 7. Sidebar Toggle */}
+        <button
+          onClick={() => setShowSidebar(!showSidebar)}
+          className="shrink-0 p-2 rounded-full bg-white/5 text-white/70 hover:text-white"
+          title={showSidebar ? "Ocultar Panel" : "Mostrar Panel"}
+        >
+          {showSidebar ? <PanelRightClose size={18} /> : <PanelRightOpen size={18} />}
+        </button>
+
+        {/* 8. Stats Toggle */}
+        <button
+          onClick={() => setShowStats(!showStats)}
+          className={`shrink-0 p-2 rounded-full transition-colors ${showStats ? 'bg-indigo-500 text-white shadow-lg' : 'bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20'}`}
+          title="Estadísticas"
+        >
+          <LineChart size={18} />
+        </button>
+
+        {/* 9. General Stats (Advanced) */}
+        <button
+          onClick={() => setShowAdvancedStats(!showAdvancedStats)}
+          className={`shrink-0 p-2 rounded-full transition-colors ${showAdvancedStats ? 'bg-pink-500 text-white shadow-lg' : 'bg-pink-500/10 text-pink-400 hover:bg-pink-500/20'}`}
+          title="Estadísticas Generales"
+        >
+          <BarChart size={18} />
+        </button>
+
+        {/* 10. Print Button */}
+        <button
+          onClick={handlePrint}
+          className="shrink-0 p-2 rounded-full bg-green-500/10 text-green-300 hover:bg-green-500/20"
+          title="Imprimir"
+        >
+          <Printer size={18} />
+        </button>
+
       </div>
+    </div>
+
+    <div className="w-full bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl md:rounded-t-none p-4 md:p-8 shadow-2xl relative transition-all duration-300 mb-20 md:mb-0 pb-32 md:pb-8 print-container">
+
+      {/* --- Sticky Tab Navigation (Refactored) --- */}
+      {/* --- Sticky Tab Navigation (Refactored) --- */}
+      {/* Mobile: Fixed Bottom, Desktop: Sticky Top */}
+
       <style>{`
         @media print {
           @page { size: landscape; margin: 10mm; }
@@ -3184,6 +3267,7 @@ const SingleSetScoreCard: React.FC<{
         visitorName={state.gameInfo.visitor}
         localName={state.gameInfo.home}
         plan={subscriptionTier}
+        isUserLoggedIn={isUserLoggedIn}
       />
 
       <div className={`gap-8 transition-all duration-500 ease-in-out ${showSidebar ? 'flex flex-col xl:grid xl:grid-cols-4' : 'grid grid-cols-1'}`}>
@@ -3488,7 +3572,7 @@ const SingleSetScoreCard: React.FC<{
         }}
       />
     </div>
-  );
+  </>);
 };
 
 

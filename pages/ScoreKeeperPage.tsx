@@ -17,7 +17,7 @@ const ToastNotification: React.FC<{ message: string; isVisible: boolean; onClose
     if (!isVisible) return null;
 
     return (
-        <div className="fixed top-20 right-4 z-[9999] max-w-sm animate-in slide-in-from-right fade-in duration-300">
+        <div className={`fixed top-24 left-0 right-0 mx-auto z-[9999] w-[90%] max-w-sm animate-in slide-in-from-top fade-in duration-300 ${isVisible ? '' : 'hidden'}`}>
             <div className="bg-blue-900/90 border border-blue-500/30 p-4 rounded-lg shadow-2xl backdrop-blur-md flex gap-3 text-sm text-blue-100">
                 <div className="shrink-0 mt-0.5 text-blue-400">
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>
