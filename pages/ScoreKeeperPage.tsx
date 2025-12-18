@@ -3,6 +3,8 @@ import { ScoreCard } from '../components/ScoreCard';
 import { useNavigate } from 'react-router-dom';
 import { Home, Zap } from 'lucide-react';
 import { RegistrationModal } from '../components/RegistrationModal';
+import { supabase } from '../lib/supabase';
+import { PromotionalCard } from '../components/PromotionalCard';
 
 const ToastNotification: React.FC<{ message: string; isVisible: boolean; onClose: () => void; duration?: number }> = ({ message, isVisible, onClose, duration = 5000 }) => {
     React.useEffect(() => {
@@ -106,12 +108,36 @@ export const ScoreKeeperPage: React.FC = () => {
     const [isConnected, setIsConnected] = React.useState<boolean | null>(null);
     const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
     const [showLocalModeAlert, setShowLocalModeAlert] = useState(true);
+    const [showPromoCard, setShowPromoCard] = useState(false);
 
     React.useEffect(() => {
         import('../lib/supabase').then(({ checkConnection }) => {
             checkConnection().then(setIsConnected);
         });
+
+        // Auth Check for Promo Card
+        const checkAuth = async () => {
+            const { data } = await supabase.auth.getUser();
+            if (!data.user) {
+                // Initial show after 5s if not logged in
+                setTimeout(() => {
+                    setShowPromoCard(true);
+                }, 5000);
+            }
+        };
+        checkAuth();
     }, []);
+
+    const handleDismissPromo = () => {
+        setShowPromoCard(false);
+        // Reshow after 5 minutes (300,000 ms) if user is still on page
+        setTimeout(() => {
+            // Re-check auth just in case
+            supabase.auth.getUser().then(({ data }) => {
+                if (!data.user) setShowPromoCard(true);
+            });
+        }, 300000);
+    };
 
     return (
         <div className="min-h-screen w-full bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-900 via-purple-950 to-slate-950 text-white selection:bg-purple-500 selection:text-white relative bg-fixed">
@@ -124,24 +150,11 @@ export const ScoreKeeperPage: React.FC = () => {
             {/* Navigation & Actions */}
 
 
-            <div className="fixed md:top-4 md:right-4 bottom-24 right-4 z-40 no-print">
-                <button
-                    onClick={() => setIsRegisterModalOpen(true)}
-                    className="group relative flex items-center gap-2 pl-4 pr-5 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 rounded-full shadow-[0_0_20px_rgba(124,58,237,0.5)] hover:shadow-[0_0_30px_rgba(124,58,237,0.7)] hover:scale-105 active:scale-95 transition-all"
-                >
-                    <div className="absolute -top-1 -right-1">
-                        <span className="relative flex h-3 w-3">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-pink-400 opacity-75"></span>
-                            <span className="relative inline-flex rounded-full h-3 w-3 bg-pink-500"></span>
-                        </span>
-                    </div>
-                    <Zap size={18} className="text-yellow-300 fill-current animate-pulse" />
-                    <div className="flex flex-col items-start leading-none">
-                        <span className="text-[10px] font-bold text-purple-200">SIN TARJETA</span>
-                        <span className="text-sm font-bold text-white uppercase tracking-tight">Crear Cuenta Gratis</span>
-                    </div>
-                </button>
-            </div>
+            {/* Promotional Card (Replaces Floating Button) */}
+            <PromotionalCard
+                isVisible={showPromoCard}
+                onClose={handleDismissPromo}
+            />
 
             <div className="relative z-10 container mx-auto px-2 py-6 max-w-[1400px]">
                 {/* Local Mode Alert */}
