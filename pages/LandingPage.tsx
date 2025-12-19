@@ -10,7 +10,7 @@ import { LanguageSwitcher } from '../components/LanguageSwitcher';
 export const LandingPage: React.FC = () => {
     const navigate = useNavigate();
     const { t } = useLanguage();
-    
+
     // View Mode: Controls the animation choreography
     // 'login': Auth Card Right, Info Left
     // 'register': Auth Card Left, Info Right (flipped)
@@ -24,7 +24,7 @@ export const LandingPage: React.FC = () => {
     const [loginEmail, setLoginEmail] = useState('');
     const [loginPassword, setLoginPassword] = useState('');
     const [forgotEmail, setForgotEmail] = useState('');
-    
+
     // Register Form State
     const [regEmail, setRegEmail] = useState('');
     const [regPassword, setRegPassword] = useState('');
@@ -54,14 +54,23 @@ export const LandingPage: React.FC = () => {
     // --- Actions ---
 
     const handleGoogleLogin = async () => {
+        setLoading(true);
+        setError(null);
         try {
             const { error } = await supabase.auth.signInWithOAuth({
                 provider: 'google',
-                options: { redirectTo: `${window.location.origin}/dashboard` }
+                options: {
+                    redirectTo: `${window.location.origin}/dashboard`,
+                    queryParams: {
+                        access_type: 'offline',
+                        prompt: 'select_account',
+                    },
+                }
             });
             if (error) throw error;
         } catch (err: any) {
             setError(err.message);
+            setLoading(false);
         }
     };
 
@@ -83,7 +92,7 @@ export const LandingPage: React.FC = () => {
         e.preventDefault();
         setLoading(true); setError(null); setSuccessMsg(null);
         try {
-             // 1. Check if email exists in DB
+            // 1. Check if email exists in DB
             const { data: emailExists, error: rpcError } = await supabase.rpc('check_email_exists', { email_check: forgotEmail });
             if (rpcError) throw rpcError;
             if (!emailExists) throw new Error('Este correo no está registrado.');
@@ -104,7 +113,7 @@ export const LandingPage: React.FC = () => {
     const handleRegister = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true); setError(null);
-        
+
         if (regPassword !== regConfirmPassword) {
             setError('Las contraseñas no coinciden.');
             setLoading(false); return;
@@ -166,18 +175,18 @@ export const LandingPage: React.FC = () => {
 
     // Info Section Positioning (Landscape)
     const getInfoLandscapeClass = () => {
-         switch (viewMode) {
+        switch (viewMode) {
             case 'login': return 'landscape:left-0 landscape:opacity-100'; // Left Half
             case 'register': return 'landscape:left-[50%] landscape:opacity-100'; // Right Half
             case 'forgot': return 'landscape:left-0 landscape:opacity-20 pointer-events-none'; // Folded back
             default: return 'landscape:left-0';
-        }       
+        }
     };
 
     return (
         <div className="h-[100dvh] w-full bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-slate-900 via-purple-950 to-black text-white relative overflow-hidden">
             <ParticlesBackground />
-            
+
             {/* === FIXED NAVBAR === */}
             {/* Kept outside the scroll/snap wrapper so it never moves */}
             <nav className="absolute top-0 left-0 w-full z-50 p-4 md:p-6 flex items-center justify-between shrink-0 pointer-events-none">
@@ -216,9 +225,9 @@ export const LandingPage: React.FC = () => {
                     /* Dynamic State */
                     ${getInfoLandscapeClass()}
                 `}>
-                    
+
                     <div className="max-w-xl mx-auto xl:mx-0 flex flex-col items-center xl:items-start mt-4 md:mt-12 xl:mt-0">
-                         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-xs font-medium text-purple-300 mb-4">
+                        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-xs font-medium text-purple-300 mb-4">
                             <span className="relative flex h-2 w-2">
                                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75"></span>
                                 <span className="relative inline-flex rounded-full h-2 w-2 bg-purple-500"></span>
@@ -226,7 +235,7 @@ export const LandingPage: React.FC = () => {
                             {t('landing.hero_tag')}
                         </div>
 
-                         <h1 className="text-3xl md:text-5xl lg:text-7xl font-black tracking-tight leading-tight mb-4 md:mb-6">
+                        <h1 className="text-3xl md:text-5xl lg:text-7xl font-black tracking-tight leading-tight mb-4 md:mb-6">
                             <span className="bg-clip-text text-transparent bg-gradient-to-r from-white via-purple-200 to-indigo-200">
                                 {t('landing.hero_title_1')}
                             </span>
@@ -248,9 +257,9 @@ export const LandingPage: React.FC = () => {
                                 <Zap className="text-yellow-500 fill-current" size={20} />
                                 <span>{t('landing.cta_start')}</span>
                             </button>
-                            
+
                             {/* Mobile Portrait Only Button to Scroll Down */}
-                            <button 
+                            <button
                                 onClick={() => {
                                     setViewMode('register');
                                     scrollToAuth();
@@ -292,10 +301,10 @@ export const LandingPage: React.FC = () => {
                                     <div className="absolute inset-0 bg-gradient-to-br from-purple-500/10 to-transparent pointer-events-none"></div>
 
                                     <div className="relative z-10 flex-1 flex flex-col justify-center">
-                                        
+
                                         {/* View: Forgot Password */}
                                         {viewMode === 'forgot' ? (
-                                             <div className="animate-in fade-in slide-in-from-right duration-500">
+                                            <div className="animate-in fade-in slide-in-from-right duration-500">
                                                 <div className="flex items-center gap-2 mb-6">
                                                     <button onClick={() => { setViewMode('login'); setError(null); }} className="text-white/50 hover:text-white transition-colors">
                                                         <ArrowRight size={20} className="rotate-180" />
@@ -338,7 +347,7 @@ export const LandingPage: React.FC = () => {
                                                     {error && <div className="text-red-300 text-xs bg-red-500/10 p-2 rounded">{error}</div>}
                                                     <button type="submit" disabled={loading} className="w-full py-3 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl shadow-lg active:scale-95 transition-all">{loading ? '...' : t('landing.login_btn')}</button>
                                                 </form>
-                                                
+
                                                 <div className="mt-6 pt-4 text-center border-t border-white/10">
                                                     <p className="text-sm text-white/50">
                                                         {t('landing.no_account')} <button onClick={() => setViewMode('register')} className="text-purple-400 hover:text-purple-300 font-bold ml-1">{t('landing.register_link')}</button>
@@ -365,21 +374,21 @@ export const LandingPage: React.FC = () => {
                                                 <input type="text" placeholder={t('landing.lastname')} value={lastName} onChange={e => setLastName(e.target.value)} className="bg-black/20 border border-white/10 rounded-xl px-3 py-2 text-white text-sm focus:border-purple-500 outline-none" required />
                                             </div>
                                             <input type="email" placeholder={t('landing.email')} value={regEmail} onChange={e => setRegEmail(e.target.value)} className="w-full bg-black/20 border border-white/10 rounded-xl px-3 py-2 text-white text-sm focus:border-purple-500 outline-none" required />
-                                            
+
                                             <div className="grid grid-cols-2 gap-2">
                                                 <div className="relative">
-                                                     <input type={showRegPassword ? "text" : "password"} placeholder={t('landing.password')} value={regPassword} onChange={e => setRegPassword(e.target.value)} className="w-full bg-black/20 border border-white/10 rounded-xl px-3 py-2 text-white text-sm focus:border-purple-500 outline-none pr-8" required />
-                                                     <button type="button" onClick={() => setShowRegPassword(!showRegPassword)} className="absolute right-2 top-1/2 -translate-y-1/2 text-white/40 hover:text-white"><Eye size={12} /></button>
+                                                    <input type={showRegPassword ? "text" : "password"} placeholder={t('landing.password')} value={regPassword} onChange={e => setRegPassword(e.target.value)} className="w-full bg-black/20 border border-white/10 rounded-xl px-3 py-2 text-white text-sm focus:border-purple-500 outline-none pr-8" required />
+                                                    <button type="button" onClick={() => setShowRegPassword(!showRegPassword)} className="absolute right-2 top-1/2 -translate-y-1/2 text-white/40 hover:text-white"><Eye size={12} /></button>
                                                 </div>
                                                 <input type={showConfirmPassword ? "text" : "password"} placeholder={t('landing.confirm')} value={regConfirmPassword} onChange={e => setRegConfirmPassword(e.target.value)} className="w-full bg-black/20 border border-white/10 rounded-xl px-3 py-2 text-white text-sm focus:border-purple-500 outline-none" required />
                                             </div>
-                                            
+
                                             <input type="text" placeholder={t('landing.club_info')} value={clubName} onChange={e => setClubName(e.target.value)} className="w-full bg-black/20 border border-white/10 rounded-xl px-3 py-2 text-white text-sm focus:border-purple-500 outline-none" />
                                             <input type="tel" placeholder={t('landing.phone_placeholder')} value={phone} onChange={e => setPhone(e.target.value)} className="w-full bg-black/20 border border-white/10 rounded-xl px-3 py-2 text-white text-sm focus:border-purple-500 outline-none" required />
 
                                             {error && <div className="text-red-300 text-xs bg-red-500/10 p-2 rounded">{error}</div>}
                                             {successMsg && <div className="text-green-300 text-xs bg-green-500/10 p-2 rounded">{successMsg}</div>}
-                                            
+
                                             <button type="submit" disabled={loading} className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl shadow-lg active:scale-95 transition-all mt-2">{loading ? '...' : t('landing.register_btn')}</button>
                                         </form>
 
@@ -396,7 +405,7 @@ export const LandingPage: React.FC = () => {
                     </div>
                 </section>
             </div>
-            
+
             <style>{`
                 .perspective-[2000px] { perspective: 2000px; }
                 .transform-style-3d { transform-style: preserve-3d; }
