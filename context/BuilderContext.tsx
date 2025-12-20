@@ -63,35 +63,73 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
             }
 
             if (currentId) {
-                const { data: t, error } = await supabase
-                    .from('tournaments')
-                    .select('*')
-                    .eq('id', currentId)
-                    .single();
+                // Fetch Everything in parallel
+                const [
+                    { data: t, error: tErr },
+                    { data: stages, error: sErr },
+                    { data: teams, error: teamsErr },
+                    { data: _unusedRosters, error: rErr },
+                    { data: matches, error: mErr },
+                    { data: refs, error: refErr },
+                    { data: admins, error: aErr }
+                ] = await Promise.all([
+                    supabase.from('tournaments').select('*').eq('id', currentId).single(),
+                    supabase.from('tournament_stages').select('*').eq('tournament_id', currentId),
+                    supabase.from('tournament_teams').select('*').eq('tournament_id', currentId),
+                    // Rosters do not have tournament_id, we must fetch them via teams later... or we can skip parallel fetch for rosters
+                    // Let's defer roster fetching for a moment
+                    Promise.resolve({ data: [], error: null }),
+                    supabase.from('tournament_matches').select('*').eq('tournament_id', currentId),
+                    supabase.from('tournament_referees').select('*').eq('tournament_id', currentId),
+                    supabase.from('tournament_admins').select('*').eq('tournament_id', currentId)
+                ]);
 
-                if (t && !error) {
+                // Fetch Rosters based on Teams found
+                let rosters: any[] = [];
+                if (teams && teams.length > 0) {
+                    const teamIds = teams.map(t => t.id);
+                    const { data: rData, error: rErr2 } = await supabase
+                        .from('tournament_rosters')
+                        .select('*')
+                        .in('team_id', teamIds);
+
+                    if (rData) rosters = rData;
+                    if (rErr2) console.error("Error fetching rosters", rErr2);
+                }
+
+                if (t && !tErr) {
                     setState(prev => ({
                         ...prev,
                         config: {
                             ...prev.config,
+                            id: t.id,
                             name: t.name,
                             location: t.location,
-                            organizer_name: t.organizer || '',
+                            organizer_name: t.organizer_name || '',
                             start_date: t.start_date,
                             end_date: t.end_date,
+                            start_time: t.start_time,
                             points_for_win: t.points_for_win || 3,
                             points_for_loss: t.points_for_loss || 0,
                             sets_per_match: t.sets_per_match || 3,
-                            cost_per_team: t.cost || 0,
-                            tournament_type: t.tournament_type || 'open'
+                            cost_per_team: t.cost_per_team || 0,
+                            currency: t.currency || 'USD',
+                            tournament_type: t.structure?.format_type || t.tournament_type || 'open',
+                            tiebreaker_rules: t.tiebreaker_rules || [],
+                            custom_rules: t.custom_rules || [],
+                            fields_config: t.fields_config || []
                         },
-                        // Ensure lists are initialized if not present in previous state
-                        teams: prev.teams || [],
-                        rosters: prev.rosters || [],
-                        matches: prev.matches || [],
-                        referees: prev.referees || [],
-                        admins: prev.admins || [],
-                        isDirty: false // Reset dirty flag after initial load
+                        structure: t.structure || prev.structure,
+                        stages: stages || [],
+                        teams: (teams || []).map(tm => ({
+                            ...tm,
+                            group_id: (tm as any).group_name // Mapping back
+                        })),
+                        rosters: rosters || [],
+                        matches: matches || [],
+                        referees: (refs || []).map(r => ({ id: (r as any).referee_id })), // Mapping back from union table
+                        admins: admins || [],
+                        isDirty: false
                     }));
                 }
             }
@@ -297,6 +335,19 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
             setState(prev => ({ ...prev, savingStep: 'Guardando configuración general del torneo...' }));
 
             // Filter only valid columns for 'tournaments' table
+            // Sanitize tournament_type for DB constraint (only allows 'open', 'invitational', 'club')
+            // If user selected a format (e.g. 'groups', 'knockout'), we save it in structure.format_type
+            // and act as 'open' for the DB column
+            const validDbTypes = ['open', 'invitational', 'club'];
+            const currentType = state.config.tournament_type || 'open';
+            const dbType = validDbTypes.includes(currentType) ? currentType : 'open';
+
+            // Inject the real format type into structure to persist it
+            const structureWithFormat = {
+                ...(state.structure || {}),
+                format_type: currentType
+            };
+
             const tournamentData: any = {
                 name: state.config.name || 'Sin Nombre',
                 location: state.config.location || 'Sin Ubicación',
@@ -305,7 +356,7 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
                 start_time: state.config.start_time || '09:00:00',
                 organizer_name: state.config.organizer_name || null,
                 contact_email: state.config.contact_email || null,
-                tournament_type: state.config.tournament_type,
+                tournament_type: dbType,
                 cost_per_team: state.config.cost_per_team,
                 currency: state.config.currency,
                 points_for_win: state.config.points_for_win,
@@ -313,15 +364,11 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
                 sets_per_match: state.config.sets_per_match,
                 tiebreaker_rules: state.config.tiebreaker_rules || [],
                 custom_rules: state.config.custom_rules || [],
-                structure: state.structure,
+                structure: structureWithFormat,
                 fields_config: (state.config as any).fields || state.config.fields_config || [],
                 user_id: user.id,
-                status: 'draft',
-                debug_info: 'antigravity_v3' // Debug key to verify code version
+                status: 'draft'
             };
-
-            console.log("ANTIGRAVITY DEBUG - Tournament data to save:", tournamentData);
-            console.log("ANTIGRAVITY DEBUG - state.config:", state.config);
 
             // Only include ID if it's a valid UUID
             if (state.config.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(state.config.id)) {
@@ -386,7 +433,7 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
                     .from('tournament_rosters')
                     .upsert(rostersToSave.map(r => ({
                         id: r.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(r.id) ? r.id : undefined,
-                        tournament_id: tournament.id,
+                        // tournament_id: tournament.id, // Column does not exist
                         team_id: r.team_id,
                         first_name: r.first_name || 'Nombre',
                         last_name: r.last_name || 'Apellido',
@@ -411,7 +458,7 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
                         tournament_id: tournament.id,
                         referee_id: r.id, // Assuming ID is the profile ID
                         status: 'accepted'
-                    })));
+                    })), { onConflict: 'tournament_id, referee_id', ignoreDuplicates: true });
 
                 if (refError) console.warn("Error saving referee links", refError);
             }

@@ -20,6 +20,58 @@ import { EditProfileModal } from '../components/EditProfileModal';
 import { UnsavedChangesModal } from '../components/UnsavedChangesModal';
 import { ConfirmationModal } from '../components/ConfirmationModal';
 
+const SavingOverlay = ({ step }: { step?: string }) => (
+    <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 bg-[#0a0a0f]/90 backdrop-blur-md z-[100] flex flex-col items-center justify-center p-6 text-center"
+    >
+        <div className="relative mb-8">
+            <motion.div
+                animate={{ rotate: 360 }}
+                transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
+                className="w-24 h-24 rounded-full border-t-2 border-b-2 border-l-2 border-transparent border-t-blue-500 border-b-indigo-500"
+            />
+            <motion.div
+                animate={{ scale: [1, 1.1, 1] }}
+                transition={{ repeat: Infinity, duration: 2 }}
+                className="absolute inset-0 flex items-center justify-center"
+            >
+                <div className="w-16 h-16 rounded-full bg-blue-500/10 border border-blue-500/20 blur-xl"></div>
+                <Save size={32} className="text-blue-400 relative z-10" />
+            </motion.div>
+        </div>
+
+        <motion.h2
+            initial={{ y: 20 }}
+            animate={{ y: 0 }}
+            className="text-2xl font-black text-white mb-2 bg-gradient-to-r from-white to-white/60 bg-clip-text text-transparent"
+        >
+            Guardando Torneo
+        </motion.h2>
+
+        <motion.p
+            key={step}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="text-blue-400 font-bold text-sm uppercase tracking-widest"
+        >
+            {step || 'Iniciando proceso...'}
+        </motion.p>
+
+        <div className="mt-12 w-64 h-1.5 bg-white/5 rounded-full overflow-hidden border border-white/5">
+            <motion.div
+                animate={{
+                    width: ["0%", "30%", "60%", "90%", "100%"],
+                }}
+                transition={{ duration: 10, ease: "easeInOut" }}
+                className="h-full bg-gradient-to-r from-blue-600 to-indigo-600 shadow-[0_0_20px_rgba(59,130,246,0.5)]"
+            />
+        </div>
+    </motion.div>
+);
+
 const BuilderWizard = () => {
     const { state, setStep, saveTournament } = useBuilder();
     const { id } = useParams<{ id: string }>();
@@ -104,11 +156,8 @@ const BuilderWizard = () => {
         let unassignedCount = 0;
         if (state.structure?.phases) {
             state.structure.phases.forEach(p => {
-                p.rounds.forEach(r => {
-                    r.matches.forEach(m => {
-                        // Only count if it's a valid match (some sources might be empty/tbd, but usually we validate final structure)
-                        // If match is TBD maybe we don't care, but if it's scheduled it should have referee?
-                        // Let's just check raw refereeId
+                p.rounds?.forEach(r => {
+                    r.matches?.forEach(m => {
                         if (!m.refereeId) unassignedCount++;
                     });
                 });
@@ -146,6 +195,7 @@ const BuilderWizard = () => {
         const id = await saveTournament();
         if (id) {
             addToast('Torneo guardado correctamente (Borrador)', 'success');
+            navigate('/torneos');
         }
     };
 
@@ -576,6 +626,12 @@ const BuilderWizard = () => {
                 variant={confirmation.variant}
             />
             <DraftDebugModal open={isDraftModalOpen} onClose={() => setIsDraftModalOpen(false)} />
+
+            <AnimatePresence>
+                {state.isSaving && (
+                    <SavingOverlay step={state.savingStep} />
+                )}
+            </AnimatePresence>
         </>
     );
 };
