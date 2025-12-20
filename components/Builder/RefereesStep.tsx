@@ -6,7 +6,7 @@ import { RefereeProfile } from '../../types/tournament';
 import { useToast } from '../../context/ToastContext';
 
 export const RefereesStep = () => {
-    const { referees, addReferee, updateReferee, removeReferee } = useBuilder();
+    const { referees, addReferee, updateReferee, removeReferee, sendInvitation } = useBuilder();
     const { addToast } = useToast();
     const [isEditing, setIsEditing] = useState<string | null>(null);
     const [fullName, setFullName] = useState('');
@@ -38,23 +38,33 @@ export const RefereesStep = () => {
             setIsSearching(true);
             setShowEmailError(false);
             try {
-                // Search via Secure RPC to bypass RLS
-                const { data, error } = await supabase
-                    .rpc('search_users_by_email', { query_email: email.trim() });
+                // 1. Search in referee_profiles (Existing Referee Database)
+                const { data: refData, error: refError } = await supabase
+                    .from('referee_profiles')
+                    .select('*')
+                    .eq('email', email.trim())
+                    .maybeSingle(); // Use maybeSingle to avoid 406 if multiple (shouldn't happen) or 0
 
-                // RPC returns an array (or null if single not applicable in return type simply but we treat as list)
-                // But wait, our RPC matches exact email logic inside but returns TABLE which is array.
-                // We should take the first item.
-
-                if (data && !error && data.length > 0) {
-                    const profile = data[0];
-                    setFoundProfile({ id: profile.id, avatar_url: profile.avatar_url });
-                    // Auto-fill name if found
-                    const foundName = `${profile.first_name || ''} ${profile.last_name || ''}`.trim();
-                    if (foundName) setFullName(foundName);
+                if (refData) {
+                    // Start: Found in referee_profiles
+                    setFoundProfile({ id: refData.id, avatar_url: undefined, source: 'profile' });
+                    setFullName(`${refData.first_name || ''} ${refData.last_name || ''}`.trim());
+                    // End: Found in referee_profiles
                 } else {
-                    setFoundProfile(null);
-                    setShowEmailError(true);
+                    // 2. Search via Secure RPC to bypass RLS (Registered Users)
+                    const { data, error } = await supabase
+                        .rpc('search_users_by_email', { query_email: email.trim() });
+
+                    if (data && !error && data.length > 0) {
+                        const profile = data[0];
+                        setFoundProfile({ id: profile.id, avatar_url: profile.avatar_url, source: 'user' });
+                        // Auto-fill name if found
+                        const foundName = `${profile.first_name || ''} ${profile.last_name || ''}`.trim();
+                        if (foundName) setFullName(foundName);
+                    } else {
+                        setFoundProfile(null);
+                        setShowEmailError(true);
+                    }
                 }
             } catch (err) {
                 console.error("Error looking up user:", err);
@@ -80,14 +90,33 @@ export const RefereesStep = () => {
             ? crypto.randomUUID()
             : Math.random().toString(36).substring(2) + Date.now().toString(36);
 
-        addReferee({
-            id: foundProfile?.id || newId, // Use real ID if found, else random
-            first_name: first,
-            last_name: last,
-            email: email.trim(),
-            rating: 0,
-            avatar_url: foundProfile?.avatar_url // Store avatar if found
-        });
+        try {
+            addReferee({
+                id: foundProfile?.id || newId, // Use real ID if found, else random
+                first_name: first,
+                last_name: last,
+                email: email.trim(),
+                rating: 0,
+                avatar_url: foundProfile?.avatar_url // Store avatar if found
+            });
+        } catch (e: any) {
+            alert("Error in addReferee: " + e.message);
+            return;
+        }
+
+        // Send Invitation if manual entry (User not found) OR if requested by user logic
+        if (!foundProfile) {
+            sendInvitation(email.trim(), 'referee')
+                .then(() => addToast('Invitación enviada por correo', 'success'))
+                .catch((err) => {
+                    console.error("Invitation Error:", err);
+                    addToast('Error enviando invitación', 'error');
+                });
+        } else {
+            // "Si existe... notificaras"
+            addToast('Usuario añadido. Recibirá una notificación.', 'info');
+        }
+
         setFullName('');
         setEmail('');
         setFoundProfile(null);
@@ -153,7 +182,7 @@ export const RefereesStep = () => {
                             <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3 flex items-start gap-3 relative animate-in fade-in slide-in-from-top-2">
                                 <AlertTriangle className="text-yellow-500 flex-shrink-0 mt-0.5" size={16} />
                                 <p className="text-xs text-yellow-200/80 pr-4">
-                                    Solo puedes añadir usuarios que ya estén registrados en <span className="font-bold text-yellow-200">B5Tools</span>.
+                                    Puedes añadir usuarios usando el correo aunque no este registrado, se enviara un correo para unirse a <span className="font-bold text-yellow-200">B5Tools</span>, asegurate que el correo sea correcto.
                                 </p>
                                 <button
                                     onClick={() => setShowWarning(false)}
@@ -184,27 +213,7 @@ export const RefereesStep = () => {
                             <div className="text-[10px] text-white/30 px-1">
                                 {foundProfile
                                     ? "Usuario encontrado en la base de datos. Se enviará una notificación."
-                                    : (
-                                        showEmailError ? (
-                                            <div className="mt-2 text-red-400 space-y-2">
-                                                <p>No encontramos el correo escrito. Por favor verifica que esté bien escrito.</p>
-                                                <p>Si no tiene cuenta, envíale este enlace para que se registre. Una vez registrado, inténtalo de nuevo:</p>
-
-                                                <div className="flex items-center gap-2 bg-black/40 border border-red-500/30 rounded-lg p-2 mt-1 group hover:border-red-500/50 transition-colors">
-                                                    <div className="flex-1 font-mono text-blue-400 truncate text-xs select-all">
-                                                        {window.location.origin}
-                                                    </div>
-                                                    <button
-                                                        onClick={handleCopyLink}
-                                                        className="p-1.5 bg-white/5 hover:bg-white/10 rounded-md text-white/50 hover:text-white transition-colors flex-shrink-0 relative"
-                                                        title="Copiar enlace"
-                                                    >
-                                                        {copied ? <Check size={14} className="text-green-400" /> : <Copy size={14} />}
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        ) : "Se enviará una invitación para que se una a tu torneo como Arbitro."
-                                    )
+                                    : "Se enviará una invitación para que se una a tu torneo como Arbitro."
                                 }
                             </div>
                         </div>
@@ -303,12 +312,19 @@ export const RefereesStep = () => {
                                             ) : (
                                                 <>
                                                     <button
-                                                        onClick={() => {
-                                                            // Future integration: Call Edge Function to send Magic Link
-                                                            // supabase.functions.invoke('invite-referee', { body: { email: ref.email } })
-                                                            addToast(`Invitación Magic Link enviada a ${ref.email}`, 'success');
+                                                        onClick={async () => {
+                                                            if (!ref.email) return addToast("Este árbitro no tiene email", "error");
+
+                                                            const loadingToast = addToast("Iniciando envío...", "info"); // Optional: if you have a loading mechanism
+
+                                                            try {
+                                                                await sendInvitation(ref.email, 'referee');
+                                                                addToast(`Invitación enviada a ${ref.email}`, 'success');
+                                                            } catch (error: any) {
+                                                                addToast(`Error: ${error.message}`, 'error');
+                                                            }
                                                         }}
-                                                        className="p-2 bg-blue-500/10 text-blue-400 hover:text-blue-300 hover:bg-blue-500/20 rounded-lg transition-all"
+                                                        className="p-2 bg-blue-500/10 text-blue-400 hover:text-blue-300 hover:bg-blue-500/20 rounded-lg transition-all border border-transparent hover:border-blue-500/30"
                                                         title="Enviar Invitación Magic Link"
                                                     >
                                                         <LinkIcon size={18} />

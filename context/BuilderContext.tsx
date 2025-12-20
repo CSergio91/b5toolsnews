@@ -26,12 +26,40 @@ interface BuilderContextType {
     updateStructure: (structure: import('../types/structure').TournamentStructure) => void;
     saveTournament: () => Promise<string | null>;
     resetBuilder: () => void;
+    uploadImageIfNeeded: (urlOrBase64: string | undefined, bucket: 'team-logos' | 'player-photos') => Promise<string | undefined>;
+    sendInvitation: (email: string, role: string) => Promise<boolean>;
 }
 
 const BuilderContext = createContext<BuilderContextType | undefined>(undefined);
 
 export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string; initialState?: BuilderState }> = ({ children, initialId, initialState }) => {
     const [state, setState] = useState<BuilderState>(initialState || initialBuilderState);
+
+    // ... (Existing useEffects)
+
+    // New Function: Send Invitation
+    const sendInvitation = async (email: string, role: string) => {
+        try {
+            console.log("Sending invitation to:", email);
+            const { data, error } = await supabase.functions.invoke('invite-user', {
+                body: {
+                    email,
+                    role,
+                    tournament_name: state.config.name || 'Torneo Sin Nombre',
+                    url: window.location.origin
+                }
+            });
+
+            console.log("Edge Function Response:", { data, error });
+
+            if (error) throw error;
+            return { success: true, data }; // Return data for debugging
+        } catch (err: any) {
+            console.error("Failed to send invitation:", err);
+            throw err;
+        }
+    };
+
 
     // Initial Load: Fetch Tournament Data if ID is present
     React.useEffect(() => {
@@ -81,8 +109,20 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
                     Promise.resolve({ data: [], error: null }),
                     supabase.from('tournament_matches').select('*').eq('tournament_id', currentId),
                     supabase.from('tournament_referees').select('*').eq('tournament_id', currentId),
-                    supabase.from('tournament_admins').select('*').eq('tournament_id', currentId)
+                    supabase.from('tournament_admins').select('*').eq('tournament_id', currentId),
+                    supabase.from('tournament_fields').select('*').eq('tournament_id', currentId)
                 ]);
+
+                // Fetch Sets for the matches
+                let setsData: any[] = [];
+                if (matches && matches.length > 0) {
+                    const matchIds = matches.map(m => m.id);
+                    const { data: sData, error: sErr } = await supabase
+                        .from('tournament_sets')
+                        .select('*')
+                        .in('match_id', matchIds);
+                    if (sData) setsData = sData;
+                }
 
                 // Fetch Rosters based on Teams found
                 let rosters: any[] = [];
@@ -143,8 +183,22 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
                             group_id: (tm as any).group_name // Mapping back
                         })),
                         rosters: rosters || [],
-                        matches: matches || [],
-                        referees: fullReferees.length > 0 ? fullReferees : (refs || []).map(r => ({ id: (r as any).referee_id })), // Use profiles if available
+                        matches: (matches || []).map(m => ({
+                            ...m,
+                            sets: setsData.filter(s => s.match_id === m.id).sort((a, b) => a.set_number - b.set_number)
+                        })),
+                        referees: (refs || []).map((refLink: any) => {
+                            const profile = fullReferees.find((p: any) => p.id === refLink.referee_id);
+                            return {
+                                id: refLink.referee_id,
+                                first_name: refLink.first_name || profile?.first_name || 'Arbitro',
+                                last_name: refLink.last_name || profile?.last_name || '.',
+                                email: refLink.email || profile?.email || null,
+                                phone: refLink.phone || profile?.phone || null,
+                                avatar_url: profile?.avatar_url || null,
+                                rating: profile?.rating || 0
+                            };
+                        }),
                         admins: (admins || []).map(a => ({
                             ...a,
                             permissions: (a as any).permissions || {}
@@ -440,7 +494,11 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
                         wins: t.wins || 0,
                         losses: t.losses || 0,
                         runs_scored: t.runs_scored || 0,
-                        runs_allowed: t.runs_allowed || 0
+                        runs_allowed: t.runs_allowed || 0,
+                        gp: t.gp || 0,
+                        w: t.w || 0,
+                        l: t.l || 0,
+                        pts: t.pts || 0
                     })));
 
                 if (teamsError) throw teamsError;
@@ -460,42 +518,140 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
                         last_name: r.last_name || 'Apellido',
                         number: r.number,
                         gender: r.gender,
-                        role: r.role
+                        role: r.role,
+                        ab: r.ab || 0,
+                        h: r.h || 0,
+                        r: r.r || 0,
+                        rbi: r.rbi || 0,
+                        avg: r.avg || 0
                     })));
 
                 if (rosterError) throw rosterError;
             }
             await delay(800);
 
-            // 4. Save Referees (Delete + Insert Strategy to avoid conflicts and clean up removed refs)
-            setState(prev => ({ ...prev, savingStep: 'Configurando panel de oficiales y árbitros...' }));
-            if (state.referees.length >= 0) { // Always run to allow clearing
-                // First delete existing relations
-                await supabase.from('tournament_referees').delete().eq('tournament_id', tournament.id);
+            // 4. Save Referees (Manual Sync Strategy to bypass 409s)
+            setState(prev => ({ ...prev, savingStep: 'Syncing referees...' }));
 
-                // 4. Save Referees (Now using Upsert securely with Unique Index)
-                // Filter unique IDs to prevent payload duplicates, then upsert
-                const uniqueReferees = state.referees
-                    .filter(r => r.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(r.id))
-                    .reduce((acc, current) => {
-                        const x = acc.find(item => item.id === current.id);
-                        if (!x) return acc.concat([current]);
-                        else return acc;
-                    }, [] as any[]);
+            // 4.1 Get valid unique referees from state
+            const uniqueRefereesFromState = state.referees
+                .filter(r => r.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(r.id))
+                .reduce((acc, current) => {
+                    const x = acc.find(item => item.id === current.id);
+                    if (!x) return acc.concat([current]);
+                    else return acc;
+                }, [] as any[]);
+            const stateRefIds = uniqueRefereesFromState.map(r => r.id);
 
-                if (uniqueReferees.length > 0) {
-                    const { error: refError } = await supabase
+            // 4.1.1 Ensure Profiles Exist (Fix for 23503, bypassing RLS via RPC)
+            if (uniqueRefereesFromState.length > 0) {
+                // Use RPC to bypass RLS policies on referee_profiles
+                const profilePromises = uniqueRefereesFromState.map(r => {
+                    let firstName = r.first_name || 'Arbitro';
+                    let lastName = r.last_name || '.';
+                    if (!r.first_name && r.name && r.name !== 'Nuevo Árbitro') {
+                        const parts = r.name.trim().split(' ');
+                        firstName = parts[0];
+                        lastName = parts.slice(1).join(' ') || '.';
+                    }
+
+                    return supabase.rpc('upsert_referee_profile_secure', {
+                        p_id: r.id,
+                        p_first_name: firstName,
+                        p_last_name: lastName,
+                        p_email: r.email || null,
+                        p_avatar_url: r.avatar_url || null
+                    });
+                });
+
+                // Run in parallel
+                const results = await Promise.all(profilePromises);
+                results.forEach(({ error }) => {
+                    if (error) console.warn("Error creating referee profile via RPC", error);
+                });
+            }
+
+            // 4.2 Fetch EXISTING refs for this tournament
+            const { data: existingRefs, error: fetchError } = await supabase
+                .from('tournament_referees')
+                .select('referee_id')
+                .eq('tournament_id', tournament.id);
+
+            if (fetchError) {
+                console.error("Error fetching existing referees", fetchError);
+            } else {
+                const existingRefIds = (existingRefs || []).map((r: any) => r.referee_id);
+
+                // Helper to build payload
+                const allActiveRefIds = uniqueRefereesFromState.map(r => r.id);
+                // Fetch profiles for ALL active referees (to insert OR update)
+                // This ensures we always have the latest profile data (email, name)
+                const { data: profileData, error: profileFetchError } = await supabase
+                    .from('referee_profiles')
+                    .select('id, first_name, last_name, email, phone')
+                    .in('id', allActiveRefIds);
+
+                if (profileFetchError) console.error("Error fetching profile data", profileFetchError);
+
+                const profileMap = new Map((profileData || []).map((p: any) => [p.id, p]));
+
+                const buildRefereePayload = (r: any) => {
+                    const profile = profileMap.get(r.id);
+                    let firstName = profile?.first_name || r.first_name || 'Arbitro';
+                    let lastName = profile?.last_name || r.last_name || '.';
+                    let email = profile?.email || r.email || null;
+                    let phone = profile?.phone || r.phone || null;
+
+                    if (!profile && !r.first_name && r.name && r.name !== 'Nuevo Árbitro') {
+                        const parts = r.name.trim().split(' ');
+                        firstName = parts[0];
+                        lastName = parts.slice(1).join(' ') || '.';
+                    }
+                    return {
+                        first_name: firstName,
+                        last_name: lastName,
+                        email: email,
+                        phone: phone
+                    };
+                };
+
+                // 4.3 Determine INSERTS (In State but NOT in DB)
+                const toInsert = uniqueRefereesFromState.filter(r => !existingRefIds.includes(r.id));
+                if (toInsert.length > 0) {
+                    const insertPayload = toInsert.map(r => ({
+                        tournament_id: tournament.id,
+                        referee_id: r.id,
+                        status: 'accepted',
+                        ...buildRefereePayload(r)
+                    }));
+                    const { error: insertError } = await supabase.from('tournament_referees').insert(insertPayload);
+                    if (insertError) console.error("Error inserting new referees", insertError);
+                }
+
+                // 4.3.5 UPDATE EXISTING (Fix for "Corrupted/Missing Columns" data)
+                // Update existing referees to ensure they have the latest profile columns
+                const toUpdate = uniqueRefereesFromState.filter(r => existingRefIds.includes(r.id));
+                if (toUpdate.length > 0) {
+                    const updatePromises = toUpdate.map(r => {
+                        const payload = buildRefereePayload(r);
+                        return supabase
+                            .from('tournament_referees')
+                            .update(payload)
+                            .eq('tournament_id', tournament.id)
+                            .eq('referee_id', r.id);
+                    });
+                    await Promise.all(updatePromises);
+                }
+
+                // 4.4 Determine DELETES (In DB but NOT in State)
+                const toDeleteIds = existingRefIds.filter(id => !stateRefIds.includes(id));
+                if (toDeleteIds.length > 0) {
+                    const { error: deleteError } = await supabase
                         .from('tournament_referees')
-                        .upsert(
-                            uniqueReferees.map(r => ({
-                                tournament_id: tournament.id,
-                                referee_id: r.id, // Profile ID
-                                status: 'accepted'
-                            })),
-                            { onConflict: 'tournament_id, referee_id', ignoreDuplicates: true } // ignoreDuplicates true means if exists, keep it (allows status updates if we wanted, but ignore is safer to avoid errors)
-                        );
-
-                    if (refError) console.warn("Error saving referee links", refError);
+                        .delete()
+                        .eq('tournament_id', tournament.id)
+                        .in('referee_id', toDeleteIds);
+                    if (deleteError) console.error("Error deleting removed referees", deleteError);
                 }
             }
             await delay(600);
@@ -534,6 +690,7 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
                     start_time: m.start_time, // Important for Calendar
                     location: m.location,
                     field: m.field,           // Important for Calendar
+                    referee_id: (m as any).referee_id || (m as any).refereeId, // Map from local prop
                     status: m.status || 'scheduled',
                     visitor_source_match_id: m.visitor_source_match_id,
                     local_source_match_id: m.local_source_match_id
@@ -541,9 +698,65 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
 
                 const { error: matchError } = await supabase
                     .from('tournament_matches')
-                    .upsert(matchesToSave);
+                    .upsert(matchesToSave.map(m => {
+                        // Ensure optional fields are handled or set to null/default
+                        const { sets, ...matchData } = m as any;
+                        return matchData;
+                    }));
 
                 if (matchError) throw matchError;
+
+                // 6.5 Save Sets (Relational)
+                setState(prev => ({ ...prev, savingStep: 'Guardando sets y marcadores...' }));
+                const setsToSave: any[] = [];
+
+                state.matches.forEach(m => {
+                    // Use the ID we resolved for the match (must be valid UUID)
+                    const matchId = m.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(m.id) ? m.id : null;
+
+                    if (matchId && m.sets && m.sets.length > 0) {
+                        m.sets.forEach((s: any) => {
+                            setsToSave.push({
+                                id: s.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s.id) ? s.id : undefined,
+                                match_id: matchId,
+                                set_number: s.set_number,
+                                visitor_runs: s.visitor_score || s.visitor_runs || 0,
+                                local_runs: s.local_score || s.local_runs || 0,
+                                visitor_hits: s.visitor_hits || 0,
+                                local_hits: s.local_hits || 0,
+                                visitor_errors: s.visitor_errors || 0,
+                                local_errors: s.local_errors || 0,
+                                status: s.status || 'pending',
+                                // Preserve existing data json if needed
+                                data: s.data
+                            });
+                        });
+                    }
+                });
+
+                if (setsToSave.length > 0) {
+                    const { error: setError } = await supabase
+                        .from('tournament_sets')
+                        .upsert(setsToSave);
+                    if (setError) console.error("Error saving sets", setError); // Log but don't fail full save? Or fail? Better warn.
+                }
+            }
+            await delay(600);
+
+            // 7. Save Fields (Relational)
+            setState(prev => ({ ...prev, savingStep: 'Guardando configuración de campos...' }));
+            const fields = (state.config as any).fields || state.config.fields_config;
+            if (fields && fields.length > 0) {
+                const { error: fieldError } = await supabase
+                    .from('tournament_fields')
+                    .upsert(fields.map((f: any) => ({
+                        id: f.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(f.id) ? f.id : undefined,
+                        tournament_id: tournament.id,
+                        name: f.name,
+                        start_time: f.startTime || f.start_time || '09:00',
+                        properties: f.properties || {}
+                    })));
+                if (fieldError) throw fieldError;
             }
             await delay(600);
 
@@ -595,7 +808,9 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
             setStep,
             updateStructure,
             saveTournament,
-            resetBuilder
+            resetBuilder,
+            uploadImageIfNeeded,
+            sendInvitation
         }}>
             {children}
         </BuilderContext.Provider>

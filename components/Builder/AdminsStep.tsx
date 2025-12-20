@@ -3,9 +3,11 @@ import { useBuilder } from '../../context/BuilderContext';
 import { supabase } from '../../lib/supabase';
 import { User, Plus, Trash2, Edit2, CheckCircle, XCircle, ChevronDown, ChevronUp, Search, Loader2, Link as LinkIcon, ShieldAlert, AlertTriangle, X, Copy, Check } from 'lucide-react';
 import { TournamentAdmin } from '../../types/tournament';
+import { useToast } from '../../context/ToastContext';
 
 export const AdminsStep = () => {
-    const { admins, addAdmin, updateAdmin, removeAdmin } = useBuilder();
+    const { admins, addAdmin, updateAdmin, removeAdmin, sendInvitation } = useBuilder();
+    const { addToast } = useToast();
     const [isEditing, setIsEditing] = useState<string | null>(null);
     const [fullName, setFullName] = useState('');
     const [email, setEmail] = useState('');
@@ -97,6 +99,15 @@ export const AdminsStep = () => {
                 avatar_url: foundProfile?.avatar_url,
                 permissions: permissions
             });
+
+            // Send Invitation if manual entry (User not found)
+            if (!foundProfile) {
+                sendInvitation(email.trim(), 'admin')
+                    .then(() => alert('Invitación enviada por correo'))
+                    .catch((err) => alert(`Error enviando invitación: ${err.message}`));
+            } else {
+                alert('Usuario añadido. Recibirá una notificación.');
+            }
         }
 
         // Reset Form
@@ -357,12 +368,19 @@ export const AdminsStep = () => {
                                             ) : (
                                                 <>
                                                     <button
-                                                        onClick={() => {
-                                                            // Future integration: Call Edge Function to send Magic Link
-                                                            // supabase.functions.invoke('invite-admin', { body: { email: admin.email } })
-                                                            alert(`Invitación Magic Link enviada a ${admin.email} (Simulación)`);
+                                                        onClick={async () => {
+                                                            if (!admin.email) return addToast("Este admin no tiene email", "error");
+
+                                                            const loadingToast = addToast("Iniciando envío...", "info");
+
+                                                            try {
+                                                                await sendInvitation(admin.email, 'admin');
+                                                                addToast(`Invitación enviada a ${admin.email}`, 'success');
+                                                            } catch (error: any) {
+                                                                addToast(`Error: ${error.message}`, 'error');
+                                                            }
                                                         }}
-                                                        className="p-2 bg-blue-500/10 text-blue-400 hover:text-blue-300 hover:bg-blue-500/20 rounded-lg transition-all"
+                                                        className="p-2 bg-blue-500/10 text-blue-400 hover:text-blue-300 hover:bg-blue-500/20 rounded-lg transition-all border border-transparent hover:border-blue-500/30"
                                                         title="Enviar Invitación Magic Link"
                                                     >
                                                         <LinkIcon size={18} />

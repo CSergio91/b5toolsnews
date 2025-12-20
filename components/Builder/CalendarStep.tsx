@@ -36,7 +36,10 @@ export const CalendarStep: React.FC = () => {
     const [selectedDate, setSelectedDate] = useState<string>('');
 
     // Config State
-    const [matchDuration, setMatchDuration] = useState<number>(60); // Default 60 mins
+    const [durationSettings, setDurationSettings] = useState<{ oneSet: number; threeSets: number }>({ oneSet: 30, threeSets: 90 });
+    // Legacy: matchDuration used for fallback
+    const [matchDuration, setMatchDuration] = useState<number>(60);
+
 
     // Modal States
     const [modal, setModal] = useState<{
@@ -48,7 +51,8 @@ export const CalendarStep: React.FC = () => {
     const [newFieldData, setNewFieldData] = useState({ name: '', startTime: '09:00' });
     const [renameData, setRenameData] = useState({ id: '', name: '', startTime: '' }); // Added startTime
     const [newEventData, setNewEventData] = useState({ name: 'Descanso', duration: 30 }); // duration in minutes
-    const [tempDuration, setTempDuration] = useState(60);
+    const [tempSettings, setTempSettings] = useState({ oneSet: 30, threeSets: 90 });
+
 
     // -- Init Load --
     useEffect(() => {
@@ -100,7 +104,11 @@ export const CalendarStep: React.FC = () => {
             // Restore Config
             if (configAny.matchDuration) {
                 setMatchDuration(configAny.matchDuration);
-                setTempDuration(configAny.matchDuration);
+                setMatchDuration(configAny.matchDuration);
+            }
+            if (configAny.durationSettings) {
+                setDurationSettings(configAny.durationSettings);
+                setTempSettings(configAny.durationSettings);
             }
 
             // Restore Fields
@@ -140,7 +148,9 @@ export const CalendarStep: React.FC = () => {
         // Use a timeout to debounce updates and prevent rapid context switching if fields change fast (dragging)
         const timer = setTimeout(() => {
             updateConfig('fields', fields);
+            // Save both simple duration and advanced settings
             updateConfig('matchDuration', matchDuration);
+            updateConfig('durationSettings', durationSettings);
         }, 500);
         return () => clearTimeout(timer);
     }, [fields, matchDuration]);
@@ -211,17 +221,35 @@ export const CalendarStep: React.FC = () => {
 
     // 2. Config
     const openConfig = () => {
-        setTempDuration(matchDuration);
+        setTempSettings(durationSettings);
         setModal({ type: 'config' });
     };
 
     const saveConfig = () => {
-        setMatchDuration(tempDuration);
+        setDurationSettings(tempSettings);
+        // Fallback update for simplicity if needed, or deprecate matchDuration
+        setMatchDuration(tempSettings.threeSets);
+
+        // Update existing items logic? Could be complex if we don't know which match was which set count.
+        // For now, we only update FUTURE drops or we'd need to re-scan all matches.
+        // Let's force update based on known matches in state.
+
         setFields(prev => prev.map(f => ({
             ...f,
-            items: f.items.map(i => i.type === 'match' ? { ...i, durationMinutes: tempDuration } : i)
+            items: f.items.map(i => {
+                if (i.type === 'match' && i.matchId) {
+                    const m = getMatchById(i.matchId);
+                    const isThreeSets = m?.sets && m.sets.length >= 3;
+                    // Or check global config if sets not populated.
+                    const setsCount = m?.sets?.length || state.config.sets_per_match || 3;
+                    const newDur = setsCount === 1 ? tempSettings.oneSet : tempSettings.threeSets;
+                    return { ...i, durationMinutes: newDur };
+                }
+                return i;
+            })
         })));
-        addToast(`Duración actualizada a ${tempDuration} min`, 'success');
+
+        addToast(`Duraciones actualizadas`, 'success');
         setModal({ type: null });
     };
 
@@ -389,7 +417,11 @@ export const CalendarStep: React.FC = () => {
                         id: newId,
                         type: 'match',
                         matchId: item.id,
-                        durationMinutes: matchDuration,
+                        durationMinutes: (() => {
+                            const m = getMatchById(item.id);
+                            const setsCount = m?.sets?.length || state.config.sets_per_match || 3;
+                            return setsCount === 1 ? durationSettings.oneSet : durationSettings.threeSets;
+                        })(),
                         date: selectedDate
                     };
 
@@ -526,25 +558,27 @@ export const CalendarStep: React.FC = () => {
                     {fields.map(field => {
                         const dayItems = field.items.filter(i => i.date === selectedDate);
                         return (
-                            <CalendarFieldColumn
-                                key={field.id}
-                                field={field}
-                                dateItems={dayItems}
-                                matchesSource={matches}
-                                getTeamName={getTeamName}
-                                calculateTime={calculateTime}
-                                onDragOver={handleDragOver}
-                                onDrop={handleDrop}
-                                onDragStart={(e, item, fid) => handleDragStart(e, item, fid)}
-                                onEditField={(f) => {
-                                    setRenameData({ id: f.id, name: f.name, startTime: f.startTime });
-                                    setModal({ type: 'rename' });
-                                }}
-                                onRemoveField={removeField}
-                                onAddEvent={openAddEvent}
-                                onRefereeSelect={handleRefereeSelect}
-                                onDeleteEvent={(itemId) => handleDeleteEvent(field.id, itemId)}
-                            />
+                            <div key={field.id} className="min-w-[320px] flex-shrink-0">
+                                <CalendarFieldColumn
+                                    key={field.id}
+                                    field={field}
+                                    dateItems={dayItems}
+                                    matchesSource={matches}
+                                    getTeamName={getTeamName}
+                                    calculateTime={calculateTime}
+                                    onDragOver={handleDragOver}
+                                    onDrop={handleDrop}
+                                    onDragStart={(e, item, fid) => handleDragStart(e, item, fid)}
+                                    onEditField={(f) => {
+                                        setRenameData({ id: f.id, name: f.name, startTime: f.startTime });
+                                        setModal({ type: 'rename' });
+                                    }}
+                                    onRemoveField={removeField}
+                                    onAddEvent={openAddEvent}
+                                    onRefereeSelect={handleRefereeSelect}
+                                    onDeleteEvent={(itemId) => handleDeleteEvent(field.id, itemId)}
+                                />
+                            </div>
                         );
                     })}
 
@@ -609,10 +643,27 @@ export const CalendarStep: React.FC = () => {
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in">
                     <div className="bg-[#1a1a20] w-full max-w-sm rounded-xl border border-white/10 shadow-2xl p-6">
                         <h3 className="text-lg font-bold text-white mb-4">Configuración Calendario</h3>
-                        <div>
-                            <label className="text-xs font-bold text-white/50 uppercase">Duración por Partido (Minutos)</label>
-                            <input type="number" className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-white focus:border-blue-500 outline-none" value={tempDuration} onChange={e => setTempDuration(Number(e.target.value))} />
-                            <p className="text-[10px] text-white/30 mt-2">Esto recalculará todos los partidos ya asignados.</p>
+                        <h3 className="text-lg font-bold text-white mb-4">Configuración Calendario</h3>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="text-xs font-bold text-white/50 uppercase">Partidos a 3 Sets (Minutos)</label>
+                                <input
+                                    type="number"
+                                    className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-white focus:border-blue-500 outline-none"
+                                    value={tempSettings.threeSets}
+                                    onChange={e => setTempSettings({ ...tempSettings, threeSets: Number(e.target.value) })}
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-white/50 uppercase">Partidos a 1 Set (Minutos)</label>
+                                <input
+                                    type="number"
+                                    className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-white focus:border-blue-500 outline-none"
+                                    value={tempSettings.oneSet}
+                                    onChange={e => setTempSettings({ ...tempSettings, oneSet: Number(e.target.value) })}
+                                />
+                            </div>
+                            <p className="text-[10px] text-white/30 mt-2">Esto recalculará todos los partidos ya asignados según su cantidad de sets.</p>
                         </div>
                         <div className="flex justify-end gap-2 mt-6">
                             <button onClick={() => setModal({ type: null })} className="px-4 py-2 text-white/50 hover:text-white font-bold text-sm">Cancelar</button>

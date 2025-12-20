@@ -56,6 +56,8 @@ export interface TournamentTeam {
     losses: number;
     runs_scored: number;
     runs_allowed: number;
+    gp?: number;
+    pts?: number;
 }
 
 export interface TournamentRoster {
@@ -68,6 +70,11 @@ export interface TournamentRoster {
     number?: string;
     gender?: string;
     role: 'player' | 'coach' | 'staff';
+    ab?: number;
+    h?: number;
+    r?: number;
+    rbi?: number;
+    avg?: number;
 }
 
 export interface TournamentMatch {
@@ -84,6 +91,15 @@ export interface TournamentMatch {
     status: 'scheduled' | 'live' | 'finished' | 'suspended';
     winner_team_id?: string;
     score_text?: string;
+    referee_id?: string;
+}
+
+export interface TournamentField {
+    id: string;
+    tournament_id: string;
+    name: string;
+    start_time?: string;
+    properties?: any;
 }
 
 export interface TournamentSet {
@@ -93,10 +109,11 @@ export interface TournamentSet {
     visitor_runs: number;
     local_runs: number;
     visitor_hits: number;
-    local_hits: number;
-    visitor_errors: number;
-    local_errors: number;
+    local_hits?: number;
+    visitor_errors?: number;
+    local_errors?: number;
     data?: any; // detailed stats
+    status?: string;
 }
 
 export interface RefereeProfile {
