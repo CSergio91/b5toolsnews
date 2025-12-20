@@ -1,0 +1,760 @@
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { supabase } from '../lib/supabase';
+import { UserNavbar } from '../components/UserNavbar';
+import { ParticlesBackground } from '../components/ParticlesBackground';
+import {
+    Trophy, Users, Calendar, Clock, MapPin,
+    ChevronRight, ChevronDown, Play, Layout,
+    Info, Star, Award, Search, Menu, X, BookOpen,
+    ArrowLeft, Loader2, PlayCircle
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Tournament, TournamentTeam, TournamentMatch, TournamentSet, TournamentStage } from '../types/tournament';
+import { ConfirmationModal } from '../components/ConfirmationModal';
+
+export const TournamentStartDashboard: React.FC = () => {
+    const { id } = useParams<{ id: string }>();
+    const navigate = useNavigate();
+    const [loading, setLoading] = useState(true);
+    const [tournament, setTournament] = useState<Tournament | null>(null);
+    const [stages, setStages] = useState<TournamentStage[]>([]);
+    const [activeStageId, setActiveStageId] = useState<string | null>(null);
+    const [teams, setTeams] = useState<TournamentTeam[]>([]);
+    const [matches, setMatches] = useState<TournamentMatch[]>([]);
+    const [sets, setSets] = useState<TournamentSet[]>([]);
+    const [rosters, setRosters] = useState<any[]>([]);
+
+    // UI State
+    const [activeTab, setActiveTab] = useState<'matches' | 'standings' | 'teams' | 'fields'>('matches');
+    const [expandedTeams, setExpandedTeams] = useState<string[]>([]);
+    const [startMatchModal, setStartMatchModal] = useState<{ isOpen: boolean, match: any, setNumber: number } | null>(null);
+
+    useEffect(() => {
+        if (id) fetchTournamentData();
+    }, [id]);
+
+    const fetchTournamentData = async () => {
+        setLoading(true);
+        try {
+            // Fetch Tournament
+            const { data: tData } = await supabase.from('tournaments').select('*').eq('id', id).single();
+            if (tData) setTournament(tData);
+
+            // Fetch Phases (NEW Normalized)
+            const { data: pData } = await supabase.from('tournament_phases').select('*').eq('tournament_id', id).order('phase_order', { ascending: true });
+            let finalStages = pData?.map(p => ({
+                id: p.phase_id,
+                name: p.name,
+                type: p.type,
+                order: p.phase_order
+            })) || [];
+
+            // Fallback to LEGACY Stages
+            if (finalStages.length === 0) {
+                const { data: sData } = await supabase.from('tournament_stages').select('*').eq('tournament_id', id).order('order', { ascending: true });
+                finalStages = sData || [];
+            }
+
+            // Fallback to structure JSON if still nothing
+            if (finalStages.length === 0 && tData?.structure?.phases) {
+                finalStages = tData.structure.phases;
+            } else if (finalStages.length === 0 && tData?.structure?.stages) {
+                finalStages = tData.structure.stages;
+            }
+
+            setStages(finalStages);
+            if (finalStages.length > 0) setActiveStageId(finalStages[0].id);
+
+            // ... (Fetch Teams remains in public) ...
+            const { data: tmData } = await supabase.from('tournament_teams').select('*').eq('tournament_id', id);
+            let finalTeams = tmData || [];
+            if (finalTeams.length === 0 && tData?.structure?.teams) {
+                finalTeams = tData.structure.teams.map((t: any) => ({
+                    ...t,
+                    wins: t.wins || 0,
+                    losses: t.losses || 0,
+                    runs_scored: t.runs_scored || 0,
+                    runs_allowed: t.runs_allowed || 0
+                }));
+            }
+            setTeams(finalTeams);
+
+            // Fetch Matches (NEW Normalized)
+            const { data: mRelData } = await supabase.from('tournament_matches').select('*').eq('tournament_id', id);
+            let finalMatches = mRelData?.map(m => ({
+                id: m.id,
+                tournament_id: m.tournament_id,
+                stage_id: m.phase_id,
+                name: m.name,
+                status: m.status,
+                start_time: m.start_time,
+                field: m.field,
+                location: m.location,
+                referee_id: m.referee_id,
+                // Map source IDs to local team IDs for Dashboard logic if needed
+                visitor_team_id: m.source_away_type === 'team' ? m.source_away_id : null,
+                local_team_id: m.source_home_type === 'team' ? m.source_home_id : null,
+                ...m
+            })) || [];
+
+            // Fallback to LEGACY Matches
+            if (finalMatches.length === 0) {
+                const { data: mData } = await supabase.from('tournament_matches').select('*').eq('tournament_id', id);
+                finalMatches = mData || [];
+            }
+
+            // Fallback to structure JSON
+            if (finalMatches.length === 0 && tData?.structure) {
+                const struct = tData.structure;
+                if (struct.matches) {
+                    finalMatches = struct.matches;
+                } else if (struct.phases) {
+                    const allMatches: any[] = [];
+                    struct.phases.forEach((p: any) => {
+                        if (p.matches) allMatches.push(...p.matches);
+                        if (p.groups) p.groups.forEach((g: any) => {
+                            if (g.matches) allMatches.push(...g.matches);
+                        });
+                    });
+                    finalMatches = allMatches;
+                } else if (struct.stages) {
+                    const allMatches: any[] = [];
+                    struct.stages.forEach((s: any) => {
+                        if (s.matches) allMatches.push(...s.matches);
+                    });
+                    finalMatches = allMatches;
+                }
+            }
+
+            setMatches(finalMatches);
+
+            // Fetch Sets (NEW Normalized)
+            if (finalMatches.length > 0) {
+                const matchIds = finalMatches.map(m => (m as any).match_id || m.id);
+                const { data: stRelData } = await supabase.from('tournament_sets').select('*').in('match_id', matchIds);
+
+                if (stRelData && stRelData.length > 0) {
+                    setSets(stRelData.map(s => ({
+                        ...s,
+                        visitor_runs: s.away_score,
+                        local_runs: s.home_score
+                    })));
+                } else {
+                    // Fallback to LEGACY Sets
+                    const { data: stData } = await supabase.from('tournament_sets').select('*').in('match_id', matchIds);
+                    if (stData) setSets(stData);
+                }
+            }
+
+            // Fetch Rosters
+            const teamIds = finalTeams.map(t => t.id);
+            if (teamIds.length > 0) {
+                const { data: rData } = await supabase.from('tournament_rosters').select('*').in('team_id', teamIds);
+                if (rData) setRosters(rData);
+            }
+
+        } catch (error) {
+            console.error("Error loading tournament dashboard:", error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (!id) return;
+
+        const channel = supabase.channel(`tournament_${id}`)
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'tournament_sets',
+            }, () => {
+                fetchTournamentData();
+            })
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'tournament_matches',
+            }, () => {
+                fetchTournamentData();
+            })
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'tournament_sets',
+            }, () => {
+                fetchTournamentData();
+            })
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [id]);
+
+    const calculateStandings = () => {
+        const stageStandings = teams.map(team => ({
+            ...team,
+            gp: 0,
+            wins: 0,
+            losses: 0,
+            pts: 0,
+            runs_scored: 0,
+            runs_allowed: 0
+        }));
+
+        matches.forEach(match => {
+            if (match.stage_id !== activeStageId) return;
+
+            const matchSets = sets.filter(s => s.match_id === match.id && s.status === 'finished');
+            if (matchSets.length === 0) return;
+
+            // Calculate runs regardless of match status
+            matchSets.forEach(set => {
+                const localTeam = stageStandings.find(t => t.id === match.local_team_id);
+                const visitorTeam = stageStandings.find(t => t.id === match.visitor_team_id);
+
+                if (localTeam) {
+                    localTeam.runs_scored += set.local_runs;
+                    localTeam.runs_allowed += set.visitor_runs;
+                }
+                if (visitorTeam) {
+                    visitorTeam.runs_scored += set.visitor_runs;
+                    visitorTeam.runs_allowed += set.local_runs;
+                }
+            });
+
+            // Determine match winner based on sets (Best of 3)
+            if (match.status === 'finished') {
+                let localSetWins = 0;
+                let visitorSetWins = 0;
+                matchSets.forEach(set => {
+                    if (set.local_runs > set.visitor_runs) localSetWins++;
+                    else if (set.visitor_runs > set.local_runs) visitorSetWins++;
+                });
+
+                const localTeam = stageStandings.find(t => t.id === match.local_team_id);
+                const visitorTeam = stageStandings.find(t => t.id === match.visitor_team_id);
+
+                if (localTeam && visitorTeam) {
+                    localTeam.gp++;
+                    visitorTeam.gp++;
+                    if (localSetWins > visitorSetWins) {
+                        localTeam.wins++;
+                        visitorTeam.losses++;
+                        localTeam.pts += (tournament?.points_for_win || 2);
+                        visitorTeam.pts += (tournament?.points_for_loss || 1);
+                    } else if (visitorSetWins > localSetWins) {
+                        visitorTeam.wins++;
+                        localTeam.losses++;
+                        visitorTeam.pts += (tournament?.points_for_win || 2);
+                        localTeam.pts += (tournament?.points_for_loss || 1);
+                    }
+                }
+            }
+        });
+
+        // Sort by Points, then Run Diff
+        return stageStandings.sort((a, b) => {
+            if ((b.pts || 0) !== (a.pts || 0)) return (b.pts || 0) - (a.pts || 0);
+            const diffA = a.runs_scored - a.runs_allowed;
+            const diffB = b.runs_scored - b.runs_allowed;
+            return diffB - diffA;
+        });
+    };
+
+    const toggleTeamExpansion = (teamId: string) => {
+        setExpandedTeams(prev =>
+            prev.includes(teamId) ? prev.filter(id => id !== teamId) : [...prev, teamId]
+        );
+    };
+
+    const handleStartSet = (match: TournamentMatch, setNumber: number) => {
+        setStartMatchModal({ isOpen: true, match, setNumber });
+    };
+
+    const confirmStartSet = () => {
+        if (startMatchModal) {
+            navigate(`/dashboard/game?matchId=${startMatchModal.match.id}&setNumber=${startMatchModal.setNumber}`);
+        }
+    };
+
+    if (loading) {
+        return (
+            <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
+                <div className="flex flex-col items-center gap-4">
+                    <Loader2 className="w-12 h-12 text-blue-500 animate-spin" />
+                    <p className="text-blue-400 font-bold tracking-widest uppercase text-xs">Cargando Hub Oficial...</p>
+                </div>
+            </div>
+        );
+    }
+
+    const filteredMatches = matches.filter(m => m.stage_id === activeStageId);
+    const activeStage = stages.find(s => s.id === activeStageId);
+
+    return (
+        <div className="min-h-screen w-full bg-[#0a0a0f] text-white flex flex-col relative overflow-hidden">
+            <ParticlesBackground />
+            <UserNavbar />
+
+            <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                <div className="absolute top-[-10%] right-[-5%] w-[600px] h-[600px] bg-blue-600/10 rounded-full blur-[120px]"></div>
+                <div className="absolute bottom-[-10%] left-[-5%] w-[600px] h-[600px] bg-purple-600/10 rounded-full blur-[120px]"></div>
+            </div>
+
+            <main className="flex-1 relative z-10 pt-24 pb-12 px-4 md:px-8 max-w-[1600px] mx-auto w-full">
+
+                {/* Header Section */}
+                <div className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-6">
+                    <div className="flex items-center gap-6">
+                        <div className="w-20 h-20 md:w-28 md:h-28 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center overflow-hidden shadow-2xl backdrop-blur-md">
+                            {tournament?.logo_url ? (
+                                <img src={tournament.logo_url} alt={tournament.name} className="w-full h-full object-contain p-2" />
+                            ) : (
+                                <Trophy size={48} className="text-white/20" />
+                            )}
+                        </div>
+                        <div>
+                            <div className="flex items-center gap-2 mb-1">
+                                <span className="px-2 py-0.5 bg-green-500/20 text-green-400 text-[10px] font-bold rounded uppercase tracking-widest border border-green-500/30">Oficial</span>
+                                <span className="text-white/40 text-xs">• Hub de Control</span>
+                            </div>
+                            <h1 className="text-3xl md:text-5xl font-black tracking-tighter bg-gradient-to-r from-white via-white to-white/40 bg-clip-text text-transparent">
+                                {tournament?.name}
+                            </h1>
+                            <div className="flex items-center gap-4 mt-2 text-white/50 text-sm">
+                                <div className="flex items-center gap-1.5">
+                                    <MapPin size={14} className="text-blue-400" />
+                                    <span>{tournament?.location}</span>
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                    <Calendar size={14} className="text-purple-400" />
+                                    <span>{new Date(tournament?.start_date || '').toLocaleDateString('es-ES', { month: 'long', day: 'numeric', year: 'numeric' })}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => navigate('/dashboard/torneos')}
+                            className="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-sm font-bold transition-all flex items-center gap-2"
+                        >
+                            <ArrowLeft size={16} /> Volver
+                        </button>
+                        <button
+                            onClick={() => window.open(`/dashboard/torneos/B5ToolsBuilder/${id}/previewnew`, '_blank')}
+                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-xl text-sm font-bold shadow-lg shadow-blue-600/20 transition-all flex items-center gap-2"
+                        >
+                            <Layout size={16} /> Ver Publico
+                        </button>
+                    </div>
+                </div>
+
+                {/* Main Tabs Navigation */}
+                <div className="flex items-center gap-1 bg-white/5 p-1 rounded-2xl w-fit mb-8 border border-white/5 backdrop-blur-md">
+                    <TabButton active={activeTab === 'matches'} onClick={() => setActiveTab('matches')} icon={Calendar} label="Partidos" />
+                    <TabButton active={activeTab === 'standings'} onClick={() => setActiveTab('standings')} icon={Award} label="Clasificación" />
+                    <TabButton active={activeTab === 'teams'} onClick={() => setActiveTab('teams')} icon={Users} label="Equipos" />
+                    <TabButton active={activeTab === 'fields'} onClick={() => setActiveTab('fields')} icon={MapPin} label="Canchas" />
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+
+                    {/* Left Column: Content based on Tab */}
+                    <div className="lg:col-span-8 space-y-6">
+
+                        {activeTab === 'matches' && (
+                            <>
+                                {/* Phase Selector */}
+                                <div className="flex items-center gap-3 overflow-x-auto pb-2 custom-scrollbar no-scrollbar">
+                                    {stages.map(stage => (
+                                        <button
+                                            key={stage.id}
+                                            onClick={() => setActiveStageId(stage.id)}
+                                            className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all whitespace-nowrap border ${activeStageId === stage.id
+                                                ? 'bg-blue-600 border-blue-400 text-white shadow-lg shadow-blue-600/20 scale-105'
+                                                : 'bg-white/5 border-white/10 text-white/50 hover:bg-white/10 hover:text-white'
+                                                }`}
+                                        >
+                                            {stage.name}
+                                        </button>
+                                    ))}
+                                </div>
+
+                                {/* Matches Grid */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {filteredMatches.length > 0 ? (
+                                        filteredMatches.map(match => (
+                                            <MatchCard
+                                                key={match.id}
+                                                match={match}
+                                                teams={teams}
+                                                sets={sets.filter(s => s.match_id === match.id)}
+                                                onStartSet={handleStartSet}
+                                            />
+                                        ))
+                                    ) : (
+                                        <div className="col-span-full py-20 bg-white/5 border border-white/10 border-dashed rounded-3xl flex flex-col items-center justify-center text-white/30">
+                                            <Calendar size={48} className="mb-4 opacity-20" />
+                                            <p className="font-bold">No hay partidos programados en esta fase</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </>
+                        )}
+
+                        {activeTab === 'standings' && (
+                            <div className="bg-white/5 border border-white/10 rounded-3xl overflow-hidden backdrop-blur-md">
+                                <div className="p-6 border-b border-white/5 flex items-center justify-between">
+                                    <h2 className="text-xl font-bold flex items-center gap-2">
+                                        <Award className="text-yellow-500" /> Tabla de Clasificación
+                                    </h2>
+                                    <span className="text-xs text-white/40 uppercase tracking-widest">{activeStage?.name || 'General'}</span>
+                                </div>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left">
+                                        <thead>
+                                            <tr className="bg-white/5 text-[10px] uppercase tracking-widest text-white/40">
+                                                <th className="px-6 py-4">P</th>
+                                                <th className="px-6 py-4">Equipo</th>
+                                                <th className="px-3 py-4 text-center">JJ</th>
+                                                <th className="px-3 py-4 text-center">JG</th>
+                                                <th className="px-3 py-4 text-center">JP</th>
+                                                <th className="px-3 py-4 text-center">PTS</th>
+                                                <th className="px-6 py-4 text-right">RC / RP</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-white/5">
+                                            {calculateStandings().map((team, idx) => (
+                                                <tr key={team.id} className="hover:bg-white/5 transition-colors group">
+                                                    <td className="px-6 py-4 font-black text-white/20 text-lg">{idx + 1}</td>
+                                                    <td className="px-6 py-4">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center border border-white/10 group-hover:border-blue-500/30 transition-all">
+                                                                {team.logo_url ? <img src={team.logo_url} className="w-6 h-6 object-contain" /> : <Trophy size={14} className="text-white/20" />}
+                                                            </div>
+                                                            <span className="font-bold group-hover:text-blue-400 transition-colors">{team.name}</span>
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-3 py-4 text-center font-bold text-white/60">{team.gp || 0}</td>
+                                                    <td className="px-3 py-4 text-center font-bold text-green-400">{team.wins || 0}</td>
+                                                    <td className="px-3 py-4 text-center font-bold text-red-400">{team.losses || 0}</td>
+                                                    <td className="px-3 py-4 text-center">
+                                                        <span className="bg-blue-600/20 text-blue-400 px-2.5 py-1 rounded-lg font-bold border border-blue-600/30">{team.pts || 0}</span>
+                                                    </td>
+                                                    <td className="px-6 py-4 text-right">
+                                                        <span className="text-xs text-white/40">{team.runs_scored}/{team.runs_allowed}</span>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'teams' && (
+                            <div className="space-y-4">
+                                {teams.map(team => (
+                                    <div key={team.id} className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden backdrop-blur-md transition-all">
+                                        <button
+                                            onClick={() => toggleTeamExpansion(team.id)}
+                                            className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors"
+                                        >
+                                            <div className="flex items-center gap-4">
+                                                <div className="w-12 h-12 rounded-xl bg-[#111] flex items-center justify-center border border-white/5">
+                                                    {team.logo_url ? <img src={team.logo_url} className="w-8 h-8 object-contain" /> : <Users size={24} className="text-white/20" />}
+                                                </div>
+                                                <div className="text-left">
+                                                    <h3 className="font-black text-lg leading-tight">{team.name}</h3>
+                                                    <p className="text-xs text-white/40 uppercase tracking-widest">{rosters.filter(r => r.team_id === team.id).length} Integrantes registrados</p>
+                                                </div>
+                                            </div>
+                                            <div className={`p-2 rounded-lg bg-white/5 border border-white/10 transition-transform ${expandedTeams.includes(team.id) ? 'rotate-180' : ''}`}>
+                                                <ChevronDown size={20} />
+                                            </div>
+                                        </button>
+
+                                        <AnimatePresence>
+                                            {expandedTeams.includes(team.id) && (
+                                                <motion.div
+                                                    initial={{ height: 0, opacity: 0 }}
+                                                    animate={{ height: 'auto', opacity: 1 }}
+                                                    exit={{ height: 0, opacity: 0 }}
+                                                    className="border-t border-white/5 bg-[#000]/20"
+                                                >
+                                                    <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                                        {rosters.filter(r => r.team_id === team.id).map(player => (
+                                                            <div key={player.id} className="flex items-center gap-3 p-3 bg-white/5 border border-white/5 rounded-xl">
+                                                                <div className="w-12 h-12 rounded-lg bg-white/5 border border-white/5 overflow-hidden flex items-center justify-center">
+                                                                    {player.photo_url ? (
+                                                                        <img src={player.photo_url} className="w-full h-full object-cover" />
+                                                                    ) : (
+                                                                        <span className="text-lg font-black text-white/10">#{player.number || '00'}</span>
+                                                                    )}
+                                                                </div>
+                                                                <div>
+                                                                    <p className="font-bold text-sm leading-tight">{player.first_name} {player.last_name}</p>
+                                                                    <div className="flex items-center gap-2 mt-1">
+                                                                        <span className="text-[10px] font-bold text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded border border-blue-500/20 uppercase">#{player.number || '00'}</span>
+                                                                        <span className="text-[10px] text-white/40 uppercase tracking-widest">{player.role || 'Jugador'}</span>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                        {rosters.filter(r => r.team_id === team.id).length === 0 && (
+                                                            <div className="col-span-full py-8 text-center text-white/20 text-xs italic">
+                                                                No hay jugadores registrados en este roster.
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </motion.div>
+                                            )}
+                                        </AnimatePresence>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                        {activeTab === 'fields' && (
+                            <div className="space-y-6">
+                                {(Array.isArray(tournament?.fields_config) ? tournament.fields_config : (tournament?.fields_config?.fields || [])).map((field: any) => {
+                                    // Try to find matches either by m.field property OR by checking if match exists in field.items
+                                    const fieldMatches = matches.filter(m => {
+                                        const isMatchInField = m.field === field.name || m.field === field.id;
+                                        const isMatchInItems = field.items?.some((item: any) => item.matchId === m.id);
+                                        return isMatchInField || isMatchInItems;
+                                    });
+
+                                    return (
+                                        <div key={field.id} className="bg-white/5 border border-white/10 rounded-3xl overflow-hidden backdrop-blur-md">
+                                            <div className="p-6 border-b border-white/5 bg-white/5">
+                                                <div className="flex items-center justify-between">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="p-2 bg-blue-600/20 text-blue-400 rounded-xl">
+                                                            <MapPin size={18} />
+                                                        </div>
+                                                        <h2 className="text-xl font-bold">{field.name}</h2>
+                                                    </div>
+                                                    <span className="text-xs text-white/40 font-bold uppercase tracking-widest">{fieldMatches.length} Partidos</span>
+                                                </div>
+                                            </div>
+                                            <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                {fieldMatches
+                                                    .sort((a, b) => {
+                                                        // Priority to field.items order if possible
+                                                        if (field.items) {
+                                                            const idxA = field.items.findIndex((i: any) => i.matchId === a.id);
+                                                            const idxB = field.items.findIndex((i: any) => i.matchId === b.id);
+                                                            if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+                                                        }
+                                                        return (a.start_time || '').localeCompare(b.start_time || '');
+                                                    })
+                                                    .map(match => (
+                                                        <MatchCard
+                                                            key={match.id}
+                                                            match={match}
+                                                            teams={teams}
+                                                            sets={sets.filter(s => s.match_id === match.id)}
+                                                            onStartSet={handleStartSet}
+                                                        />
+                                                    ))}
+                                                {fieldMatches.length === 0 && (
+                                                    <div className="col-span-full py-10 text-center text-white/20 italic text-sm">
+                                                        No hay partidos planificados en esta cancha.
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                                {(Array.isArray(tournament?.fields_config) ? tournament.fields_config : (tournament?.fields_config?.fields || [])).length === 0 && (
+                                    <div className="py-20 bg-white/5 border border-white/10 border-dashed rounded-3xl flex flex-col items-center justify-center text-white/30">
+                                        <MapPin size={48} className="mb-4 opacity-20" />
+                                        <p className="font-bold">No se han configurado canchas aún</p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                    </div>
+
+                    {/* Right Column: Status Summary */}
+                    <div className="lg:col-span-4 space-y-6">
+                        <div className="bg-gradient-to-br from-blue-600/20 to-purple-600/20 border border-white/10 rounded-3xl p-6 backdrop-blur-md">
+                            <h2 className="text-xl font-black mb-4 flex items-center gap-2">
+                                <Info className="text-blue-400" /> Resumen Torneo
+                            </h2>
+                            <div className="space-y-4">
+                                <StatsLabel label="Partidos Totales" value={matches.length} />
+                                <StatsLabel label="Partidos Finalizados" value={matches.filter(m => m.status === 'finished').length} />
+                                <StatsLabel label="Equipos" value={teams.length} />
+                                <StatsLabel label="Jugadores" value={rosters.length} />
+                            </div>
+                            <div className="mt-6 pt-6 border-t border-white/10">
+                                <div className="flex justify-between items-center mb-2">
+                                    <span className="text-xs text-white/40 uppercase tracking-widest font-bold">Progreso General</span>
+                                    <span className="text-xs font-black text-blue-400">
+                                        {matches.length > 0 ? Math.round((matches.filter(m => m.status === 'finished').length / matches.length) * 100) : 0}%
+                                    </span>
+                                </div>
+                                <div className="w-full h-2 bg-white/5 rounded-full overflow-hidden border border-white/5">
+                                    <motion.div
+                                        initial={{ width: 0 }}
+                                        animate={{ width: `${matches.length > 0 ? (matches.filter(m => m.status === 'finished').length / matches.length) * 100 : 0}%` }}
+                                        className="h-full bg-gradient-to-r from-blue-500 to-purple-500 shadow-[0_0_15px_rgba(59,130,246,0.5)]"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Recent Activity Mini-Feed */}
+                        <div className="bg-white/5 border border-white/10 rounded-3xl p-6 backdrop-blur-md">
+                            <h3 className="text-sm font-black mb-4 uppercase tracking-[0.2em] text-white/40">Ultimos Resultados</h3>
+                            <div className="space-y-4">
+                                {matches.filter(m => m.status === 'finished').slice(0, 5).map(match => (
+                                    <div key={match.id} className="flex flex-col gap-2 p-3 bg-white/5 rounded-xl border border-white/5">
+                                        <div className="flex items-center justify-between gap-4">
+                                            <SmallTeamInfo team={teams.find(t => t.id === match.local_team_id)} />
+                                            <span className="text-xs font-black text-blue-400">{match.score_text || '0 - 0'}</span>
+                                            <SmallTeamInfo team={teams.find(t => t.id === match.visitor_team_id)} align="right" />
+                                        </div>
+                                    </div>
+                                ))}
+                                {matches.filter(m => m.status === 'finished').length === 0 && (
+                                    <p className="text-xs text-white/20 italic text-center py-4">No hay resultados registrados aún.</p>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+
+            <ConfirmationModal
+                isOpen={!!startMatchModal}
+                onClose={() => setStartMatchModal(null)}
+                onConfirm={confirmStartSet}
+                title="Iniciar Partido"
+                message={`¿Deseas iniciar el Set #${startMatchModal?.setNumber} del partido entre ${teams.find(t => t.id === startMatchModal?.match.local_team_id)?.name} y ${teams.find(t => t.id === startMatchModal?.match.visitor_team_id)?.name}?`}
+                confirmText="Empezar Anotación"
+                variant="info"
+            />
+        </div>
+    );
+};
+
+const TabButton = ({ active, onClick, icon: Icon, label }: any) => (
+    <button
+        onClick={onClick}
+        className={`px-4 py-2.5 rounded-xl text-xs font-black flex items-center gap-2 transition-all ${active ? 'bg-white/10 text-white shadow-lg' : 'text-white/40 hover:text-white/60'
+            }`}
+    >
+        <Icon size={14} className={active ? 'text-blue-400' : ''} />
+        {label}
+    </button>
+);
+
+const StatsLabel = ({ label, value }: any) => (
+    <div className="flex justify-between items-center">
+        <span className="text-[10px] text-white/40 uppercase tracking-widest font-bold">{label}</span>
+        <span className="text-lg font-black text-white">{value}</span>
+    </div>
+);
+
+const SmallTeamInfo = ({ team, align = 'left' }: any) => (
+    <div className={`flex items-center gap-2 flex-1 ${align === 'right' ? 'flex-row-reverse' : ''} overflow-hidden`}>
+        <div className="w-6 h-6 rounded bg-black flex items-center justify-center border border-white/10 flex-shrink-0">
+            {team?.logo_url ? <img src={team.logo_url} className="w-4 h-4 object-contain" /> : <Trophy size={10} className="text-white/20" />}
+        </div>
+        <span className="text-[10px] font-black truncate text-white/80">{team?.name || '???'}</span>
+    </div>
+);
+
+const MatchCard = ({ match, teams, sets, onStartSet }: any) => {
+    const localTeam = teams.find((t: any) => t.id === match.local_team_id);
+    const visitorTeam = teams.find((t: any) => t.id === match.visitor_team_id);
+
+    return (
+        <div className="bg-white/5 border border-white/10 rounded-3xl overflow-hidden hover:border-blue-500/30 transition-all backdrop-blur-sm group">
+            {/* Header info */}
+            <div className="px-5 py-3 border-b border-white/5 flex items-center justify-between bg-white/5">
+                <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-1.5 text-blue-400">
+                        <Clock size={12} />
+                        <span className="text-[10px] font-black tracking-widest">{match.start_time?.substring(0, 5) || 'HH:MM'}</span>
+                    </div>
+                </div>
+                <div className="flex items-center gap-1.5 text-white/30">
+                    <MapPin size={12} />
+                    <span className="text-[10px] font-bold uppercase tracking-wider">{match.field || 'Cancha'}</span>
+                </div>
+            </div>
+
+            {/* Teams display */}
+            <div className="p-6">
+                <div className="flex items-center justify-between gap-2 overflow-hidden">
+                    <div className="flex flex-col items-center gap-2 flex-1 text-center">
+                        <div className="w-16 h-16 rounded-2xl bg-black/40 border border-white/5 flex items-center justify-center shadow-inner group-hover:scale-110 transition-transform">
+                            {localTeam?.logo_url ? <img src={localTeam.logo_url} className="w-10 h-10 object-contain" /> : <Trophy size={32} className="text-white/10" />}
+                        </div>
+                        <p className="text-sm font-black truncate w-full">{localTeam?.name || 'Por asignar'}</p>
+                    </div>
+
+                    <div className="flex flex-col items-center gap-1">
+                        <span className="text-[10px] font-black italic text-white/10 uppercase tracking-[0.3em]">VS</span>
+                        <div className="px-3 py-1 bg-white/5 rounded-full border border-white/5 text-[10px] font-black text-white/40">
+                            Match #{typeof match.id === 'string' ? match.id.substring(0, 4).toUpperCase() : match.id}
+                        </div>
+                    </div>
+
+                    <div className="flex flex-col items-center gap-2 flex-1 text-center">
+                        <div className="w-16 h-16 rounded-2xl bg-black/40 border border-white/5 flex items-center justify-center shadow-inner group-hover:scale-110 transition-transform">
+                            {visitorTeam?.logo_url ? <img src={visitorTeam.logo_url} className="w-10 h-10 object-contain" /> : <Trophy size={32} className="text-white/10" />}
+                        </div>
+                        <p className="text-sm font-black truncate w-full">{visitorTeam?.name || 'Por asignar'}</p>
+                    </div>
+                </div>
+
+                {/* Sets Section */}
+                <div className="mt-8 space-y-2">
+                    {[1, 2, 3].map(num => {
+                        const set = sets.find((s: any) => s.set_number === num);
+                        const isFinished = set?.status === 'finished';
+                        const isLive = set?.status === 'live';
+
+                        return (
+                            <div key={num} className="bg-black/40 border border-white/5 rounded-2xl p-3 flex items-center justify-between group/set hover:bg-black/60 transition-colors">
+                                <div className="flex items-center gap-3">
+                                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs ${isFinished ? 'bg-green-500/20 text-green-400' : isLive ? 'bg-orange-500/20 text-orange-400' : 'bg-white/5 text-white/30'
+                                        }`}>
+                                        S{num}
+                                    </div>
+                                    {isFinished ? (
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-sm font-black">{set.local_runs} - {set.visitor_runs}</span>
+                                            <span className="text-[8px] font-bold uppercase py-0.5 px-1 bg-green-500/10 text-green-400 rounded">Final</span>
+                                        </div>
+                                    ) : (
+                                        <span className="text-[10px] font-bold text-white/40 uppercase tracking-widest">{isLive ? 'En Juego' : 'Pendiente'}</span>
+                                    )}
+                                </div>
+
+                                {!isFinished && (
+                                    <button
+                                        onClick={() => onStartSet(match, num)}
+                                        className="p-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl shadow-lg shadow-blue-600/10 active:scale-95 transition-all group-hover/set:rotate-[15deg]"
+                                        title="Llevar Agenda"
+                                    >
+                                        <BookOpen size={16} />
+                                    </button>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+        </div>
+    );
+};

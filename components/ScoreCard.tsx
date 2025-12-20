@@ -787,8 +787,9 @@ const LineupGrid: React.FC<{
   nextBatterIdx: number;
   opposingTeam: TeamData;
   onAdvanceInning: () => void;
-  isFullScreenMode?: boolean; // New prop for sizing logic
-}> = ({ title, teamNameValue, onTeamNameChange, teamData, onUpdate, onAddColumn, theme, currentInningIdx, nextBatterIdx, opposingTeam, onAdvanceInning, isFullScreenMode }) => {
+  isFullScreenMode?: boolean;
+  isOfficial?: boolean;
+}> = ({ title, teamNameValue, onTeamNameChange, teamData, onUpdate, onAddColumn, theme, currentInningIdx, nextBatterIdx, opposingTeam, onAdvanceInning, isFullScreenMode, isOfficial }) => {
   // isFullScreen, onToggleFullScreen, renderOverlay props are intentionally ignored to enforce external handling
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -913,8 +914,15 @@ const LineupGrid: React.FC<{
                     value={teamNameValue}
                     onChange={(e) => onTeamNameChange(e.target.value)}
                     placeholder={`Nombre del Equipo ${theme === 'purple' ? 'Visitante' : 'Local'}`}
-                    className={`bg-transparent text-xl md:text-2xl font-bold uppercase tracking-wide focus:outline-none border-b border-transparent focus:border-white/20 transition-all w-full md:w-auto ${theme === 'purple' ? 'text-white placeholder-purple-300/30' : 'text-white placeholder-orange-300/30'}`}
+                    disabled={isOfficial}
+                    className={`bg-transparent text-xl md:text-2xl font-bold uppercase tracking-wide focus:outline-none border-b border-transparent focus:border-white/20 transition-all w-full md:w-auto ${theme === 'purple' ? 'text-white placeholder-purple-300/30' : 'text-white placeholder-orange-300/30'} ${isOfficial ? 'opacity-70 cursor-not-allowed' : ''}`}
                   />
+                  {isOfficial && (
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-white/40">Oficial</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1186,10 +1194,11 @@ const ScoreSheetFullScreen: React.FC<{
   visitorNextBatterIdx: number;
   localNextBatterIdx: number;
   onAdvanceInning: () => void;
+  isOfficial?: boolean;
   // Live Status Props
   liveStatusProps: LiveGameStatusProps;
   scoreAdjustments?: { visitor: number; local: number };
-}> = ({ isOpen, onClose, title, setNum, visitorData, localData, gameInfo, updateGameInfo, updateTeam, handleAddColumn, currentInningIdx, visitorNextBatterIdx, localNextBatterIdx, onAdvanceInning, liveStatusProps, scoreAdjustments }) => {
+}> = ({ isOpen, onClose, title, setNum, visitorData, localData, gameInfo, updateGameInfo, updateTeam, handleAddColumn, currentInningIdx, visitorNextBatterIdx, localNextBatterIdx, onAdvanceInning, isOfficial, liveStatusProps, scoreAdjustments }) => {
   const [activeTeam, setActiveTeam] = useState<'visitor' | 'local'>('visitor');
   const [isHeaderVisible, setIsHeaderVisible] = useState(true);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -1427,6 +1436,7 @@ const ScoreSheetFullScreen: React.FC<{
                   opposingTeam={localData}
                   onAdvanceInning={onAdvanceInning}
                   isFullScreenMode={true}
+                  isOfficial={isOfficial}
                 />
               ) : (
                 <LineupGrid
@@ -1442,6 +1452,7 @@ const ScoreSheetFullScreen: React.FC<{
                   opposingTeam={visitorData}
                   onAdvanceInning={onAdvanceInning}
                   isFullScreenMode={true}
+                  isOfficial={isOfficial}
                 />
               )}
             </div>
@@ -2616,7 +2627,9 @@ const SingleSetScoreCard: React.FC<{
   setWinners: ({ name: string; score: string; isVisitor: boolean } | null)[];
   onSetChange: (set: number) => void;
   onPrint: () => void;
-}> = ({ setNum, onWinnerUpdate, currentSet, setWinners, onSetChange, onPrint }) => {
+  matchId?: string | null;
+}> = ({ setNum, onWinnerUpdate, currentSet, setWinners, onSetChange, onPrint, matchId }) => {
+  const isOfficial = !!matchId;
   const [state, setState] = useState<ScoreCardState>(initialState);
   const [loaded, setLoaded] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true);
@@ -2674,6 +2687,96 @@ const SingleSetScoreCard: React.FC<{
   }, []);
 
   useEffect(() => {
+    const fetchOfficialData = async () => {
+      if (!matchId) return;
+
+      // If we have a saved state for this set, we might want to keep it
+      // BUT if it's the first time loading an official match, we force the official data
+      const saved = localStorage.getItem(`b5_scorekeeper_set_${setNum}`);
+      if (saved) return; // Don't override if there's already work in progress
+
+      try {
+        // Fetch Match (Try NEW schema first)
+        let { data: match } = await supabase.from('tournament_matches').select('*').eq('match_id', matchId).single();
+
+        let vTeamId, hTeamId;
+
+        if (match) {
+          vTeamId = match.source_away_id;
+          hTeamId = match.source_home_id;
+        } else {
+          // Fallback to LEGACY public schema
+          const { data: legacyMatch } = await supabase.from('tournament_matches').select('*').eq('id', matchId).single();
+          if (!legacyMatch) return;
+          match = legacyMatch;
+          vTeamId = legacyMatch.visitor_team_id;
+          hTeamId = legacyMatch.local_team_id;
+        }
+
+        if (!vTeamId || !hTeamId) {
+          // If no team IDs found in relational, we might be in trouble without teams, 
+          // but let's try to proceed if we can at least get names from somewhere.
+          console.warn("No team IDs found for match", matchId);
+        }
+
+        const { data: vTeam } = vTeamId ? await supabase.from('tournament_teams').select('*').eq('id', vTeamId).single() : { data: null };
+        const { data: hTeam } = hTeamId ? await supabase.from('tournament_teams').select('*').eq('id', hTeamId).single() : { data: null };
+
+        const { data: vRoster } = vTeamId ? await supabase.from('tournament_rosters').select('*').eq('team_id', vTeamId) : { data: [] };
+        const { data: hRoster } = hTeamId ? await supabase.from('tournament_rosters').select('*').eq('team_id', hTeamId) : { data: [] };
+
+        const newState = { ...initialState };
+
+        // Update Game Info
+        newState.gameInfo = {
+          ...newState.gameInfo,
+          visitor: vTeam?.name || 'Visitante',
+          home: hTeam?.name || 'Local',
+          visitorLogo: vTeam?.logo_url,
+          homeLogo: hTeam?.logo_url,
+          setNum: setNum.toString(),
+          gameNum: matchId.substring(0, 4).toUpperCase(),
+          place: match.field || ''
+        };
+
+        // Map Rosters to Team Slots (Max 5 starters for B5)
+        const mapRoster = (players: any[]) => {
+          const slots = Array(5).fill(null).map(() => ({
+            starter: createEmptyPlayer(),
+            sub: createEmptyPlayer(),
+          }));
+
+          players?.forEach((p, idx) => {
+            if (idx < 5) {
+              slots[idx].starter = {
+                name: `${p.first_name} ${p.last_name}`,
+                number: p.number || '',
+                gender: p.gender || '',
+                pos: p.role === 'CC' ? 'C' : p.role || '',
+                scores: [['']]
+              };
+            } else if (idx < 10) {
+              slots[idx - 5].sub = {
+                name: `${p.first_name} ${p.last_name}`,
+                number: p.number || '',
+                gender: p.gender || '',
+                pos: p.role === 'CC' ? 'C' : p.role || '',
+                scores: [['']]
+              };
+            }
+          });
+          return { slots };
+        };
+
+        newState.visitorTeam = mapRoster(vRoster || []);
+        newState.localTeam = mapRoster(hRoster || []);
+
+        setState(newState);
+      } catch (error) {
+        console.error("Error loading official match data:", error);
+      }
+    };
+
     const saved = localStorage.getItem(`b5_scorekeeper_set_${setNum}`);
     if (saved) {
       try {
@@ -2709,15 +2812,53 @@ const SingleSetScoreCard: React.FC<{
       } catch (e) {
         console.error("Error loading/parsing saved state, reverting to default:", e);
       }
+    } else if (matchId) {
+      fetchOfficialData();
     }
     setLoaded(true);
-  }, []);
+  }, [setNum, matchId]);
 
   useEffect(() => {
     if (loaded) {
       localStorage.setItem(`b5_scorekeeper_set_${setNum}`, JSON.stringify(state));
+
+      // Real-time synchronization for official matches
+      if (matchId) {
+        const syncToSupabase = async () => {
+          try {
+            // Calculate current scores
+            const vRuns = state.inningScores.visitor.reduce((acc, val) => acc + (parseInt(val) || 0), 0) + (state.scoreAdjustments?.visitor || 0);
+            const lRuns = state.inningScores.local.reduce((acc, val) => acc + (parseInt(val) || 0), 0) + (state.scoreAdjustments?.local || 0);
+
+            // 1. Sync to LEGACY public schema
+            await supabase
+              .from('tournament_sets')
+              .update({
+                visitor_score: vRuns,
+                local_score: lRuns,
+                status: state.winner ? 'finished' : 'live',
+              })
+              .eq('match_id', matchId)
+              .eq('set_number', setNum);
+
+            // 2. Sync to NEW relational structure (now in public)
+            await supabase
+              .from('tournament_sets')
+              .update({
+                away_score: vRuns,
+                home_score: lRuns,
+                status: state.winner ? 'finished' : 'live',
+              })
+              .eq('match_id', matchId)
+              .eq('set_number', setNum);
+          } catch (err) {
+            console.error("Error syncing official match:", err);
+          }
+        };
+        syncToSupabase();
+      }
     }
-  }, [state, loaded, setNum]);
+  }, [state, loaded, setNum, matchId]);
 
   useEffect(() => {
     onWinnerUpdate(state.winner);
@@ -3509,6 +3650,7 @@ const SingleSetScoreCard: React.FC<{
             nextBatterIdx={visitorNextBatterIdx}
             opposingTeam={state.localTeam}
             onAdvanceInning={() => setShowAdvanceModal(true)}
+            isOfficial={isOfficial}
           />
           <LineupGrid
             title="Alineación Local"
@@ -3522,6 +3664,7 @@ const SingleSetScoreCard: React.FC<{
             nextBatterIdx={localNextBatterIdx}
             opposingTeam={state.visitorTeam}
             onAdvanceInning={() => setShowAdvanceModal(true)}
+            isOfficial={isOfficial}
           />
 
           <div className="order-first lg:order-last mb-8 lg:mb-0 lg:mt-0 mt-8 bg-white/5 border border-white/10 rounded-xl overflow-hidden shadow-2xl print-panel">
@@ -3776,6 +3919,7 @@ const SingleSetScoreCard: React.FC<{
         visitorNextBatterIdx={visitorNextBatterIdx}
         localNextBatterIdx={localNextBatterIdx}
         onAdvanceInning={() => setShowAdvanceModal(true)}
+        isOfficial={isOfficial}
         scoreAdjustments={state.scoreAdjustments}
         liveStatusProps={{
           visitorRuns: visitorRunsTotal,
@@ -4271,9 +4415,14 @@ export const MatchWinnerModal: React.FC<{
   );
 };
 
-export const ScoreCard: React.FC = () => {
+interface ScoreCardProps {
+  matchId?: string | null;
+  setNumber?: number | null;
+}
+
+export const ScoreCard: React.FC<ScoreCardProps> = ({ matchId, setNumber }) => {
   const [loading, setLoading] = useState(false);
-  const [currentSet, setCurrentSet] = useState(1);
+  const [currentSet, setCurrentSet] = useState(setNumber || 1);
   const [setWinners, setSetWinners] = useState<({ name: string; score: string; isVisitor: boolean } | null)[]>([null, null, null]);
   const [matchWinner, setMatchWinner] = useState<{ name: string; score: string; setsWon: number } | null>(null);
   const [printConfigModalOpen, setPrintConfigModalOpen] = useState(false);
@@ -4387,6 +4536,7 @@ export const ScoreCard: React.FC = () => {
           setWinners={setWinners}
           onSetChange={handleSetChange}
           onPrint={handlePrint}
+          matchId={matchId}
         />
       )}
 

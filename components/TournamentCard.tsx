@@ -1,8 +1,46 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MapPin, Calendar, Clock, PlayCircle, Bell, Loader2, Pencil, Trash2, Trophy, MonitorPlay } from 'lucide-react';
+import { MapPin, Calendar, Clock, PlayCircle, Bell, Loader2, Pencil, Trash2, Trophy, MonitorPlay, Timer } from 'lucide-react';
 import { Tournament, ReminderType } from '../types/tournament';
 import { supabase } from '../lib/supabase';
+import { useToast } from '../context/ToastContext';
+import { ConfirmationModal } from './ConfirmationModal';
+
+const TournamentCountdown = ({ startDate, startTime }: { startDate: string, startTime?: string }) => {
+    const [timeLeft, setTimeLeft] = useState<{ days: number, hours: number, minutes: number, seconds: number } | null>(null);
+
+    useEffect(() => {
+        const calculateTimeLeft = () => {
+            const start = new Date(`${startDate}T${startTime || '00:00'}`);
+            const now = new Date();
+            const difference = start.getTime() - now.getTime();
+
+            if (difference > 0) {
+                setTimeLeft({
+                    days: Math.floor(difference / (1000 * 60 * 60 * 24)),
+                    hours: Math.floor((difference / (1000 * 60 * 60)) % 24),
+                    minutes: Math.floor((difference / 1000 / 60) % 60),
+                    seconds: Math.floor((difference / 1000) % 60)
+                });
+            } else {
+                setTimeLeft(null);
+            }
+        };
+
+        calculateTimeLeft();
+        const timer = setInterval(calculateTimeLeft, 1000);
+        return () => clearInterval(timer);
+    }, [startDate, startTime]);
+
+    if (!timeLeft) return null;
+
+    return (
+        <div className="flex items-center gap-1 px-1.5 py-0.5 bg-blue-500/10 border border-blue-500/20 rounded text-[9px] font-bold text-blue-400 animate-pulse">
+            <Timer size={10} />
+            <span>{timeLeft.days}d {timeLeft.hours}h {timeLeft.minutes}m</span>
+        </div>
+    );
+};
 
 interface TournamentCardProps {
     tournament: Tournament;
@@ -12,8 +50,11 @@ interface TournamentCardProps {
 
 export const TournamentCard: React.FC<TournamentCardProps> = ({ tournament, onEdit, onDelete }) => {
     const navigate = useNavigate();
+    const { addToast } = useToast();
     const [reminders, setReminders] = useState<ReminderType[]>([]);
     const [loadingReminders, setLoadingReminders] = useState<Record<string, boolean>>({});
+    const [isPublishModalOpen, setIsPublishModalOpen] = useState(false);
+    const [isPublishing, setIsPublishing] = useState(false);
 
     useEffect(() => {
         fetchReminders();
@@ -79,27 +120,61 @@ export const TournamentCard: React.FC<TournamentCardProps> = ({ tournament, onEd
         }
     };
 
-    const formatDate = (dateStr: string) => {
-        const date = new Date(dateStr);
-        return date.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
+    const formatDate = (dateStr: string | null | undefined) => {
+        if (!dateStr) return 'Sin fecha';
+        try {
+            const date = new Date(dateStr);
+            if (isNaN(date.getTime())) return 'Fecha inválida';
+            return date.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
+        } catch (e) {
+            return 'Error de fecha';
+        }
     };
 
-    const formatTime = (timeStr: string) => {
+    const formatTime = (timeStr: string | null | undefined) => {
         if (!timeStr) return '';
-        return timeStr.substring(0, 5);
+        try {
+            return timeStr.substring(0, 5);
+        } catch (e) {
+            return '';
+        }
+    };
+
+    const handlePublish = async () => {
+        setIsPublishing(true);
+        try {
+            const { error } = await supabase
+                .from('tournaments')
+                .update({ status: 'active' })
+                .eq('id', tournament.id);
+
+            if (error) throw error;
+
+            addToast(`¡Felicidades! Has creado el Torneo ${tournament.name} con éxito.`, 'success');
+            // Small delay to let the toast be seen before reload
+            setTimeout(() => window.location.reload(), 2000);
+        } catch (error: any) {
+            addToast(`Error al publicar: ${error.message}`, 'error');
+        } finally {
+            setIsPublishing(false);
+            setIsPublishModalOpen(false);
+        }
     };
 
     return (
         <div className="w-full bg-slate-900/50 border border-white/10 rounded-lg overflow-hidden hover:border-blue-500/30 transition-all group relative">
             <div className="h-0.5 w-full bg-gradient-to-r from-blue-500 to-cyan-400"></div>
 
-            <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-20">
-                <button
-                    onClick={() => onDelete(tournament.id, tournament.name)}
-                    className="p-1 rounded bg-slate-800/80 backdrop-blur-sm hover:bg-red-500/20 hover:text-red-300 text-slate-400 border border-white/5 hover:border-red-500/30 transition-all"
-                >
-                    <Trash2 size={10} />
-                </button>
+            <div className="absolute top-2 right-2 flex flex-col items-end gap-1 transition-opacity z-20">
+                <TournamentCountdown startDate={tournament.start_date} startTime={tournament.start_time} />
+                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                        onClick={() => onDelete(tournament.id, tournament.name)}
+                        className="p-1 rounded bg-slate-800/80 backdrop-blur-sm hover:bg-red-500/20 hover:text-red-300 text-slate-400 border border-white/5 hover:border-red-500/30 transition-all"
+                    >
+                        <Trash2 size={10} />
+                    </button>
+                </div>
             </div>
 
             <div className="p-3">
@@ -144,13 +219,7 @@ export const TournamentCard: React.FC<TournamentCardProps> = ({ tournament, onEd
                             onClick={async (e) => {
                                 e.stopPropagation();
                                 if (tournament.status === 'draft') {
-                                    if (confirm('¿Estás seguro de que quieres publicar este torneo? Dejará de ser un borrador.')) {
-                                        const { error } = await supabase
-                                            .from('tournaments')
-                                            .update({ status: 'active' })
-                                            .eq('id', tournament.id);
-                                        if (!error) window.location.reload();
-                                    }
+                                    setIsPublishModalOpen(true);
                                 } else {
                                     navigate(`/dashboard/torneos/B5ToolsBuilder/${tournament.id}`);
                                 }
@@ -192,6 +261,18 @@ export const TournamentCard: React.FC<TournamentCardProps> = ({ tournament, onEd
                         </div>
                     </div>
 
+                    {tournament.status === 'active' && (
+                        <button
+                            onClick={() => {
+                                navigate(`/dashboard/torneos/${tournament.id}/Start`);
+                            }}
+                            className="w-full py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 border border-green-500/20 hover:border-green-500/50 text-white font-bold rounded-lg active:scale-95 transition-all shadow-xl flex items-center justify-center gap-2 text-[11px] group/start"
+                        >
+                            <PlayCircle size={16} className="group-hover/start:scale-110 transition-transform" />
+                            Comenzar Torneo
+                        </button>
+                    )}
+
                     {tournament.status === 'draft' && (
                         <button
                             onClick={() => {
@@ -205,6 +286,16 @@ export const TournamentCard: React.FC<TournamentCardProps> = ({ tournament, onEd
                     )}
                 </div>
             </div>
+
+            <ConfirmationModal
+                isOpen={isPublishModalOpen}
+                onClose={() => setIsPublishModalOpen(false)}
+                onConfirm={handlePublish}
+                title="Publicar Torneo"
+                message={`¿Estás seguro de que deseas publicar el torneo "${tournament.name}"? Una vez publicado, dejará de ser un borrador y estará disponible para la gestión oficial.`}
+                confirmText={isPublishing ? "Publicando..." : "Publicar Ahora"}
+                variant="info"
+            />
         </div>
     );
 };

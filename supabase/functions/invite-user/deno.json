@@ -1,0 +1,13 @@
+{
+    "imports": {
+        "std/": "https://deno.land/std@0.168.0/",
+        "nodemailer": "npm:nodemailer@6.9.13"
+    },
+    "compilerOptions": {
+        "allowJs": true,
+        "lib": [
+            "deno.window",
+            "deno.ns"
+        ]
+    }
+}

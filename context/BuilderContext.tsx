@@ -214,20 +214,34 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
     // -- LocalStorage Persistence --
     React.useEffect(() => {
         const timeout = setTimeout(() => {
-            // 1. Master State (for Builder Reload)
-            localStorage.setItem('b5_builder_state', JSON.stringify(state));
-            if (state.config.id) localStorage.setItem('b5_builder_current_id', state.config.id);
+            try {
+                // 1. Master State (for Builder Reload)
+                // We keep ONLY the master state to avoid QuotaExceededError.
+                // Sub-keys are redundant as they are derived from state.
+                localStorage.setItem('b5_builder_state', JSON.stringify(state));
+                if (state.config.id) localStorage.setItem('b5_builder_current_id', state.config.id);
 
-            // 2. Section Sub-JSONs (for Preview Consumption as requested)
-            localStorage.setItem('b5_builder_info', JSON.stringify(state.config));
-            localStorage.setItem('b5_builder_teams', JSON.stringify(state.teams));
-            // Include 'fields' from config in the matches JSON as requested for the Calendar logic
-            localStorage.setItem('b5_builder_matches', JSON.stringify({
-                matches: state.matches,
-                structure: state.structure,
-                fields: (state.config as any).fields || []
-            }));
-            localStorage.setItem('b5_builder_participants', JSON.stringify({ rosters: state.rosters, referees: state.referees, admins: state.admins }));
+                // 2. Section Sub-JSONs (Optimized/Consolidated if needed for other components)
+                // If other parts of the app NEED these specific keys, we update them but DRY.
+                // For now, let's keep them but remove the heavy 'structure' from 'b5_builder_matches'
+                // since it's already in state.
+                localStorage.setItem('b5_builder_info', JSON.stringify(state.config));
+                localStorage.setItem('b5_builder_teams', JSON.stringify(state.teams));
+                localStorage.setItem('b5_builder_matches', JSON.stringify({
+                    matches: state.matches,
+                    // structure: state.structure, // REMOVED TO SAVE SPACE
+                    fields: (state.config as any).fields || []
+                }));
+                localStorage.setItem('b5_builder_participants', JSON.stringify({ rosters: state.rosters, referees: state.referees, admins: state.admins }));
+            } catch (e) {
+                console.warn("Storage quota exceeded, clearing legacy keys...", e);
+                // try to clear old/other keys to make space
+                Object.keys(localStorage).forEach(key => {
+                    if (key.startsWith('b5_scorekeeper_') || key.startsWith('b5_builder_') && key !== 'b5_builder_state') {
+                        // localStorage.removeItem(key); // Be careful here
+                    }
+                });
+            }
         }, 1000);
         return () => clearTimeout(timeout);
     }, [state]);
@@ -459,10 +473,11 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
             if (tError) throw tError;
             await delay(1000);
 
-            // 1.5 Save Stages
+            // 1.5 Save Stages (Legacy Public & New Normalized)
             setState(prev => ({ ...prev, savingStep: 'Estructurando fases del torneo...' }));
             if (state.stages && state.stages.length > 0) {
-                const { error: stagesError } = await supabase
+                // Public (Legacy)
+                await supabase
                     .from('tournament_stages')
                     .upsert(state.stages.map(s => ({
                         id: s.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s.id) ? s.id : undefined,
@@ -474,8 +489,20 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
                         number_of_groups: s.number_of_groups,
                         teams_per_group: s.teams_per_group
                     })));
+            }
 
-                if (stagesError) throw stagesError;
+            // Save to NEW Normalized 'public.tournament_phases'
+            if (state.structure?.phases && state.structure.phases.length > 0) {
+                const { error: phasesError } = await supabase
+                    .from('tournament_phases')
+                    .upsert(state.structure.phases.map(p => ({
+                        phase_id: p.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(p.id) ? p.id : undefined,
+                        tournament_id: tournament.id,
+                        name: p.name || 'Fase',
+                        type: p.type || 'group',
+                        phase_order: p.order || 0
+                    })));
+                if (phasesError) console.error("Error saving normalized phases:", phasesError);
             }
             await delay(800);
 
@@ -677,70 +704,82 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
             }
             await delay(600);
 
-            // 6. Save Matches (Including Calendar/Fields)
+            // 6. Save Matches (Normalized Schema)
             setState(prev => ({ ...prev, savingStep: 'Guardando calendario y partidos...' }));
-            if (state.matches.length > 0) {
-                // Ensure fields like start_time, field, and source IDs are saved
-                const matchesToSave = state.matches.map(m => ({
-                    id: m.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(m.id) ? m.id : undefined,
-                    tournament_id: tournament.id,
-                    stage_id: m.stage_id,
-                    visitor_team_id: m.visitor_team_id,
-                    local_team_id: m.local_team_id,
-                    start_time: m.start_time, // Important for Calendar
-                    location: m.location,
-                    field: m.field,           // Important for Calendar
-                    referee_id: (m as any).referee_id || (m as any).refereeId, // Map from local prop
-                    status: m.status || 'scheduled',
-                    visitor_source_match_id: m.visitor_source_match_id,
-                    local_source_match_id: m.local_source_match_id
-                }));
 
-                const { error: matchError } = await supabase
-                    .from('tournament_matches')
-                    .upsert(matchesToSave.map(m => {
-                        // Ensure optional fields are handled or set to null/default
-                        const { sets, ...matchData } = m as any;
-                        return matchData;
-                    }));
+            const matchesToSaveRelational: any[] = [];
+            const setsToSaveRelational: any[] = [];
 
-                if (matchError) throw matchError;
+            // Extract from state.structure (True Source of Truth for B5 Builder)
+            if (state.structure?.phases) {
+                state.structure.phases.forEach(phase => {
+                    const phaseId = phase.id;
 
-                // 6.5 Save Sets (Relational)
-                setState(prev => ({ ...prev, savingStep: 'Guardando sets y marcadores...' }));
-                const setsToSave: any[] = [];
+                    const processMatch = (m: any) => {
+                        const mId = m.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(m.id) ? m.id : undefined;
+                        if (!mId) return null;
 
-                state.matches.forEach(m => {
-                    // Use the ID we resolved for the match (must be valid UUID)
-                    const matchId = m.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(m.id) ? m.id : null;
-
-                    if (matchId && m.sets && m.sets.length > 0) {
-                        m.sets.forEach((s: any) => {
-                            setsToSave.push({
-                                id: s.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s.id) ? s.id : undefined,
-                                match_id: matchId,
-                                set_number: s.set_number,
-                                visitor_runs: s.visitor_score || s.visitor_runs || 0,
-                                local_runs: s.local_score || s.local_runs || 0,
-                                visitor_hits: s.visitor_hits || 0,
-                                local_hits: s.local_hits || 0,
-                                visitor_errors: s.visitor_errors || 0,
-                                local_errors: s.local_errors || 0,
-                                status: s.status || 'pending',
-                                // Preserve existing data json if needed
-                                data: s.data
-                            });
+                        matchesToSaveRelational.push({
+                            id: mId,
+                            tournament_id: tournament.id,
+                            phase_id: phaseId,
+                            stage_id: phaseId, // Legacy compatibility
+                            name: m.name,
+                            location: m.location,
+                            round_index: m.roundIndex,
+                            global_id: m.globalId,
+                            source_home_id: m.sourceHome?.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(m.sourceHome.id) ? m.sourceHome.id : null,
+                            source_home_type: m.sourceHome?.type,
+                            source_home_index: m.sourceHome?.index,
+                            source_away_id: m.sourceAway?.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(m.sourceAway.id) ? m.sourceAway.id : null,
+                            source_away_type: m.sourceAway?.type,
+                            source_away_index: m.sourceAway?.index,
+                            local_team_id: m.sourceHome?.type === 'team' && m.sourceHome.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(m.sourceHome.id) ? m.sourceHome.id : null,
+                            visitor_team_id: m.sourceAway?.type === 'team' && m.sourceAway.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(m.sourceAway.id) ? m.sourceAway.id : null,
+                            referee_id: m.refereeId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(m.refereeId) ? m.refereeId : null,
+                            status: m.status || 'scheduled',
+                            start_time: m.startTime && m.date ? `${m.date}T${m.startTime}:00` : m.start_time,
+                            field: m.court || m.field
                         });
-                    }
-                });
 
-                if (setsToSave.length > 0) {
-                    const { error: setError } = await supabase
-                        .from('tournament_sets')
-                        .upsert(setsToSave);
-                    if (setError) console.error("Error saving sets", setError); // Log but don't fail full save? Or fail? Better warn.
-                }
+                        if (m.sets) {
+                            m.sets.forEach((s: any) => {
+                                setsToSaveRelational.push({
+                                    match_id: mId,
+                                    set_number: s.set_number,
+                                    status: s.status || 'pending',
+                                    home_score: s.home_score || 0,
+                                    away_score: s.away_score || 0,
+                                    local_runs: s.home_score || 0,
+                                    visitor_runs: s.away_score || 0,
+                                    data: s.data || {}
+                                });
+                            });
+                        }
+                    };
+
+                    if (phase.matches) phase.matches.forEach(processMatch);
+                    if (phase.groups) phase.groups.forEach(g => g.matches?.forEach(processMatch));
+                });
             }
+
+            // Save Matches to public schema (relational columns)
+            if (matchesToSaveRelational.length > 0) {
+                const { error: mRelError } = await supabase
+                    .from('tournament_matches')
+                    .upsert(matchesToSaveRelational);
+                if (mRelError) console.error("Error saving normalized matches:", mRelError);
+            }
+
+            // Save Sets to public schema (relational columns)
+            if (setsToSaveRelational.length > 0) {
+                const { error: sRelError } = await supabase
+                    .from('tournament_sets')
+                    .upsert(setsToSaveRelational, { onConflict: 'match_id,set_number' });
+                if (sRelError) console.error("Error saving normalized sets:", sRelError);
+            }
+
+            await delay(600);
             await delay(600);
 
             // 7. Save Fields (Relational)

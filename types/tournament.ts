@@ -22,6 +22,8 @@ export interface Tournament {
     custom_rules?: string[];
     number_of_groups?: number;
     tiebreaker_rules?: TieBreakerRule[];
+    structure?: any;
+    fields_config?: any;
 }
 
 export type TieBreakerType = 'direct_match' | 'run_diff' | 'runs_scored' | 'random';

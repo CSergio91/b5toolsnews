@@ -142,11 +142,18 @@ export const TournamentsPage: React.FC = () => {
 
     // Grouping Logic for Main View (Group by Date)
     const groupedTournaments = filteredTournaments.reduce((groups, tournament) => {
-        const date = tournament.start_date;
-        if (!groups[date]) {
-            groups[date] = [];
+        const dateRaw = tournament.start_date;
+        if (!dateRaw) return groups;
+
+        try {
+            const date = new Date(dateRaw).toISOString().split('T')[0];
+            if (!groups[date]) {
+                groups[date] = [];
+            }
+            groups[date].push(tournament);
+        } catch (e) {
+            console.error("Error grouping tournament:", tournament.id, e);
         }
-        groups[date].push(tournament);
         return groups;
     }, {} as Record<string, Tournament[]>);
 
@@ -156,19 +163,27 @@ export const TournamentsPage: React.FC = () => {
     const sourceForIndex = searchQuery ? filteredTournaments : tournaments;
 
     const indexTree = sourceForIndex.reduce((tree, tournament) => {
-        const date = new Date(tournament.start_date);
-        const year = date.getFullYear().toString();
-        const monthNum = date.getMonth();
-        const monthName = date.toLocaleDateString('es-ES', { month: 'long' });
-        const monthKey = `${monthNum.toString().padStart(2, '0')}-${monthName}`;
+        if (!tournament.start_date) return tree;
 
-        if (!tree[year]) {
-            tree[year] = {};
+        try {
+            const date = new Date(tournament.start_date);
+            if (isNaN(date.getTime())) return tree;
+
+            const year = date.getFullYear().toString();
+            const monthNum = date.getMonth();
+            const monthName = date.toLocaleDateString('es-ES', { month: 'long' });
+            const monthKey = `${monthNum.toString().padStart(2, '0')}-${monthName}`;
+
+            if (!tree[year]) {
+                tree[year] = {};
+            }
+            if (!tree[year][monthKey]) {
+                tree[year][monthKey] = [];
+            }
+            tree[year][monthKey].push(tournament);
+        } catch (e) {
+            console.error("Error indexing tournament:", tournament.id, e);
         }
-        if (!tree[year][monthKey]) {
-            tree[year][monthKey] = [];
-        }
-        tree[year][monthKey].push(tournament);
         return tree;
     }, {} as Record<string, Record<string, Tournament[]>>);
 
