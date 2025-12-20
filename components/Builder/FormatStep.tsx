@@ -8,6 +8,13 @@ export const FormatStep: React.FC = () => {
 
     const [groupsCount, setGroupsCount] = useState(config.number_of_groups || 4);
 
+    // Sync local state when config loads from DB
+    React.useEffect(() => {
+        if (config.number_of_groups) {
+            setGroupsCount(config.number_of_groups);
+        }
+    }, [config.number_of_groups]);
+
     const types = [
         { id: 'groups', label: 'Grupos + Playoff', icon: <LayoutGrid size={24} />, desc: 'Fase de grupos (Round Robin) seguida de una llave de eliminación.' },
     ];

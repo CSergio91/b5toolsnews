@@ -27,19 +27,20 @@ const SavingOverlay = ({ step }: { step?: string }) => (
         exit={{ opacity: 0 }}
         className="fixed inset-0 bg-[#0a0a0f]/90 backdrop-blur-md z-[100] flex flex-col items-center justify-center p-6 text-center"
     >
-        <div className="relative mb-8">
+        <div className="relative mb-8 flex items-center justify-center">
+            {/* Spinner Ring */}
             <motion.div
                 animate={{ rotate: 360 }}
                 transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
-                className="w-24 h-24 rounded-full border-t-2 border-b-2 border-l-2 border-transparent border-t-blue-500 border-b-indigo-500"
+                className="w-24 h-24 rounded-full border-t-2 border-b-2 border-l-2 border-transparent border-t-blue-500 border-b-indigo-500 absolute"
             />
+            {/* Centered Gear Icon */}
             <motion.div
-                animate={{ scale: [1, 1.1, 1] }}
-                transition={{ repeat: Infinity, duration: 2 }}
-                className="absolute inset-0 flex items-center justify-center"
+                animate={{ rotate: -360 }} // Counter-rotate for visual effect
+                transition={{ repeat: Infinity, duration: 4, ease: "linear" }}
+                className="z-10 flex items-center justify-center"
             >
-                <div className="w-16 h-16 rounded-full bg-blue-500/10 border border-blue-500/20 blur-xl"></div>
-                <Save size={32} className="text-blue-400 relative z-10" />
+                <Settings size={32} className="text-blue-400" />
             </motion.div>
         </div>
 
@@ -51,14 +52,18 @@ const SavingOverlay = ({ step }: { step?: string }) => (
             Guardando Torneo
         </motion.h2>
 
-        <motion.p
-            key={step}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="text-blue-400 font-bold text-sm uppercase tracking-widest"
-        >
-            {step || 'Iniciando proceso...'}
-        </motion.p>
+        {/* Use a fixed height container to prevent layout jumping */}
+        <div className="h-6 flex items-center justify-center">
+            <motion.p
+                key={step}
+                initial={{ opacity: 0, y: 5 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.2 }}
+                className="text-blue-400 font-bold text-sm uppercase tracking-widest whitespace-nowrap"
+            >
+                {step || 'Iniciando proceso...'}
+            </motion.p>
+        </div>
 
         <div className="mt-12 w-64 h-1.5 bg-white/5 rounded-full overflow-hidden border border-white/5">
             <motion.div

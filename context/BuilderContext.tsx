@@ -97,6 +97,21 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
                     if (rErr2) console.error("Error fetching rosters", rErr2);
                 }
 
+                // Fetch Referee Profiles based on IDs found
+                let fullReferees: any[] = [];
+                if (refs && refs.length > 0) {
+                    const refereeIds = refs.map((r: any) => r.referee_id);
+                    if (refereeIds.length > 0) {
+                        const { data: pData, error: pErr } = await supabase
+                            .from('referee_profiles')
+                            .select('*')
+                            .in('id', refereeIds);
+
+                        if (pData) fullReferees = pData;
+                        if (pErr) console.error("Error fetching referee profiles", pErr);
+                    }
+                }
+
                 if (t && !tErr) {
                     setState(prev => ({
                         ...prev,
@@ -115,9 +130,11 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
                             cost_per_team: t.cost_per_team || 0,
                             currency: t.currency || 'USD',
                             tournament_type: t.structure?.format_type || t.tournament_type || 'open',
+                            number_of_groups: t.number_of_groups, // Persistence for Groups count
                             tiebreaker_rules: t.tiebreaker_rules || [],
                             custom_rules: t.custom_rules || [],
-                            fields_config: t.fields_config || []
+                            fields_config: t.fields_config || [],
+                            fields: t.fields_config || [] // Map to 'fields' as UI likely expects this from local state pattern
                         },
                         structure: t.structure || prev.structure,
                         stages: stages || [],
@@ -127,8 +144,11 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
                         })),
                         rosters: rosters || [],
                         matches: matches || [],
-                        referees: (refs || []).map(r => ({ id: (r as any).referee_id })), // Mapping back from union table
-                        admins: admins || [],
+                        referees: fullReferees.length > 0 ? fullReferees : (refs || []).map(r => ({ id: (r as any).referee_id })), // Use profiles if available
+                        admins: (admins || []).map(a => ({
+                            ...a,
+                            permissions: (a as any).permissions || {}
+                        })),
                         isDirty: false
                     }));
                 }
@@ -357,6 +377,7 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
                 organizer_name: state.config.organizer_name || null,
                 contact_email: state.config.contact_email || null,
                 tournament_type: dbType,
+                number_of_groups: state.config.number_of_groups, // Now strictly saved
                 cost_per_team: state.config.cost_per_team,
                 currency: state.config.currency,
                 points_for_win: state.config.points_for_win,
@@ -446,21 +467,36 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
             }
             await delay(800);
 
-            // 4. Save Referees
+            // 4. Save Referees (Delete + Insert Strategy to avoid conflicts and clean up removed refs)
             setState(prev => ({ ...prev, savingStep: 'Configurando panel de oficiales y árbitros...' }));
-            // Note: DB table 'tournament_referees' only has referee_id (link to profile).
-            // For now we skip or just save the link if referee_id is present.
-            if (state.referees.length > 0) {
-                const { error: refError } = await supabase
-                    .from('tournament_referees')
-                    .upsert(state.referees.filter(r => r.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(r.id)).map(r => ({
-                        id: r.id,
-                        tournament_id: tournament.id,
-                        referee_id: r.id, // Assuming ID is the profile ID
-                        status: 'accepted'
-                    })), { onConflict: 'tournament_id, referee_id', ignoreDuplicates: true });
+            if (state.referees.length >= 0) { // Always run to allow clearing
+                // First delete existing relations
+                await supabase.from('tournament_referees').delete().eq('tournament_id', tournament.id);
 
-                if (refError) console.warn("Error saving referee links", refError);
+                // 4. Save Referees (Now using Upsert securely with Unique Index)
+                // Filter unique IDs to prevent payload duplicates, then upsert
+                const uniqueReferees = state.referees
+                    .filter(r => r.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(r.id))
+                    .reduce((acc, current) => {
+                        const x = acc.find(item => item.id === current.id);
+                        if (!x) return acc.concat([current]);
+                        else return acc;
+                    }, [] as any[]);
+
+                if (uniqueReferees.length > 0) {
+                    const { error: refError } = await supabase
+                        .from('tournament_referees')
+                        .upsert(
+                            uniqueReferees.map(r => ({
+                                tournament_id: tournament.id,
+                                referee_id: r.id, // Profile ID
+                                status: 'accepted'
+                            })),
+                            { onConflict: 'tournament_id, referee_id', ignoreDuplicates: true } // ignoreDuplicates true means if exists, keep it (allows status updates if we wanted, but ignore is safer to avoid errors)
+                        );
+
+                    if (refError) console.warn("Error saving referee links", refError);
+                }
             }
             await delay(600);
 
@@ -477,35 +513,40 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
                         email: a.email,
                         role: a.role,
                         avatar_url: a.avatar_url,
-                        status: 'invited'
+                        status: 'invited',
+                        permissions: a.permissions // Save detailed permissions
                     })));
 
                 if (adminError) throw adminError;
             }
             await delay(600);
 
-            // 6. Save Matches / Fixture
-            setState(prev => ({ ...prev, savingStep: 'Generando calendario y encuentros (Fixture)...' }));
-            if (state.matches && state.matches.length > 0) {
+            // 6. Save Matches (Including Calendar/Fields)
+            setState(prev => ({ ...prev, savingStep: 'Guardando calendario y partidos...' }));
+            if (state.matches.length > 0) {
+                // Ensure fields like start_time, field, and source IDs are saved
+                const matchesToSave = state.matches.map(m => ({
+                    id: m.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(m.id) ? m.id : undefined,
+                    tournament_id: tournament.id,
+                    stage_id: m.stage_id,
+                    visitor_team_id: m.visitor_team_id,
+                    local_team_id: m.local_team_id,
+                    start_time: m.start_time, // Important for Calendar
+                    location: m.location,
+                    field: m.field,           // Important for Calendar
+                    status: m.status || 'scheduled',
+                    visitor_source_match_id: m.visitor_source_match_id,
+                    local_source_match_id: m.local_source_match_id
+                }));
+
                 const { error: matchError } = await supabase
                     .from('tournament_matches')
-                    .upsert(state.matches.map(m => ({
-                        id: m.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(m.id) ? m.id : undefined,
-                        tournament_id: tournament.id,
-                        stage_id: m.stage_id,
-                        local_team_id: m.local_team_id,
-                        visitor_team_id: m.visitor_team_id,
-                        local_source_match_id: m.local_source_match_id,
-                        visitor_source_match_id: m.visitor_source_match_id,
-                        // Fix: start_time in DB is timestamp with TZ, ensure valid format
-                        start_time: m.start_time,
-                        field: m.field,
-                        status: m.status || 'scheduled',
-                        location: m.location
-                    })));
+                    .upsert(matchesToSave);
 
                 if (matchError) throw matchError;
             }
+            await delay(600);
+
             await delay(1000);
 
             setState(prev => ({ ...prev, savingStep: '¡Todo listo! Finalizando guardado...' }));
