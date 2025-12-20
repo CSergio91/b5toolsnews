@@ -16,6 +16,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onCl
     const [firstName, setFirstName] = useState('');
     const [lastName, setLastName] = useState('');
     const [clubName, setClubName] = useState('');
+    const [email, setEmail] = useState('');
     const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
     const [avatarFile, setAvatarFile] = useState<File | null>(null);
 
@@ -41,6 +42,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onCl
         setLoading(true);
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
+            setEmail(user.email || '');
             // Get data from profile table
             const { data: profile } = await supabase
                 .from('profiles')
@@ -194,7 +196,10 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onCl
                                 />
                             </label>
                         </div>
-                        <p className="text-xs text-slate-400">Click para subir nueva imagen</p>
+                        <div className="text-center">
+                            <p className="text-sm font-medium text-white/90">{email}</p>
+                            <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold mt-0.5">Cuenta de Usuario</p>
+                        </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">

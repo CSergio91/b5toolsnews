@@ -49,7 +49,7 @@ import {
   Download,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { generatePDF } from '../utils/pdfGenerator';
+import { generateProfessionalPDF, generateStatsPDF } from '../utils/pdfGenerator';
 
 // --- Types for State Management ---
 
@@ -292,12 +292,27 @@ const FieldSelector: React.FC<{
   opposingTeam?: TeamData;
 }> = ({ onSelectPos, opposingTeam }) => {
 
-  const getLabel = (pos: string) => {
-    if (!opposingTeam) return pos;
-    // Simple lookup: check starters first for this position
-    const slot = opposingTeam.slots.find(s => s.starter.pos === pos);
-    if (slot && slot.starter.number) return slot.starter.number;
-    return pos;
+  const getPositionInfo = (pos: string) => {
+    if (!opposingTeam) return { label: pos, isSub: false };
+
+    // Find the active defender for this position
+    for (const slot of opposingTeam.slots) {
+      const starter = slot.starter;
+      const sub = slot.sub;
+      const hasSubMarker = (starter.scores || []).flat().some(s => s && s.includes('⇄'));
+
+      // Strict Check: If sub is active (has marker) and takes this position
+      if (hasSubMarker && sub.pos === pos) {
+        return { label: sub.number || pos, isSub: true };
+      }
+
+      // Fallback: If no sub is active here, check if starter is defending here
+      if (!hasSubMarker && starter.pos === pos) {
+        return { label: starter.number || pos, isSub: false };
+      }
+    }
+
+    return { label: pos, isSub: false };
   };
 
   return (
@@ -321,12 +336,16 @@ const FieldSelector: React.FC<{
         { pos: '3B', top: '50%', left: '15%' },
         { pos: 'SS', top: '25%', left: '30%' } // Higher, closer to 2nd base
       ].map((p) => {
-        const label = getLabel(p.pos);
+        const { label, isSub } = getPositionInfo(p.pos);
         return (
           <button
             key={p.pos}
             onClick={(e) => { e.stopPropagation(); onSelectPos(p.pos); }}
-            className="absolute w-10 h-10 -ml-5 -mt-5 bg-white shadow-lg rounded-full flex items-center justify-center border-2 border-amber-600 text-amber-900 font-black text-xs hover:scale-110 active:scale-95 transition-transform z-10"
+            className={`absolute w-10 h-10 -ml-5 -mt-5 shadow-lg rounded-full flex items-center justify-center border-2 font-black text-xs hover:scale-110 active:scale-95 transition-transform z-10 
+              ${isSub
+                ? 'bg-amber-400 border-amber-600 text-amber-950 shadow-[0_0_15px_rgba(251,191,36,0.5)]'
+                : 'bg-white border-amber-600 text-amber-900'
+              }`}
             style={{ top: p.top, left: p.left }}
           >
             {label}
@@ -415,30 +434,35 @@ const ScoringModal: React.FC<{
   const handleFieldPos = (pos: string) => {
     if (!opposingTeam) return;
 
-    // Search for player with this POS
     let foundSlotIdx = -1;
     let foundType: 'starter' | 'sub' = 'starter';
 
-    opposingTeam.slots.forEach((slot, idx) => {
-      // Priority to active player (Sub if exists?) - B5 logic usually simplistic, just check starter then sub if marked active
-      // For simplicity, check starter pos. NOTE: Data might not track current 'active' well without deeper logic.
-      // Assuming straightforward assignment.
-      if (slot.starter.pos === pos) {
-        foundSlotIdx = idx;
-        foundType = 'starter';
-      }
-      if (slot.sub.pos === pos) {
+    // Search for the active defender for this position
+    for (let idx = 0; idx < opposingTeam.slots.length; idx++) {
+      const slot = opposingTeam.slots[idx];
+      const starter = slot.starter;
+      const sub = slot.sub;
+      const hasSubMarker = (starter.scores || []).flat().some(s => s && s.includes('⇄'));
+
+      // If substituted, it MUST be the sub
+      if (hasSubMarker && sub.pos === pos) {
         foundSlotIdx = idx;
         foundType = 'sub';
+        break;
       }
-    });
+
+      // If NOT substituted, it must be the starter
+      if (!hasSubMarker && starter.pos === pos) {
+        foundSlotIdx = idx;
+        foundType = 'starter';
+        break;
+      }
+    }
 
     if (foundSlotIdx !== -1) {
-      // Found! Assign Error
-      onSelect('E', false, { team: 'local', slotIdx: foundSlotIdx, type: foundType }); // 'local' key placeholder, generic logic up top fixes it
+      onSelect('E', false, { team: 'local', slotIdx: foundSlotIdx, type: foundType });
       onClose();
     } else {
-      // Not Found -> Fallback Picker
       setPendingPos(pos);
       setView('defensive_error_picker');
     }
@@ -523,25 +547,39 @@ const ScoringModal: React.FC<{
             </div>
 
             <div className="grid grid-cols-4 gap-2 max-h-[180px] overflow-y-auto">
-              {opposingTeam.slots.map((slot, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => {
-                    // Assign Error AND Update Position
-                    onSelect('E', false, {
-                      team: 'local', // Logic upstream fixes identifying actual team
-                      slotIdx: idx,
-                      type: 'starter',
-                      updatePos: pendingPos || undefined
-                    });
-                    onClose();
-                  }}
-                  className="bg-white/10 hover:bg-white/20 p-2 rounded flex flex-col items-center justify-center border border-white/10"
-                >
-                  <span className="text-sm font-black text-white">{slot.starter.number || '?'}</span>
-                  <span className="text-[9px] text-white/50 truncate w-full text-center">{slot.starter.name || 'J' + (idx + 1)}</span>
-                </button>
-              ))}
+              {opposingTeam.slots.map((slot, idx) => {
+                const starter = slot.starter;
+                const sub = slot.sub;
+                const hasSubMarker = (starter.scores || []).flat().some(s => s && s.includes('⇄'));
+                const activePlayer = hasSubMarker ? sub : starter;
+                const activeType = hasSubMarker ? 'sub' : 'starter';
+
+                return (
+                  <button
+                    key={idx}
+                    onClick={() => {
+                      onSelect('E', false, {
+                        team: 'local',
+                        slotIdx: idx,
+                        type: activeType,
+                        updatePos: pendingPos || undefined
+                      });
+                      onClose();
+                    }}
+                    className={`p-2 rounded flex flex-col items-center justify-center border transition-all ${hasSubMarker
+                      ? 'bg-amber-400/20 border-amber-500/50 hover:bg-amber-400/30'
+                      : 'bg-white/10 border-white/10 hover:bg-white/20'
+                      }`}
+                  >
+                    <span className={`text-sm font-black ${hasSubMarker ? 'text-amber-400' : 'text-white'}`}>
+                      {activePlayer.number || '?'}
+                    </span>
+                    <span className="text-[9px] text-white/50 truncate w-full text-center">
+                      {activePlayer.name || 'J' + (idx + 1)}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
@@ -1150,9 +1188,43 @@ const ScoreSheetFullScreen: React.FC<{
   onAdvanceInning: () => void;
   // Live Status Props
   liveStatusProps: LiveGameStatusProps;
-}> = ({ isOpen, onClose, title, setNum, visitorData, localData, gameInfo, updateGameInfo, updateTeam, handleAddColumn, currentInningIdx, visitorNextBatterIdx, localNextBatterIdx, onAdvanceInning, liveStatusProps }) => {
+  scoreAdjustments?: { visitor: number; local: number };
+}> = ({ isOpen, onClose, title, setNum, visitorData, localData, gameInfo, updateGameInfo, updateTeam, handleAddColumn, currentInningIdx, visitorNextBatterIdx, localNextBatterIdx, onAdvanceInning, liveStatusProps, scoreAdjustments }) => {
   const [activeTeam, setActiveTeam] = useState<'visitor' | 'local'>('visitor');
   const [isHeaderVisible, setIsHeaderVisible] = useState(true);
+  const [isDownloading, setIsDownloading] = useState(false);
+
+  const handleDownloadTeam = async (team: 'visitor' | 'local') => {
+    setIsDownloading(true);
+    try {
+      // Reconstruct a minimal state for the generator
+      const stateForPDF: any = {
+        gameInfo: { ...gameInfo, setNum },
+        visitorTeam: visitorData,
+        localTeam: localData,
+        inningScores: liveStatusProps.inningScores,
+        totals: {
+          visitor: liveStatusProps.visitorRuns.toString(),
+          local: liveStatusProps.localRuns.toString()
+        },
+        errors: {
+          visitor: liveStatusProps.visitorErrors.toString(),
+          local: liveStatusProps.localErrors.toString()
+        },
+        scoreAdjustments: scoreAdjustments || { visitor: 0, local: 0 }
+      };
+
+      await generateProfessionalPDF(stateForPDF, {
+        showInfo: true,
+        showStats: true,
+        teamOnly: team
+      });
+    } catch (e) {
+      console.error("Single team PDF export failed", e);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
 
   // Scaling State
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1276,18 +1348,35 @@ const ScoreSheetFullScreen: React.FC<{
         </button>
 
         {/* Team Switcher */}
-        <div className="flex bg-black/40 backdrop-blur-md p-1 rounded-lg border border-white/10">
+        <div className="flex bg-black/40 backdrop-blur-md p-0.5 rounded-xl border border-white/10 shadow-2xl overflow-hidden">
           <button
             onClick={() => setActiveTeam('visitor')}
-            className={`px-4 py-1.5 rounded-md text-xs font-bold uppercase transition-all ${activeTeam === 'visitor' ? 'bg-purple-600 text-white shadow-lg' : 'text-white/50 hover:text-white hover:bg-white/5'}`}
+            className={`group relative pl-4 pr-10 py-2 rounded-lg text-xs font-black uppercase transition-all flex items-center gap-3 overflow-hidden ${activeTeam === 'visitor' ? 'bg-purple-600 text-white shadow-lg' : 'text-white/40 hover:text-white/70 hover:bg-white/5'}`}
           >
-            Visita
+            <span className="relative z-10">Visita</span>
+            <div
+              onClick={(e) => { e.stopPropagation(); handleDownloadTeam('visitor'); }}
+              className={`absolute right-1 top-1 bottom-1 w-8 flex items-center justify-center rounded-md transition-all ${activeTeam === 'visitor' ? 'bg-white/20 hover:bg-white/30 text-white' : 'hover:bg-white/10 text-white/40'} ${isDownloading ? 'pointer-events-none opacity-50' : ''}`}
+              title="Descargar Hoja Visitante"
+            >
+              <Download size={14} className={isDownloading ? 'animate-bounce' : 'group-hover:scale-110 transition-transform'} />
+            </div>
           </button>
+
+          <div className="w-px bg-white/10 my-1 mx-0.5" />
+
           <button
             onClick={() => setActiveTeam('local')}
-            className={`px-4 py-1.5 rounded-md text-xs font-bold uppercase transition-all ${activeTeam === 'local' ? 'bg-amber-600 text-white shadow-lg' : 'text-white/50 hover:text-white hover:bg-white/5'}`}
+            className={`group relative pl-4 pr-10 py-2 rounded-lg text-xs font-black uppercase transition-all flex items-center gap-3 overflow-hidden ${activeTeam === 'local' ? 'bg-amber-600 text-white shadow-lg' : 'text-white/40 hover:text-white/70 hover:bg-white/5'}`}
           >
-            Local
+            <span className="relative z-10">Local</span>
+            <div
+              onClick={(e) => { e.stopPropagation(); handleDownloadTeam('local'); }}
+              className={`absolute right-1 top-1 bottom-1 w-8 flex items-center justify-center rounded-md transition-all ${activeTeam === 'local' ? 'bg-white/20 hover:bg-white/30 text-white' : 'hover:bg-white/10 text-white/40'} ${isDownloading ? 'pointer-events-none opacity-50' : ''}`}
+              title="Descargar Hoja Local"
+            >
+              <Download size={14} className={isDownloading ? 'animate-bounce' : 'group-hover:scale-110 transition-transform'} />
+            </div>
           </button>
         </div>
 
@@ -1701,8 +1790,11 @@ const StatsTable: React.FC<{
           ...sStat
         });
         // Sub
-        if (slot.sub.name || (slot.sub.scores || []).flat().some(x => x)) {
-          const subStat = calculateStats(slot.sub);
+        const hasSubMarker = (slot.starter.scores || []).flat().some(x => x && x.includes('⇄'));
+        const subStat = calculateStats(slot.sub);
+        const hasActivity = slot.sub.name || (slot.sub.scores || []).flat().some(x => x) || (slot.sub.defError || 0) > 0;
+
+        if (hasSubMarker || hasActivity) {
           rows.push({
             team: tName, type: 'Sub', no: slot.sub.number || '-', name: slot.sub.name || 'Sustituto',
             ...subStat
@@ -1769,19 +1861,22 @@ const StatsTable: React.FC<{
             <td className="p-2 text-center text-yellow-400">{starterStats.e}</td>
             <td className="p-2 text-center font-mono text-white">{starterStats.ave}</td>
           </tr>
-          {(slot.sub.name || slot.sub.scores.flat().some(x => x)) && (
-            <tr className="border-b border-white/5 hover:bg-white/5 bg-white/[0.02] text-[10px] md:text-xs">
-              <td className={`p-2 uppercase tracking-wider ${colorClass} opacity-70`}>Sub</td>
-              <td className="p-2 font-mono text-center">{slot.sub.number || '-'}</td>
-              <td className="p-2 truncate max-w-[100px] text-white/70">{slot.sub.name || 'Sustituto'}</td>
-              <td className="p-2 text-center text-white/50">{calculateStats(slot.sub).vb}</td>
-              <td className="p-2 text-center text-green-400/70">{calculateStats(slot.sub).h}</td>
-              <td className="p-2 text-center text-rose-400/70">{calculateStats(slot.sub).ca}</td>
-              <td className="p-2 text-center text-yellow-500/70">{calculateStats(slot.sub).defE}</td>
-              <td className="p-2 text-center text-yellow-400/70">{calculateStats(slot.sub).e}</td>
-              <td className="p-2 text-center font-mono text-white/70">{calculateStats(slot.sub).ave}</td>
-            </tr>
-          )}
+          {((slot.starter.scores || []).flat().some(x => x && x.includes('⇄')) ||
+            slot.sub.name ||
+            slot.sub.scores.flat().some(x => x) ||
+            (slot.sub.defError || 0) > 0) && (
+              <tr className="border-b border-white/5 hover:bg-white/5 bg-white/[0.02] text-[10px] md:text-xs">
+                <td className={`p-2 uppercase tracking-wider ${colorClass} opacity-70`}>Sub</td>
+                <td className="p-2 font-mono text-center">{slot.sub.number || '-'}</td>
+                <td className="p-2 truncate max-w-[100px] text-white/70">{slot.sub.name || 'Sustituto'}</td>
+                <td className="p-2 text-center text-white/50">{calculateStats(slot.sub).vb}</td>
+                <td className="p-2 text-center text-green-400/70">{calculateStats(slot.sub).h}</td>
+                <td className="p-2 text-center text-rose-400/70">{calculateStats(slot.sub).ca}</td>
+                <td className="p-2 text-center text-yellow-500/70">{calculateStats(slot.sub).defE}</td>
+                <td className="p-2 text-center text-yellow-400/70">{calculateStats(slot.sub).e}</td>
+                <td className="p-2 text-center font-mono text-white/70">{calculateStats(slot.sub).ave}</td>
+              </tr>
+            )}
         </React.Fragment>
       );
     });
@@ -1830,6 +1925,28 @@ const StatsTable: React.FC<{
           <h3 className="font-bold text-sm uppercase tracking-wider text-white">Estadísticas en Tiempo Real</h3>
         </div>
         <div className="flex gap-2 no-print">
+          <button
+            onClick={() => {
+              generateProfessionalPDF({
+                visitorTeam: visitor,
+                localTeam: local,
+                inningScores: { visitor: [], local: [] },
+                totals: { visitor: '0', local: '0' },
+                errors: { visitor: '0', local: '0' },
+                gameInfo: {
+                  visitor: visitorName, home: localName, competition: competitionName,
+                  date: new Date().toISOString().split('T')[0],
+                  gameNum: '', setNum: '1',
+                  officials: { plate: '', field1: '', field2: '', field3: '', table: '' },
+                  times: { start: '', end: '' }
+                }
+              } as any, { showInfo: false, showStats: true });
+            }}
+            className="p-1.5 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-400 rounded border border-indigo-600/30 transition-colors"
+            title="Descargar PDF de Estadísticas"
+          >
+            <Download size={14} />
+          </button>
           <button onClick={exportToCSV} className="p-1.5 bg-green-600/20 hover:bg-green-600/30 text-green-400 rounded border border-green-600/30 transition-colors" title="Exportar Excel/CSV">
             <FileSpreadsheet size={14} />
           </button>
@@ -2824,6 +2941,16 @@ const SingleSetScoreCard: React.FC<{
       let opposingTeamData = { ...prev[opposingTeamKey] };
       let opSlots = [...opposingTeamData.slots];
 
+      // --- POSITION INHERITANCE LOGIC ---
+      if (field === 'score' && type === 'starter' && value.includes('⇄')) {
+        // If the official (starter) is substituted, the sub inherits the base/position
+        player.pos = player.pos; // Ensure starter keeps it (usually does)
+        slot.sub = {
+          ...slot.sub,
+          pos: player.pos // Inheritance!
+        };
+      }
+
       if (field === 'score' && inningIndex !== undefined && atBatIndex !== undefined) {
         const newScores = [...player.scores];
         const newInning = [...newScores[inningIndex]];
@@ -3649,6 +3776,7 @@ const SingleSetScoreCard: React.FC<{
         visitorNextBatterIdx={visitorNextBatterIdx}
         localNextBatterIdx={localNextBatterIdx}
         onAdvanceInning={() => setShowAdvanceModal(true)}
+        scoreAdjustments={state.scoreAdjustments}
         liveStatusProps={{
           visitorRuns: visitorRunsTotal,
           localRuns: localRunsTotal,
@@ -3707,12 +3835,21 @@ const GeneralStatsModal: React.FC<{ isOpen: boolean, onClose: () => void }> = ({
         if (!side) return; // Team name mismatch in this set? Skip.
 
         set[side].slots.forEach((slot: any) => {
-          [slot.starter, slot.sub].forEach((p: PlayerStats) => {
+          [slot.starter, slot.sub].forEach((p: PlayerStats, pIdx: number) => {
             if (!p.scores || !Array.isArray(p.scores)) return;
-            const key = `${p.number}-${p.name}`;
-            if (!playerMap.has(key)) playerMap.set(key, { name: p.name || 'J' + p.number, no: p.number, vb: 0, h: 0, ca: 0, e: 0 });
+
+            // Check if this player is "Active"
+            const isStarter = pIdx === 0;
+            const hasSubMarker = isStarter && p.scores.flat().some(x => x && x.includes('⇄'));
+            const hasActivity = p.name || p.number || p.scores.flat().length > 0 || (p.defError || 0) > 0;
+
+            if (!isStarter && !hasSubMarker && !hasActivity) return;
+
+            const key = `${p.number}-${p.name}-${isStarter ? 'S' : 'R'}`;
+            if (!playerMap.has(key)) playerMap.set(key, { name: p.name || (isStarter ? 'Titular' : 'Sustituto'), no: p.number || '-', vb: 0, h: 0, ca: 0, e: 0, defE: 0 });
 
             const data = playerMap.get(key);
+            data.defE += (p.defError || 0);
             p.scores.flat().forEach(val => {
               const v = val.toUpperCase();
               if (v.includes('H')) data.h++;
@@ -4154,9 +4291,8 @@ export const ScoreCard: React.FC = () => {
   const executePrint = async (config: PrintConfig) => {
     setPrintConfigModalOpen(false);
 
-    // Load ALL sets for Multi-Set Report
+    const setsData: any[] = [];
     try {
-      const setsData = [];
       for (let i = 1; i <= 3; i++) {
         const saved = localStorage.getItem(`b5_scorekeeper_set_${i}`);
         if (saved) {
@@ -4168,19 +4304,22 @@ export const ScoreCard: React.FC = () => {
 
     setPrintConfig(config);
 
-    // Allow React to render the printable content first
+    // Use the professional PDF generator with the current set data
     setTimeout(async () => {
-      const element = document.getElementById('printable-content');
-      if (element) {
-        // Show loading via toast (optional, user will see the print ref temporarily if we don't hide it)
-        // Ideally we should use a global loader or toast here.
-        await generatePDF(element, {
-          filename: `Reporte_Partido_${new Date().toISOString().split('T')[0]}.pdf`
-        });
-        setPrintConfig(null); // Cleanup
-      } else {
-        console.error("Printable content not found");
+      // Source of truth: check the live array we just built or local storage
+      let currentSetData = setsData.find(s => s.setNum === currentSet);
+
+      if (!currentSetData) {
+        const saved = localStorage.getItem(`b5_scorekeeper_set_${currentSet}`);
+        currentSetData = saved ? JSON.parse(saved) : null;
       }
+
+      if (currentSetData) {
+        await generateProfessionalPDF(currentSetData, config);
+      } else {
+        console.error("No data found for PDF generation");
+      }
+      setPrintConfig(null); // Cleanup
     }, 500);
   };
 
@@ -4228,32 +4367,7 @@ export const ScoreCard: React.FC = () => {
   };
 
   return (
-    <div className={`min-h-screen bg-transparent pb-20 ${printConfig ? 'printing-mode' : ''}`}>
-      <style>{`
-        @media print {
-          @page { size: landscape; margin: 5mm; }
-          body { 
-            background: white !important; 
-            color: black !important; 
-            -webkit-print-color-adjust: exact !important; 
-            print-color-adjust: exact !important; 
-          }
-          .no-print { display: none !important; }
-          .printing-mode { background: white !important; overflow: visible !important; height: auto !important; }
-          * { color: black !important; text-shadow: none !important; box-shadow: none !important; }
-          .border-white\\/10, .border-white\\/20, .border-white\\/5 { border-color: #000 !important; }
-          .bg-white\\/5, .bg-white\\/10 { background: transparent !important; }
-          .text-white, .text-white\\/70, .text-white\\/40, .text-white\\/50 { color: black !important; }
-          .text-purple-200, .text-orange-200 { color: black !important; font-weight: bold !important; }
-          .bg-slate-900, .bg-[#1e1b4b], .bg-[#2a1205] { background: transparent !important; }
-          .print-section-info { display: ${printConfig?.showInfo ? 'block' : 'none'} !important; }
-          .print-section-stats { display: ${printConfig?.showStats ? 'block' : 'none'} !important; width: 100% !important; margin-top: 20px !important; }
-          .print-logo-header { display: flex !important; width: 100%; justify-content: space-between; align-items: center; border-bottom: 2px solid black; padding-bottom: 10px; margin-bottom: 20px; }
-          table, th, td { color: black !important; border-color: black !important; }
-          .print-section-stats button { display: none !important; }
-        }
-      `}</style>
-
+    <div className="min-h-screen bg-transparent pb-20">
       <PrintConfigModal
         isOpen={printConfigModalOpen}
         onClose={() => setPrintConfigModalOpen(false)}
@@ -4265,190 +4379,31 @@ export const ScoreCard: React.FC = () => {
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-500"></div>
         </div>
       ) : (
-        <>
-          <div className="print-section-info">
-            <SingleSetScoreCard
-              key={currentSet}
-              setNum={currentSet}
-              onWinnerUpdate={handleWinnerUpdate}
-              currentSet={currentSet}
-              setWinners={setWinners}
-              onSetChange={handleSetChange}
-              onPrint={handlePrint}
-            />
-          </div>
-
-          <div className="print-section-stats hidden print:block">
-            <h2 className="text-2xl font-bold uppercase mb-4 text-black border-b-2 border-black pb-2 mt-8">Estadísticas Generales</h2>
-            <PrintableMatchStats />
-          </div>
-        </>
+        <SingleSetScoreCard
+          key={currentSet}
+          setNum={currentSet}
+          onWinnerUpdate={handleWinnerUpdate}
+          currentSet={currentSet}
+          setWinners={setWinners}
+          onSetChange={handleSetChange}
+          onPrint={handlePrint}
+        />
       )}
 
-
-
-      {/* --- Hidden Printable Section (Rendered only when config is set) --- */}
-      {/* --- Printable Section (Rendered VISIBLE on top to ensure capture) --- */}
-      {printConfig && printSetsData.length > 0 && (
-        <div className="fixed inset-0 z-[2000] bg-white overflow-y-auto">
-          <div className="flex flex-col items-center justify-center min-h-screen p-4 text-black">
-            <p className="mb-4 text-2xl font-bold animate-pulse">Generando PDF oficial... Por favor espere.</p>
-
-            {/* Actual Capture Target */}
-            <div id="printable-content" className="w-[210mm] bg-white text-black p-12 shadow-2xl border border-gray-200">
-
-              {printConfig.showInfo ? (
-                // Option A: Multi-Set Report (One page per Set)
-                printSetsData.map((data, idx) => (
-                  <div key={data.setNum} className="relative h-full flex flex-col" style={{ pageBreakAfter: idx < printSetsData.length - 1 ? 'always' : 'auto', minHeight: '297mm' }}>
-
-                    {/* 1. Header: Competition & Set Info */}
-                    <div className="border-b-2 border-black pb-4 mb-6">
-                      <div className="flex justify-between items-end">
-                        <div>
-                          <h1 className="text-2xl font-black text-black uppercase tracking-wider">{data.gameInfo.competition}</h1>
-                          <p className="text-sm text-gray-600 font-bold">
-                            {data.gameInfo.date} | Set {data.setNum} | {data.gameInfo.location}
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          <h2 className="text-xl font-black text-purple-700">{data.gameInfo.visitor} vs {data.gameInfo.home}</h2>
-                          <p className="text-xs text-gray-500 font-bold">{data.gameInfo.phase} - {data.gameInfo.group}</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* 2. Real-time Stats Strip */}
-                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-6 flex justify-around items-center">
-                      <div className="text-center">
-                        <div className="text-purple-700 font-black text-lg mb-1">{data.gameInfo.visitor}</div>
-                        <div className="flex gap-4 text-sm font-mono font-bold text-gray-700">
-                          <span>C: <b className="text-black text-lg">{data.inningScores.visitor.reduce((a: any, b: any) => a + (parseInt(b) || 0), 0) + (data.scoreAdjustments?.visitor || 0)}</b></span>
-                          <span>H: <b className="text-black text-lg">{(() => {
-                            let h = 0; data.visitorTeam.slots.forEach((s: any) => [s.starter, s.sub].forEach(p => p.scores.flat().forEach(v => v?.toUpperCase().includes('H') && h++))); return h;
-                          })()}</b></span>
-                          <span>E: <b className="text-black text-lg">{data.errors.visitor || 0}</b></span>
-                        </div>
-                      </div>
-                      <div className="h-10 w-px bg-gray-300"></div>
-                      <div className="text-center">
-                        <div className="text-orange-600 font-black text-lg mb-1">{data.gameInfo.home}</div>
-                        <div className="flex gap-4 text-sm font-mono font-bold text-gray-700">
-                          <span>C: <b className="text-black text-lg">{data.inningScores.local.reduce((a: any, b: any) => a + (parseInt(b) || 0), 0) + (data.scoreAdjustments?.local || 0)}</b></span>
-                          <span>H: <b className="text-black text-lg">{(() => {
-                            let h = 0; data.localTeam.slots.forEach((s: any) => [s.starter, s.sub].forEach(p => p.scores.flat().forEach(v => v?.toUpperCase().includes('H') && h++))); return h;
-                          })()}</b></span>
-                          <span>E: <b className="text-black text-lg">{data.errors.local || 0}</b></span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* 3. Lineups Tables */}
-                    <div className="grid grid-cols-2 gap-8 mb-auto">
-                      {/* Visitor Lineup */}
-                      <div>
-                        <h3 className="text-sm font-bold text-purple-700 uppercase mb-2 border-b border-black pb-1">Alineación {data.gameInfo.visitor}</h3>
-                        <table className="w-full text-xs text-left">
-                          <thead>
-                            <tr className="text-gray-500 border-b border-gray-200">
-                              <th className="p-1 w-8">Pos</th>
-                              <th className="p-1 w-8">#</th>
-                              <th className="p-1">Jugador</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-200">
-                            {data.visitorTeam.slots.map((slot: any, i: number) => (
-                              <React.Fragment key={i}>
-                                <tr className="hover:bg-gray-50">
-                                  <td className="p-1 font-mono text-gray-500 font-bold">{slot.starter.pos}</td>
-                                  <td className="p-1 font-mono font-black">{slot.starter.number}</td>
-                                  <td className="p-1 text-black font-semibold truncate max-w-[120px]">{slot.starter.name}</td>
-                                </tr>
-                                {slot.sub.name && (
-                                  <tr className="bg-gray-50">
-                                    <td className="p-1 font-mono text-gray-400 text-[10px] pl-2">{slot.sub.pos}</td>
-                                    <td className="p-1 font-mono font-bold text-gray-500 text-[10px]">{slot.sub.number}</td>
-                                    <td className="p-1 text-gray-500 text-[10px] truncate max-w-[120px] italic">{slot.sub.name} (Sub)</td>
-                                  </tr>
-                                )}
-                              </React.Fragment>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-
-                      {/* Local Lineup */}
-                      <div>
-                        <h3 className="text-sm font-bold text-orange-600 uppercase mb-2 border-b border-black pb-1">Alineación {data.gameInfo.home}</h3>
-                        <table className="w-full text-xs text-left">
-                          <thead>
-                            <tr className="text-gray-500 border-b border-gray-200">
-                              <th className="p-1 w-8">Pos</th>
-                              <th className="p-1 w-8">#</th>
-                              <th className="p-1">Jugador</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-200">
-                            {data.localTeam.slots.map((slot: any, i: number) => (
-                              <React.Fragment key={i}>
-                                <tr className="hover:bg-gray-50">
-                                  <td className="p-1 font-mono text-gray-500 font-bold">{slot.starter.pos}</td>
-                                  <td className="p-1 font-mono font-black">{slot.starter.number}</td>
-                                  <td className="p-1 text-black font-semibold truncate max-w-[120px]">{slot.starter.name}</td>
-                                </tr>
-                                {slot.sub.name && (
-                                  <tr className="bg-gray-50">
-                                    <td className="p-1 font-mono text-gray-400 text-[10px] pl-2">{slot.sub.pos}</td>
-                                    <td className="p-1 font-mono font-bold text-gray-500 text-[10px]">{slot.sub.number}</td>
-                                    <td className="p-1 text-gray-500 text-[10px] truncate max-w-[120px] italic">{slot.sub.name} (Sub)</td>
-                                  </tr>
-                                )}
-                              </React.Fragment>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-
-                    {/* 4. Officials */}
-                    <div className="mt-8 pt-4 border-t-2 border-black">
-                      <h4 className="text-xs font-bold text-black uppercase mb-2">Oficiales/Arbitros</h4>
-                      <div className="grid grid-cols-4 gap-2 text-[10px] text-gray-600 font-semibold">
-                        <div>PL: <span className="text-black">{data.gameInfo.officials?.plate || '-'}</span></div>
-                        <div>1B: <span className="text-black">{data.gameInfo.officials?.field1 || '-'}</span></div>
-                        <div>2B: <span className="text-black">{data.gameInfo.officials?.field2 || '-'}</span></div>
-                        <div>3B: <span className="text-black">{data.gameInfo.officials?.field3 || '-'}</span></div>
-                        <div>AN: <span className="text-black">{data.gameInfo.officials?.table || '-'}</span></div>
-                      </div>
-                    </div>
-
-                  </div>
-                ))
-              ) : (
-                // Option B: Current Set Stats Only
-                currentSet > 0 ? (
-                  <div className="relative h-full flex flex-col items-center justify-center p-8 text-black">
-                    <h2 className="text-2xl font-bold mb-8">Estadísticas del Set {currentSet}</h2>
-                    <div className="printable-stats-container w-full text-black">
-                      {/* Note: This component might still render white text if not updated. 
-                                For now we assume the user accepts this mix or we accept it's mostly tables.
-                                But 'PrintableMatchStats' needs a check.
-                            */}
-                      <PrintableMatchStats />
-                    </div>
-                  </div>
-                ) : null
-              )}
-            </div>
+      {/* Simplified Progress Overlay for PDF Generation */}
+      {printConfig && (
+        <div className="fixed inset-0 z-[2000] bg-black/60 backdrop-blur-md flex flex-col items-center justify-center text-white">
+          <div className="bg-white/10 p-8 rounded-2xl border border-white/20 shadow-2xl flex flex-col items-center">
+            <div className="w-12 h-12 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+            <p className="text-xl font-bold">Generando PDF Profesional</p>
+            <p className="text-white/60 text-sm mt-2">B5Tools - La herramienta del momento</p>
           </div>
         </div>
       )}
 
       <MatchWinnerModal matchWinner={matchWinner} onClose={() => setMatchWinner(null)} />
       <GeneralStatsModal isOpen={generalStatsOpen} onClose={() => setGeneralStatsOpen(false)} />
-
-
-    </div >
+    </div>
   );
 };
 
