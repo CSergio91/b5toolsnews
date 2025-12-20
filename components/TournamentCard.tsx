@@ -152,12 +152,12 @@ export const TournamentCard: React.FC<TournamentCardProps> = ({ tournament, onEd
                                         if (!error) window.location.reload();
                                     }
                                 } else {
-                                    navigate(`/torneos/B5ToolsBuilder/${tournament.id}`);
+                                    navigate(`/dashboard/torneos/B5ToolsBuilder/${tournament.id}`);
                                 }
                             }}
                             className={`flex-1 py-1.5 font-bold rounded-lg shadow-lg active:scale-95 transition-all flex items-center justify-center gap-1.5 text-[10px] ${tournament.status === 'draft'
-                                    ? 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-blue-500/20'
-                                    : 'bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white shadow-orange-500/20'
+                                ? 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-blue-500/20'
+                                : 'bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white shadow-orange-500/20'
                                 }`}
                         >
                             {tournament.status === 'draft' ? <Trophy size={11} className="text-yellow-400" /> : <PlayCircle size={14} />}
@@ -180,8 +180,8 @@ export const TournamentCard: React.FC<TournamentCardProps> = ({ tournament, onEd
                                         disabled={isLoading}
                                         title={`Recordar ${labels[type]} antes`}
                                         className={`relative w-6 h-6 rounded border transition-all flex items-center justify-center ${isActive
-                                                ? 'bg-blue-500/20 border-blue-500/50 text-blue-300'
-                                                : 'bg-white/5 border-white/5 text-slate-500 hover:bg-white/10 hover:text-slate-300'
+                                            ? 'bg-blue-500/20 border-blue-500/50 text-blue-300'
+                                            : 'bg-white/5 border-white/5 text-slate-500 hover:bg-white/10 hover:text-slate-300'
                                             }`}
                                     >
                                         {isLoading ? <Loader2 size={8} className="animate-spin" /> : <Bell size={10} className={isActive ? 'fill-blue-300' : ''} />}
@@ -195,7 +195,7 @@ export const TournamentCard: React.FC<TournamentCardProps> = ({ tournament, onEd
                     {tournament.status === 'draft' && (
                         <button
                             onClick={() => {
-                                navigate(`/torneos/B5ToolsBuilder/${tournament.id}`);
+                                navigate(`/dashboard/torneos/B5ToolsBuilder/${tournament.id}`);
                             }}
                             className="w-full py-2 bg-gradient-to-r from-[#1a1a20] to-[#252530] hover:from-[#252530] hover:to-[#2a2a35] border border-orange-500/20 hover:border-orange-500/50 text-orange-400 font-bold rounded-lg active:scale-95 transition-all shadow-xl flex items-center justify-center gap-2 text-[11px] group/btn"
                         >

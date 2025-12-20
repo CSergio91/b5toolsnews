@@ -200,7 +200,7 @@ const BuilderWizard = () => {
         const id = await saveTournament();
         if (id) {
             addToast('Torneo guardado correctamente (Borrador)', 'success');
-            navigate('/torneos');
+            navigate('/dashboard/torneos');
         }
     };
 
@@ -212,10 +212,10 @@ const BuilderWizard = () => {
                 message: 'Tienes cambios sin guardar. ¿Estás seguro de que quieres salir?',
                 confirmText: 'Salir',
                 variant: 'danger',
-                onConfirm: () => navigate('/torneos')
+                onConfirm: () => navigate('/dashboard/torneos')
             });
         } else {
-            navigate('/torneos');
+            navigate('/dashboard/torneos');
         }
     };
 
@@ -228,13 +228,13 @@ const BuilderWizard = () => {
         if (state.isDirty) {
             setIsUnsavedModalOpen(true);
         } else {
-            navigate('/torneos');
+            navigate('/dashboard/torneos');
         }
     };
 
     const confirmNavigation = () => {
         setIsUnsavedModalOpen(false);
-        navigate('/torneos');
+        navigate('/dashboard/torneos');
     };
 
     const handleStepClick = (stepId: number, hasSubItems: boolean = false) => {
@@ -288,7 +288,7 @@ const BuilderWizard = () => {
         // Open New Preview Page
         if (id) {
             // Open in new tab
-            const url = `/torneos/B5ToolsBuilder/${id}/previewnew`;
+            const url = `/dashboard/torneos/B5ToolsBuilder/${id}/previewnew`;
             window.open(url, '_blank');
         } else {
             // Fallback for new tournaments (redirect to previewnew with draft id if possible, or just same tab)

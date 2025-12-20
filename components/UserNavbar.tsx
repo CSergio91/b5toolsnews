@@ -136,7 +136,7 @@ export const UserNavbar: React.FC<UserNavbarProps> = ({ showGameControls = false
             setIsSubscriptionModalOpen(true);
         } else {
             if (featureName === 'Mis Torneos') {
-                navigate('/torneos');
+                navigate('/dashboard/torneos');
             } else {
                 setSelectedFeature(featureName);
                 setIsComingSoonModalOpen(true);
@@ -269,7 +269,7 @@ export const UserNavbar: React.FC<UserNavbarProps> = ({ showGameControls = false
                                     <MenuItem
                                         icon={Trophy}
                                         label="Mis Torneos"
-                                        onClick={() => { setIsMenuOpen(false); navigate('/torneos'); }}
+                                        onClick={() => { setIsMenuOpen(false); navigate('/dashboard/torneos'); }}
                                     />
                                     {!isPremium && (
                                         <span className="absolute top-1/2 -translate-y-1/2 right-2 text-[10px] font-bold bg-orange-500 text-white px-1.5 py-0.5 rounded shadow-lg pointer-events-none">

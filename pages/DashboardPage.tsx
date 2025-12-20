@@ -90,7 +90,7 @@ export const DashboardPage: React.FC = () => {
             setIsSubscriptionModalOpen(true);
         } else {
             if (featureName === 'Mis Torneos') {
-                navigate('/torneos');
+                navigate('/dashboard/torneos');
             } else {
                 setSelectedFeature(featureName);
                 setIsComingSoonModalOpen(true);
@@ -148,7 +148,7 @@ export const DashboardPage: React.FC = () => {
                         description="Participa como Administrador o Árbitro."
                         color="blue"
                         bubbleCount={invitationCount}
-                        onClick={() => navigate('/torneosinvitados')}
+                        onClick={() => navigate('/dashboard/torneosinvitados')}
                     />
                 </div>
             </main>

@@ -33,15 +33,16 @@ const App: React.FC = () => {
               <Route path="/dashboard/game" element={<DashboardGamePage />} />
               <Route path="/dashboard/game" element={<DashboardGamePage />} />
               <Route path="/dashboard/game" element={<DashboardGamePage />} />
-              <Route path="/torneos" element={<TournamentsPage />} />
-              <Route path="/torneosinvitados" element={<InvitedTournamentsPage />} />
+              <Route path="/dashboard/torneos" element={<TournamentsPage />} />
+              <Route path="/dashboard/torneosinvitados" element={<InvitedTournamentsPage />} />
               {/* Direct Create/Edit Route for Builder */}
-              <Route path="/torneos/B5ToolsBuilder/:id" element={<B5ToolsBuilderPage />} />
-              <Route path="/torneos/B5ToolsBuilder/:id/preview" element={<TournamentPreviewPage />} />
-              <Route path="/torneos/B5ToolsBuilder/:id/previewnew" element={<TournamentPreviewNewPage />} />
+              <Route path="/dashboard/torneos/B5ToolsBuilder/:id" element={<B5ToolsBuilderPage />} />
+              <Route path="/dashboard/torneos/B5ToolsBuilder/:id/preview" element={<TournamentPreviewPage />} />
+              <Route path="/dashboard/torneos/B5ToolsBuilder/:id/previewnew" element={<TournamentPreviewNewPage />} />
               {/* Fallback Legacy Route - can be removed eventually or redirected */}
-              {/* Fallback Legacy Route - can be removed eventually or redirected */}
-              <Route path="/B5ToolsBuilder" element={<Navigate to="/torneos/B5ToolsBuilder/new" replace />} />
+              <Route path="/torneos" element={<Navigate to="/dashboard/torneos" replace />} />
+              <Route path="/torneosinvitados" element={<Navigate to="/dashboard/torneosinvitados" replace />} />
+              <Route path="/B5ToolsBuilder" element={<Navigate to="/dashboard/torneos/B5ToolsBuilder/new" replace />} />
             </Route>
 
             {/* Redirect generic 404s to Error Page */}

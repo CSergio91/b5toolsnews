@@ -158,7 +158,7 @@ export const InvitedTournamentsPage: React.FC = () => {
                             ) : (
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                                     {admins.map(inv => (
-                                        <div key={inv.id} className="bg-white/5 border border-white/10 rounded-xl p-5 hover:border-orange-500/30 hover:bg-white/10 transition-all cursor-pointer group" onClick={() => navigate(`/torneos/B5ToolsBuilder/${inv.tournament.id}`)}>
+                                        <div key={inv.id} className="bg-white/5 border border-white/10 rounded-xl p-5 hover:border-orange-500/30 hover:bg-white/10 transition-all cursor-pointer group" onClick={() => navigate(`/dashboard/torneos/B5ToolsBuilder/${inv.tournament.id}`)}>
                                             <h3 className="text-lg font-bold text-white group-hover:text-orange-400 transition-colors">{inv.tournament.name}</h3>
                                             <p className="text-sm text-white/50">{inv.tournament.location}</p>
                                             <div className="mt-3 flex items-center gap-2">
