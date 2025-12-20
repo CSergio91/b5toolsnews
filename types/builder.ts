@@ -14,11 +14,18 @@ export interface BuilderState {
     // Wizard UI State
     currentStep: number;
     isDirty: boolean;
+    isSaving?: boolean;
+    savingStep?: string;
     lastSaved?: Date;
 }
 
 export const initialBuilderState: BuilderState = {
     config: {
+        name: 'Nuevo Torneo',
+        location: 'Por definir',
+        start_date: new Date().toISOString().split('T')[0],
+        end_date: new Date().toISOString().split('T')[0],
+        start_time: '09:00:00',
         tournament_type: 'open',
         sets_per_match: 3,
         points_for_win: 3,
@@ -27,8 +34,6 @@ export const initialBuilderState: BuilderState = {
         cost_per_team: 0
     },
     stages: [],
-    teams: [],
-    rosters: [],
     teams: [],
     rosters: [],
     matches: [],

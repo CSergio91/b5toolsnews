@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { BuilderProvider, useBuilder } from '../context/BuilderContext';
-import { Save, XCircle, ArrowRight, Settings, Users, Trophy, GitBranch, User, LogOut, ChevronUp, Menu, X, Calendar as CalendarIcon, MessageCircle, CreditCard, Edit, MonitorPlay } from 'lucide-react';
+import { Save, XCircle, ArrowRight, Settings, Users, Trophy, GitBranch, User, LogOut, ChevronUp, Menu, X, Calendar as CalendarIcon, MessageCircle, CreditCard, Edit, MonitorPlay, Loader2 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ConfigStep } from '../components/Builder/ConfigStep';
 import { TeamManagementStep } from '../components/Builder/TeamManagementStep';
@@ -240,8 +241,67 @@ const BuilderWizard = () => {
         }
     };
 
+    const SavingOverlay = () => (
+        <AnimatePresence>
+            {state.isSaving && (
+                <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="fixed inset-0 z-[100] flex items-center justify-center bg-[#0a0a0a]/90 backdrop-blur-md"
+                >
+                    <div className="flex flex-col items-center gap-6 max-w-sm text-center px-6">
+                        <div className="relative">
+                            <CustomSpinner size="large" />
+                            <motion.div
+                                animate={{ rotate: 360 }}
+                                transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                                className="absolute inset-0 flex items-center justify-center opacity-20"
+                            >
+                                <Settings size={120} className="text-blue-500" />
+                            </motion.div>
+                        </div>
+
+                        <div className="space-y-2">
+                            <motion.h3
+                                key={state.savingStep}
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                className="text-xl font-bold text-white tracking-tight"
+                            >
+                                Guardando Torneo
+                            </motion.h3>
+                            <motion.p
+                                key={`progress-${state.savingStep}`}
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                className="text-blue-400 font-medium text-sm animate-pulse"
+                            >
+                                {state.savingStep}
+                            </motion.p>
+                        </div>
+
+                        <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden mt-4">
+                            <motion.div
+                                className="h-full bg-gradient-to-r from-blue-600 to-indigo-600"
+                                initial={{ width: "0%" }}
+                                animate={{ width: "100%" }}
+                                transition={{ duration: 10 }} // Long duration to match overall simulation
+                            />
+                        </div>
+
+                        <p className="text-white/30 text-[10px] uppercase tracking-widest mt-4">
+                            Sincronizando con base de datos segura
+                        </p>
+                    </div>
+                </motion.div>
+            )}
+        </AnimatePresence>
+    );
+
     return (
         <>
+            <SavingOverlay />
             <div className="h-screen w-full bg-[#0a0a0a] text-white flex flex-col overflow-hidden">
                 {/* Loading Overlay */}
                 {isLoading && (

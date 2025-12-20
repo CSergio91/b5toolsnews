@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MapPin, Calendar, Clock, PlayCircle, Bell, Loader2, Pencil, Trash2 } from 'lucide-react';
+import { MapPin, Calendar, Clock, PlayCircle, Bell, Loader2, Pencil, Trash2, Trophy } from 'lucide-react';
 import { Tournament, ReminderType } from '../types/tournament';
 import { supabase } from '../lib/supabase';
 
@@ -148,8 +148,27 @@ export const TournamentCard: React.FC<TournamentCardProps> = ({ tournament, onEd
                         className="flex-1 py-1.5 bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white font-bold rounded shadow-lg shadow-orange-500/20 active:scale-95 transition-all flex items-center justify-center gap-1 text-[10px]"
                     >
                         <PlayCircle size={12} />
-                        B5 Builder
+                        {tournament.status === 'draft' ? 'Editar Borrador' : 'B5 Builder'}
                     </button>
+
+                    {tournament.status === 'draft' && (
+                        <button
+                            onClick={async (e) => {
+                                e.stopPropagation();
+                                if (confirm('¿Estás seguro de que quieres publicar este torneo? Dejará de ser un borrador.')) {
+                                    const { error } = await supabase
+                                        .from('tournaments')
+                                        .update({ status: 'active' })
+                                        .eq('id', tournament.id);
+                                    if (!error) window.location.reload();
+                                }
+                            }}
+                            className="flex-1 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold rounded shadow-lg shadow-blue-500/20 active:scale-95 transition-all flex items-center justify-center gap-1 text-[10px]"
+                        >
+                            <Trophy size={11} className="text-yellow-400" />
+                            Publicar
+                        </button>
+                    )}
 
                     {/* Reminders - Compact */}
                     <div className="flex gap-0.5">
@@ -179,6 +198,6 @@ export const TournamentCard: React.FC<TournamentCardProps> = ({ tournament, onEd
                     </div>
                 </div>
             </div>
-        </div>
+        </div >
     );
 };

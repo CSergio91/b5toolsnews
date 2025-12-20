@@ -264,12 +264,17 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
     };
 
     const saveTournament = async () => {
+        const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
+
+        setState(prev => ({ ...prev, isSaving: true, savingStep: 'Iniciando proceso de guardado...' }));
+        await delay(800);
+
         try {
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) throw new Error("No user authenticated");
 
             // 0. Process Images (Teams & Players)
-            // We clone state to avoid mutating UI while saving
+            setState(prev => ({ ...prev, savingStep: 'Procesando imágenes y recursos multimedia...' }));
             const teamsToSave = await Promise.all(state.teams.map(async (team) => {
                 const logo = await uploadImageIfNeeded(team.logo_url, 'team-logos');
                 return { ...team, logo_url: logo };
@@ -286,93 +291,187 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
                 teams: teamsToSave,
                 rosters: rostersToSave
             }));
+            await delay(800);
 
             // 1. Insert/Update Tournament
+            setState(prev => ({ ...prev, savingStep: 'Guardando configuración general del torneo...' }));
+
+            // Filter only valid columns for 'tournaments' table
+            const tournamentData: any = {
+                name: state.config.name || 'Sin Nombre',
+                location: state.config.location || 'Sin Ubicación',
+                start_date: state.config.start_date || new Date().toISOString().split('T')[0],
+                end_date: state.config.end_date || new Date().toISOString().split('T')[0],
+                start_time: state.config.start_time || '09:00:00',
+                organizer_name: state.config.organizer_name || null,
+                contact_email: state.config.contact_email || null,
+                tournament_type: state.config.tournament_type,
+                cost_per_team: state.config.cost_per_team,
+                currency: state.config.currency,
+                points_for_win: state.config.points_for_win,
+                points_for_loss: state.config.points_for_loss,
+                sets_per_match: state.config.sets_per_match,
+                tiebreaker_rules: state.config.tiebreaker_rules || [],
+                custom_rules: state.config.custom_rules || [],
+                structure: state.structure,
+                fields_config: (state.config as any).fields || state.config.fields_config || [],
+                user_id: user.id,
+                status: 'draft',
+                debug_info: 'antigravity_v3' // Debug key to verify code version
+            };
+
+            console.log("ANTIGRAVITY DEBUG - Tournament data to save:", tournamentData);
+            console.log("ANTIGRAVITY DEBUG - state.config:", state.config);
+
+            // Only include ID if it's a valid UUID
+            if (state.config.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(state.config.id)) {
+                tournamentData.id = state.config.id;
+            }
+
             const { data: tournament, error: tError } = await supabase
                 .from('tournaments')
-                .upsert([{
-                    ...state.config,
-                    user_id: user.id,
-                    status: 'draft'
-                }])
+                .upsert([tournamentData])
                 .select()
                 .single();
 
             if (tError) throw tError;
+            await delay(1000);
+
+            // 1.5 Save Stages
+            setState(prev => ({ ...prev, savingStep: 'Estructurando fases del torneo...' }));
+            if (state.stages && state.stages.length > 0) {
+                const { error: stagesError } = await supabase
+                    .from('tournament_stages')
+                    .upsert(state.stages.map(s => ({
+                        id: s.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s.id) ? s.id : undefined,
+                        tournament_id: tournament.id,
+                        name: s.name || 'Fase',
+                        type: s.type || 'group',
+                        order: s.order || 0,
+                        bracket_size: s.bracket_size,
+                        number_of_groups: s.number_of_groups,
+                        teams_per_group: s.teams_per_group
+                    })));
+
+                if (stagesError) throw stagesError;
+            }
+            await delay(800);
 
             // 2. Save Teams
-            // Note: In a real app we would use upsert with a conflict key or delete-then-insert.
-            // For draft simplicity, let's assume we can upsert if we keep IDs stable.
-            const { error: teamsError } = await supabase
-                .from('tournament_teams')
-                .upsert(teamsToSave.map(t => ({
-                    id: t.id,
-                    tournament_id: tournament.id,
-                    name: t.name,
-                    short_name: t.short_name,
-                    logo_url: t.logo_url,
-                    group_id: t.group_id
-                })));
+            setState(prev => ({ ...prev, savingStep: `Sincronizando ${teamsToSave.length} equipos...` }));
+            if (teamsToSave.length > 0) {
+                const { error: teamsError } = await supabase
+                    .from('tournament_teams')
+                    .upsert(teamsToSave.map(t => ({
+                        id: t.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(t.id) ? t.id : undefined,
+                        tournament_id: tournament.id,
+                        name: t.name || 'Equipo sin nombre',
+                        short_name: t.short_name,
+                        logo_url: t.logo_url,
+                        group_name: (t as any).group_name || (t as any).group_id, // Match DB column 'group_name'
+                        wins: t.wins || 0,
+                        losses: t.losses || 0,
+                        runs_scored: t.runs_scored || 0,
+                        runs_allowed: t.runs_allowed || 0
+                    })));
 
-            if (teamsError) console.error("Error saving teams", teamsError);
+                if (teamsError) throw teamsError;
+            }
+            await delay(800);
 
             // 3. Save Rosters
-            const { error: rosterError } = await supabase
-                .from('tournament_rosters')
-                .upsert(rostersToSave.map(r => ({
-                    id: r.id,
-                    tournament_id: tournament.id,
-                    team_id: r.team_id,
-                    first_name: r.first_name,
-                    last_name: r.last_name,
-                    number: r.number,
-                    gender: r.gender,
-                    photo_url: r.photo_url,
-                    role: r.role
-                })));
+            setState(prev => ({ ...prev, savingStep: `Registrando ${rostersToSave.length} jugadores en los rosters...` }));
+            if (rostersToSave.length > 0) {
+                const { error: rosterError } = await supabase
+                    .from('tournament_rosters')
+                    .upsert(rostersToSave.map(r => ({
+                        id: r.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(r.id) ? r.id : undefined,
+                        tournament_id: tournament.id,
+                        team_id: r.team_id,
+                        first_name: r.first_name || 'Nombre',
+                        last_name: r.last_name || 'Apellido',
+                        number: r.number,
+                        gender: r.gender,
+                        role: r.role
+                    })));
 
-            if (rosterError) console.error("Error saving rosters", rosterError);
-
-
-            if (rosterError) console.error("Error saving rosters", rosterError);
+                if (rosterError) throw rosterError;
+            }
+            await delay(800);
 
             // 4. Save Referees
-            const { error: refError } = await supabase
-                .from('tournament_referees')
-                .upsert(state.referees.map(r => ({
-                    id: r.id,
-                    tournament_id: tournament.id,
-                    first_name: r.first_name,
-                    last_name: r.last_name,
-                    email: r.email,
-                    rating: r.rating,
-                    avatar_url: r.avatar_url
-                })));
+            setState(prev => ({ ...prev, savingStep: 'Configurando panel de oficiales y árbitros...' }));
+            // Note: DB table 'tournament_referees' only has referee_id (link to profile).
+            // For now we skip or just save the link if referee_id is present.
+            if (state.referees.length > 0) {
+                const { error: refError } = await supabase
+                    .from('tournament_referees')
+                    .upsert(state.referees.filter(r => r.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(r.id)).map(r => ({
+                        id: r.id,
+                        tournament_id: tournament.id,
+                        referee_id: r.id, // Assuming ID is the profile ID
+                        status: 'accepted'
+                    })));
 
-            if (refError) console.error("Error saving referees", refError);
+                if (refError) console.warn("Error saving referee links", refError);
+            }
+            await delay(600);
 
             // 5. Save Admins
-            const { error: adminError } = await supabase
-                .from('tournament_admins')
-                .upsert(state.admins.map(a => ({
-                    id: a.id,
-                    tournament_id: tournament.id,
-                    first_name: a.first_name,
-                    last_name: a.last_name,
-                    email: a.email,
-                    role: a.role,
-                    avatar_url: a.avatar_url,
-                    permissions: a.permissions
-                })));
+            setState(prev => ({ ...prev, savingStep: 'Asignando permisos de administración...' }));
+            if (state.admins.length > 0) {
+                const { error: adminError } = await supabase
+                    .from('tournament_admins')
+                    .upsert(state.admins.map(a => ({
+                        id: a.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(a.id) ? a.id : undefined,
+                        tournament_id: tournament.id,
+                        first_name: a.first_name || 'Admin',
+                        last_name: a.last_name || 'Admin',
+                        email: a.email,
+                        role: a.role,
+                        avatar_url: a.avatar_url,
+                        status: 'invited'
+                    })));
 
-            if (adminError) console.error("Error saving admins", adminError);
+                if (adminError) throw adminError;
+            }
+            await delay(600);
 
-            console.log("Tournament Fully Saved:", tournament.id);
+            // 6. Save Matches / Fixture
+            setState(prev => ({ ...prev, savingStep: 'Generando calendario y encuentros (Fixture)...' }));
+            if (state.matches && state.matches.length > 0) {
+                const { error: matchError } = await supabase
+                    .from('tournament_matches')
+                    .upsert(state.matches.map(m => ({
+                        id: m.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(m.id) ? m.id : undefined,
+                        tournament_id: tournament.id,
+                        stage_id: m.stage_id,
+                        local_team_id: m.local_team_id,
+                        visitor_team_id: m.visitor_team_id,
+                        local_source_match_id: m.local_source_match_id,
+                        visitor_source_match_id: m.visitor_source_match_id,
+                        // Fix: start_time in DB is timestamp with TZ, ensure valid format
+                        start_time: m.start_time,
+                        field: m.field,
+                        status: m.status || 'scheduled',
+                        location: m.location
+                    })));
 
-            setState(prev => ({ ...prev, isDirty: false, lastSaved: new Date() }));
+                if (matchError) throw matchError;
+            }
+            await delay(1000);
+
+            setState(prev => ({ ...prev, savingStep: '¡Todo listo! Finalizando guardado...' }));
+            await delay(500);
+
+            setState(prev => ({ ...prev, isSaving: false, savingStep: undefined, isDirty: false, lastSaved: new Date() }));
             return tournament.id;
-        } catch (error) {
-            console.error("Error saving tournament:", error);
+        } catch (error: any) {
+            console.error("Error saving tournament - Full Error:", error);
+            if (error.details) console.error("Error Details:", error.details);
+            if (error.hint) console.error("Error Hint:", error.hint);
+            if (error.message) console.error("Error Message:", error.message);
+            setState(prev => ({ ...prev, isSaving: false, savingStep: undefined }));
             return null;
         }
     };
