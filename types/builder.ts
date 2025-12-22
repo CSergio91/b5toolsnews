@@ -16,6 +16,7 @@ export interface BuilderState {
     isDirty: boolean;
     isSaving?: boolean;
     savingStep?: string;
+    savingProgress?: number; // 0-100
     lastSaved?: Date;
 }
 

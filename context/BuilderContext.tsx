@@ -94,7 +94,7 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
                 // Fetch Everything in parallel
                 const [
                     { data: t, error: tErr },
-                    { data: stages, error: sErr },
+                    { data: phases, error: sErr },
                     { data: teams, error: teamsErr },
                     { data: _unusedRosters, error: rErr },
                     { data: matches, error: mErr },
@@ -102,7 +102,7 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
                     { data: admins, error: aErr }
                 ] = await Promise.all([
                     supabase.from('tournaments').select('*').eq('id', currentId).single(),
-                    supabase.from('tournament_stages').select('*').eq('tournament_id', currentId),
+                    supabase.from('tournament_phases').select('*').eq('tournament_id', currentId).order('phase_order', { ascending: true }),
                     supabase.from('tournament_teams').select('*').eq('tournament_id', currentId),
                     // Rosters do not have tournament_id, we must fetch them via teams later... or we can skip parallel fetch for rosters
                     // Let's defer roster fetching for a moment
@@ -177,7 +177,13 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
                             fields: t.fields_config || [] // Map to 'fields' as UI likely expects this from local state pattern
                         },
                         structure: t.structure || prev.structure,
-                        stages: stages || [],
+                        stages: (phases || []).map(p => ({
+                            id: p.phase_id,
+                            name: p.name,
+                            type: p.type,
+                            order: p.phase_order,
+                            tournament_id: p.tournament_id
+                        })),
                         teams: (teams || []).map(tm => ({
                             ...tm,
                             group_id: (tm as any).group_name // Mapping back
@@ -392,7 +398,7 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
     const saveTournament = async () => {
         const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
 
-        setState(prev => ({ ...prev, isSaving: true, savingStep: 'Iniciando proceso de guardado...' }));
+        setState(prev => ({ ...prev, isSaving: true, savingStep: 'Iniciando proceso de guardado...', savingProgress: 0 }));
         await delay(800);
 
         try {
@@ -400,7 +406,7 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
             if (!user) throw new Error("No user authenticated");
 
             // 0. Process Images (Teams & Players)
-            setState(prev => ({ ...prev, savingStep: 'Procesando imágenes y recursos multimedia...' }));
+            setState(prev => ({ ...prev, savingStep: 'Procesando imágenes y recursos multimedia...', savingProgress: 10 }));
             const teamsToSave = await Promise.all(state.teams.map(async (team) => {
                 const logo = await uploadImageIfNeeded(team.logo_url, 'team-logos');
                 return { ...team, logo_url: logo };
@@ -420,7 +426,7 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
             await delay(800);
 
             // 1. Insert/Update Tournament
-            setState(prev => ({ ...prev, savingStep: 'Guardando configuración general del torneo...' }));
+            setState(prev => ({ ...prev, savingStep: 'Guardando configuración general del torneo...', savingProgress: 25 }));
 
             // Filter only valid columns for 'tournaments' table
             // Sanitize tournament_type for DB constraint (only allows 'open', 'invitational', 'club')
@@ -473,23 +479,8 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
             if (tError) throw tError;
             await delay(1000);
 
-            // 1.5 Save Stages (Legacy Public & New Normalized)
-            setState(prev => ({ ...prev, savingStep: 'Estructurando fases del torneo...' }));
-            if (state.stages && state.stages.length > 0) {
-                // Public (Legacy)
-                await supabase
-                    .from('tournament_stages')
-                    .upsert(state.stages.map(s => ({
-                        id: s.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s.id) ? s.id : undefined,
-                        tournament_id: tournament.id,
-                        name: s.name || 'Fase',
-                        type: s.type || 'group',
-                        order: s.order || 0,
-                        bracket_size: s.bracket_size,
-                        number_of_groups: s.number_of_groups,
-                        teams_per_group: s.teams_per_group
-                    })));
-            }
+            // 1.5 Save Phases (New Normalized)
+            setState(prev => ({ ...prev, savingStep: 'Estructurando fases del torneo...', savingProgress: 40 }));
 
             // Save to NEW Normalized 'public.tournament_phases'
             if (state.structure?.phases && state.structure.phases.length > 0) {
@@ -507,7 +498,7 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
             await delay(800);
 
             // 2. Save Teams
-            setState(prev => ({ ...prev, savingStep: `Sincronizando ${teamsToSave.length} equipos...` }));
+            setState(prev => ({ ...prev, savingStep: `Sincronizando ${teamsToSave.length} equipos...`, savingProgress: 55 }));
             if (teamsToSave.length > 0) {
                 const { error: teamsError } = await supabase
                     .from('tournament_teams')
@@ -533,7 +524,7 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
             await delay(800);
 
             // 3. Save Rosters
-            setState(prev => ({ ...prev, savingStep: `Registrando ${rostersToSave.length} jugadores en los rosters...` }));
+            setState(prev => ({ ...prev, savingStep: `Registrando ${rostersToSave.length} jugadores en los rosters...`, savingProgress: 70 }));
             if (rostersToSave.length > 0) {
                 const { error: rosterError } = await supabase
                     .from('tournament_rosters')
@@ -558,7 +549,7 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
             await delay(800);
 
             // 4. Save Referees (Manual Sync Strategy to bypass 409s)
-            setState(prev => ({ ...prev, savingStep: 'Syncing referees...' }));
+            setState(prev => ({ ...prev, savingStep: 'Syncing referees...', savingProgress: 80 }));
 
             // 4.1 Get valid unique referees from state
             const uniqueRefereesFromState = state.referees
@@ -684,7 +675,7 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
             await delay(600);
 
             // 5. Save Admins
-            setState(prev => ({ ...prev, savingStep: 'Asignando permisos de administración...' }));
+            setState(prev => ({ ...prev, savingStep: 'Asignando permisos de administración...', savingProgress: 85 }));
             if (state.admins.length > 0) {
                 const { error: adminError } = await supabase
                     .from('tournament_admins')
@@ -705,7 +696,7 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
             await delay(600);
 
             // 6. Save Matches (Normalized Schema)
-            setState(prev => ({ ...prev, savingStep: 'Guardando calendario y partidos...' }));
+            setState(prev => ({ ...prev, savingStep: 'Guardando calendario y partidos...', savingProgress: 90 }));
 
             const matchesToSaveRelational: any[] = [];
             const setsToSaveRelational: any[] = [];
@@ -783,7 +774,7 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
             await delay(600);
 
             // 7. Save Fields (Relational)
-            setState(prev => ({ ...prev, savingStep: 'Guardando configuración de campos...' }));
+            setState(prev => ({ ...prev, savingStep: 'Guardando configuración de campos...', savingProgress: 95 }));
             const fields = (state.config as any).fields || state.config.fields_config;
             if (fields && fields.length > 0) {
                 const { error: fieldError } = await supabase
@@ -801,17 +792,17 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
 
             await delay(1000);
 
-            setState(prev => ({ ...prev, savingStep: '¡Todo listo! Finalizando guardado...' }));
-            await delay(500);
+            setState(prev => ({ ...prev, savingStep: '¡Todo listo! Finalizando guardado...', savingProgress: 100 }));
+            await delay(1000);
 
-            setState(prev => ({ ...prev, isSaving: false, savingStep: undefined, isDirty: false, lastSaved: new Date() }));
+            setState(prev => ({ ...prev, isSaving: false, savingStep: undefined, savingProgress: 0, isDirty: false, lastSaved: new Date() }));
             return tournament.id;
         } catch (error: any) {
             console.error("Error saving tournament - Full Error:", error);
             if (error.details) console.error("Error Details:", error.details);
             if (error.hint) console.error("Error Hint:", error.hint);
             if (error.message) console.error("Error Message:", error.message);
-            setState(prev => ({ ...prev, isSaving: false, savingStep: undefined }));
+            setState(prev => ({ ...prev, isSaving: false, savingStep: undefined, savingProgress: 0 }));
             return null;
         }
     };

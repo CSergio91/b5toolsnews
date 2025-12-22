@@ -50,11 +50,6 @@ export const TournamentStartDashboard: React.FC = () => {
                 order: p.phase_order
             })) || [];
 
-            // Fallback to LEGACY Stages
-            if (finalStages.length === 0) {
-                const { data: sData } = await supabase.from('tournament_stages').select('*').eq('tournament_id', id).order('order', { ascending: true });
-                finalStages = sData || [];
-            }
 
             // Fallback to structure JSON if still nothing
             if (finalStages.length === 0 && tData?.structure?.phases) {

@@ -20,61 +20,59 @@ import { EditProfileModal } from '../components/EditProfileModal';
 import { UnsavedChangesModal } from '../components/UnsavedChangesModal';
 import { ConfirmationModal } from '../components/ConfirmationModal';
 
-const SavingOverlay = ({ step }: { step?: string }) => (
-    <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        className="fixed inset-0 bg-[#0a0a0f]/90 backdrop-blur-md z-[100] flex flex-col items-center justify-center p-6 text-center"
-    >
-        <div className="relative mb-8 flex items-center justify-center">
-            {/* Spinner Ring */}
+// Standalone SavingOverlay for stability
+const SavingOverlay = ({ isSaving, step, progress }: { isSaving: boolean; step?: string; progress?: number }) => (
+    <AnimatePresence>
+        {isSaving && (
             <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
-                className="w-24 h-24 rounded-full border-t-2 border-b-2 border-l-2 border-transparent border-t-blue-500 border-b-indigo-500 absolute"
-            />
-            {/* Centered Gear Icon */}
-            <motion.div
-                animate={{ rotate: -360 }} // Counter-rotate for visual effect
-                transition={{ repeat: Infinity, duration: 4, ease: "linear" }}
-                className="z-10 flex items-center justify-center"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 z-[100] flex items-center justify-center bg-[#0a0a0a]/90 backdrop-blur-md"
             >
-                <Settings size={32} className="text-blue-400" />
+                <div className="flex flex-col items-center gap-8 max-w-sm w-full text-center px-6">
+                    {/* Centered Spinners Only */}
+                    <div className="relative flex items-center justify-center">
+                        <CustomSpinner size="large" />
+                    </div>
+
+                    <div className="space-y-4 w-full">
+                        <div className="space-y-1">
+                            <h3 className="text-xl font-bold text-white tracking-tight">
+                                Guardando Torneo
+                            </h3>
+                            {/* Fixed height container for step text to prevent layout jumping */}
+                            <div className="h-5 flex items-center justify-center">
+                                <p className="text-blue-400 font-medium text-xs uppercase tracking-widest opacity-80">
+                                    {step || 'Iniciando...'}
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* Real Progress Bar */}
+                        <div className="space-y-2">
+                            <div className="w-full bg-white/5 h-2 rounded-full overflow-hidden border border-white/5 p-[1px]">
+                                <motion.div
+                                    className="h-full bg-gradient-to-r from-blue-600 to-indigo-600 rounded-full shadow-[0_0_15px_rgba(37,99,235,0.4)]"
+                                    initial={{ width: "0%" }}
+                                    animate={{ width: `${progress || 0}%` }}
+                                    transition={{ type: "spring", stiffness: 50, damping: 20 }}
+                                />
+                            </div>
+                            <div className="flex justify-between items-center px-1">
+                                <span className="text-[10px] text-white/20 uppercase tracking-tighter">Sincronización Segura</span>
+                                <span className="text-[10px] font-black text-blue-500/80">{progress || 0}%</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <p className="text-white/10 text-[9px] uppercase tracking-[0.2em]">
+                        B5Tools Cloud Infrastructure
+                    </p>
+                </div>
             </motion.div>
-        </div>
-
-        <motion.h2
-            initial={{ y: 20 }}
-            animate={{ y: 0 }}
-            className="text-2xl font-black text-white mb-2 bg-gradient-to-r from-white to-white/60 bg-clip-text text-transparent"
-        >
-            Guardando Torneo
-        </motion.h2>
-
-        {/* Use a fixed height container to prevent layout jumping */}
-        <div className="h-6 flex items-center justify-center">
-            <motion.p
-                key={step}
-                initial={{ opacity: 0, y: 5 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.2 }}
-                className="text-blue-400 font-bold text-sm uppercase tracking-widest whitespace-nowrap"
-            >
-                {step || 'Iniciando proceso...'}
-            </motion.p>
-        </div>
-
-        <div className="mt-12 w-64 h-1.5 bg-white/5 rounded-full overflow-hidden border border-white/5">
-            <motion.div
-                animate={{
-                    width: ["0%", "30%", "60%", "90%", "100%"],
-                }}
-                transition={{ duration: 10, ease: "easeInOut" }}
-                className="h-full bg-gradient-to-r from-blue-600 to-indigo-600 shadow-[0_0_20px_rgba(59,130,246,0.5)]"
-            />
-        </div>
-    </motion.div>
+        )}
+    </AnimatePresence>
 );
 
 const BuilderWizard = () => {
@@ -296,67 +294,9 @@ const BuilderWizard = () => {
         }
     };
 
-    const SavingOverlay = () => (
-        <AnimatePresence>
-            {state.isSaving && (
-                <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    className="fixed inset-0 z-[100] flex items-center justify-center bg-[#0a0a0a]/90 backdrop-blur-md"
-                >
-                    <div className="flex flex-col items-center gap-6 max-w-sm text-center px-6">
-                        <div className="relative">
-                            <CustomSpinner size="large" />
-                            <motion.div
-                                animate={{ rotate: 360 }}
-                                transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-                                className="absolute inset-0 flex items-center justify-center opacity-20"
-                            >
-                                <Settings size={120} className="text-blue-500" />
-                            </motion.div>
-                        </div>
-
-                        <div className="space-y-2">
-                            <motion.h3
-                                key={state.savingStep}
-                                initial={{ opacity: 0, y: 10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                className="text-xl font-bold text-white tracking-tight"
-                            >
-                                Guardando Torneo
-                            </motion.h3>
-                            <motion.p
-                                key={`progress-${state.savingStep}`}
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                className="text-blue-400 font-medium text-sm animate-pulse"
-                            >
-                                {state.savingStep}
-                            </motion.p>
-                        </div>
-
-                        <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden mt-4">
-                            <motion.div
-                                className="h-full bg-gradient-to-r from-blue-600 to-indigo-600"
-                                initial={{ width: "0%" }}
-                                animate={{ width: "100%" }}
-                                transition={{ duration: 10 }} // Long duration to match overall simulation
-                            />
-                        </div>
-
-                        <p className="text-white/30 text-[10px] uppercase tracking-widest mt-4">
-                            Sincronizando con base de datos segura
-                        </p>
-                    </div>
-                </motion.div>
-            )}
-        </AnimatePresence>
-    );
 
     return (
         <>
-            <SavingOverlay />
             <div className="h-screen w-full bg-[#0a0a0a] text-white flex flex-col overflow-hidden">
                 {/* Loading Overlay */}
                 {isLoading && (
@@ -632,11 +572,11 @@ const BuilderWizard = () => {
             />
             <DraftDebugModal open={isDraftModalOpen} onClose={() => setIsDraftModalOpen(false)} />
 
-            <AnimatePresence>
-                {state.isSaving && (
-                    <SavingOverlay step={state.savingStep} />
-                )}
-            </AnimatePresence>
+            <SavingOverlay
+                isSaving={!!state.isSaving}
+                step={state.savingStep}
+                progress={state.savingProgress}
+            />
         </>
     );
 };

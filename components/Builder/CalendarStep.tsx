@@ -143,17 +143,11 @@ export const CalendarStep: React.FC = () => {
     }, [state.structure, (state.config as any).start_date, (state.config as any).end_date]);
 
     // -- Persistence --
-    // -- Persistence --
     useEffect(() => {
-        // Use a timeout to debounce updates and prevent rapid context switching if fields change fast (dragging)
-        const timer = setTimeout(() => {
-            updateConfig('fields', fields);
-            // Save both simple duration and advanced settings
-            updateConfig('matchDuration', matchDuration);
-            updateConfig('durationSettings', durationSettings);
-        }, 500);
-        return () => clearTimeout(timer);
-    }, [fields, matchDuration]);
+        updateConfig('fields', fields);
+        updateConfig('matchDuration', matchDuration);
+        updateConfig('durationSettings', durationSettings);
+    }, [fields, matchDuration, durationSettings]);
 
 
     // -- Helpers --

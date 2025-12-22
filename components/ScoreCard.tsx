@@ -2697,20 +2697,16 @@ const SingleSetScoreCard: React.FC<{
 
       try {
         // Fetch Match (Try NEW schema first)
-        let { data: match } = await supabase.from('tournament_matches').select('*').eq('match_id', matchId).single();
+        // Fetch from tournament_matches using 'id'
+        const { data: match } = await supabase.from('tournament_matches').select('*').eq('id', matchId).single();
 
         let vTeamId, hTeamId;
 
         if (match) {
-          vTeamId = match.source_away_id;
-          hTeamId = match.source_home_id;
+          vTeamId = match.source_away_id || match.visitor_team_id;
+          hTeamId = match.source_home_id || match.local_team_id;
         } else {
-          // Fallback to LEGACY public schema
-          const { data: legacyMatch } = await supabase.from('tournament_matches').select('*').eq('id', matchId).single();
-          if (!legacyMatch) return;
-          match = legacyMatch;
-          vTeamId = legacyMatch.visitor_team_id;
-          hTeamId = legacyMatch.local_team_id;
+          return;
         }
 
         if (!vTeamId || !hTeamId) {
