@@ -7,6 +7,7 @@ import { ArrowLeft, Award, Calendar, ChevronDown, Info, MapPin, Play, RefreshCcw
 import { motion, AnimatePresence } from 'framer-motion';
 import { Tournament, TournamentTeam, TournamentMatch, TournamentSet, TournamentStage } from '../types/tournament';
 import { ConfirmationModal } from '../components/ConfirmationModal';
+import { OfficialScoreKeeper } from '../components/OfficialScoreKeeper';
 
 export const TournamentStartDashboard: React.FC = () => {
     const { id } = useParams<{ id: string }>();
@@ -296,11 +297,19 @@ export const TournamentStartDashboard: React.FC = () => {
         setStartMatchModal({ isOpen: true, match, setNumber });
     };
 
+    const [showOfficialScoreKeeper, setShowOfficialScoreKeeper] = useState(false);
+    const [activeSetForOfficial, setActiveSetForOfficial] = useState<{ matchId: string, setNumber: number } | null>(null);
+
     const confirmStartSet = () => {
         if (startMatchModal) {
-            navigate(`/dashboard/game?matchId=${startMatchModal.match.id}&setNumber=${startMatchModal.setNumber}`);
+            // New Implementation: Navigate to Official Page
+            window.open(`/dashboard/official-game/${startMatchModal.match.id}/${startMatchModal.setNumber}`, '_blank');
+            setStartMatchModal(null);
         }
     };
+
+    // --- Render Official Score Keeper if Active ---
+
 
     if (loading) {
         return (
@@ -1036,15 +1045,9 @@ const MatchCard = ({ match, teams, sets, onStartSet, tournament, fields, referee
                                         {/* Action Button */}
                                         <button
                                             onClick={() => {
-                                                const params = new URLSearchParams();
-                                                params.append('matchId', match.id);
-                                                params.append('setNumber', num.toString());
-                                                params.append('gameNumber', matchIdent.toString());
-                                                params.append('local', localTeam?.name || 'Local');
-                                                params.append('visitor', visitorTeam?.name || 'Visitante');
-                                                params.append('startTime', match.start_time || '');
-                                                params.append('scorerName', scorerName);
-                                                window.open(`/dashboard/game?${params.toString()}`, '_blank');
+                                                if (onStartSet) {
+                                                    onStartSet(match, num);
+                                                }
                                             }}
                                             className="p-1.5 bg-blue-600/20 hover:bg-blue-600 text-blue-400 hover:text-white rounded-lg transition-all"
                                             title={isFinished ? "Ver Anotación" : "Anotar"}

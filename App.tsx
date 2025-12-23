@@ -15,6 +15,7 @@ import { supabase } from './lib/supabase';
 import TournamentPreviewPage from './components/Builder/preview/previewpage';
 import { TournamentPreviewNewPage } from './components/Builder/preview/TournamentPreviewNewPage';
 import { TournamentStartDashboard } from './pages/TournamentStartDashboard';
+import { OfficialScoreSheetPage } from './pages/OfficialScoreSheetPage';
 
 import { LanguageProvider } from './context/LanguageContext';
 import { ToastProvider } from './context/ToastContext';
@@ -41,6 +42,7 @@ const App: React.FC = () => {
                 <Route path="/dashboard/torneos/B5ToolsBuilder/:id" element={<B5ToolsBuilderPage />} />
                 <Route path="/dashboard/torneos/B5ToolsBuilder/:id/preview" element={<TournamentPreviewPage />} />
                 <Route path="/dashboard/torneos/B5ToolsBuilder/:id/previewnew" element={<TournamentPreviewNewPage />} />
+                <Route path="/dashboard/official-game/:matchId/:setNumber" element={<OfficialScoreSheetPage />} />
                 {/* Fallback Legacy Route - can be removed eventually or redirected */}
                 <Route path="/torneos" element={<Navigate to="/dashboard/torneos" replace />} />
                 <Route path="/torneosinvitados" element={<Navigate to="/dashboard/torneosinvitados" replace />} />
