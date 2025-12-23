@@ -348,119 +348,17 @@ const BuilderWizard = () => {
                     </div>
                 </header>
 
-                <div className="flex-1 flex overflow-hidden relative">
+                <div className="flex-1 flex flex-col overflow-hidden relative">
 
-                    {/* Sidebar Navigation (Desktop Only) */}
-                    <aside className="hidden lg:flex w-64 bg-[#111] border-r border-white/5 flex-col py-6 relative z-10">
-                        <nav className="space-y-1 px-3 flex-1 overflow-y-auto custom-scrollbar">
-                            {steps.map((step, idx) => (
-                                <div key={step.id} className="mb-1">
-                                    <button
-                                        onClick={() => handleStepClick(step.id, !!step.subItems)}
-                                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${state.currentStep === step.id || (step.subItems && step.subItems.some(s => s.id === state.currentStep))
-                                            ? 'bg-blue-600/10 text-blue-400 border border-blue-600/20'
-                                            : 'text-white/40 hover:bg-white/5 hover:text-white'
-                                            }`}
-                                    >
-                                        <div className={`${(state.currentStep === step.id || (step.subItems && step.subItems.some(s => s.id === state.currentStep))) ? 'text-blue-400' : 'text-white/30'}`}>{step.icon}</div>
-                                        {step.label}
-                                        {step.subItems ? (
-                                            <ChevronUp size={14} className={`ml-auto opacity-50 transition-transform ${expandedSteps.includes(step.id) ? '' : 'rotate-180'}`} />
-                                        ) : (
-                                            state.currentStep === step.id && <ArrowRight size={14} className="ml-auto opacity-50" />
-                                        )}
-                                    </button>
-
-                                    {/* Sub Items */}
-                                    {step.subItems && expandedSteps.includes(step.id) && (
-                                        <div className="ml-4 pl-4 border-l border-white/10 mt-1 space-y-1 animate-in slide-in-from-left-2 fade-in duration-300">
-                                            {step.subItems.map(sub => (
-                                                <button
-                                                    key={sub.id}
-                                                    onClick={() => handleStepClick(sub.id)}
-                                                    className={`w-full text-left px-4 py-2 text-xs rounded-lg transition-colors ${state.currentStep === sub.id
-                                                        ? 'bg-white/10 text-white font-bold'
-                                                        : 'text-white/40 hover:bg-white/5 hover:text-white'
-                                                        }`}
-                                                >
-                                                    {sub.label}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-                            ))}
-                        </nav>
-
-                        {/* User Profile Footer */}
-                        <div className="px-4 pt-4 border-t border-white/5 relative bg-[#111]">
-                            {isUserMenuOpen && (
-                                <div className="absolute bottom-full left-4 right-4 mb-2 bg-[#1a1a20] border border-white/10 rounded-xl shadow-xl overflow-hidden animate-in slide-in-from-bottom-2">
-                                    <button
-                                        onClick={handleNavigateToTournaments}
-                                        className="w-full text-left px-4 py-3 text-sm text-white hover:bg-white/5 flex items-center gap-2"
-                                    >
-                                        <Trophy size={14} className="text-white/50" /> Mis Torneos
-                                    </button>
-                                    <button
-                                        onClick={handleLogout}
-                                        className="w-full text-left px-4 py-3 text-sm text-red-400 hover:bg-red-500/10 flex items-center gap-2 border-t border-white/5"
-                                    >
-                                        <LogOut size={14} /> Cerrar Sesión
-                                    </button>
-                                </div>
-                            )}
-
-                            <button
-                                onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                                className="w-full flex items-center gap-3 p-2 rounded-xl hover:bg-white/5 transition-colors group"
-                            >
-                                <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center overflow-hidden border border-white/10">
-                                    {user?.user_metadata?.avatar_url ? (
-                                        <img src={user.user_metadata.avatar_url} alt="User" className="w-full h-full object-cover" />
-                                    ) : (
-                                        <User size={20} className="text-white" />
-                                    )}
-                                </div>
-                                <div className="flex-1 text-left overflow-hidden">
-                                    <p className="text-sm font-bold text-white truncate">
-                                        {user?.user_metadata?.first_name || user?.email?.split('@')[0] || 'Usuario'}
-                                    </p>
-                                    <p className="text-[10px] text-white/40 uppercase">En Línea</p>
-                                </div>
-                                <ChevronUp size={16} className={`text-white/30 transition-transform ${isUserMenuOpen ? 'rotate-180' : ''}`} />
-                            </button>
-                        </div>
-                    </aside>
-
-                    {/* Main Canvas Area */}
-                    <main className={`flex-1 overflow-y-auto relative custom-scrollbar w-full ${state.currentStep === 3 ? 'p-0' : 'p-4 lg:p-8'}`}>
-                        {/* Background */}
-                        <ParticleBackground />
-
-                        {/* Content */}
-                        <div className={`${state.currentStep === 3 ? 'w-full h-full' : 'max-w-5xl mx-auto h-full pb-24 lg:pb-0'} relative z-10`}>
-                            {state.currentStep === 0 && <ConfigStep />}
-                            {state.currentStep === 10 && <TeamManagementStep />}
-                            {state.currentStep === 11 && <PlayerManagementStep />}
-                            {state.currentStep === 12 && <RefereesStep />}
-
-                            {state.currentStep === 13 && <AdminsStep />}
-                            {state.currentStep === 2 && <FormatStep />}
-                            {state.currentStep === 3 && <FixtureStep />}
-                            {state.currentStep === 4 && <CalendarStep />}
-                        </div>
-                    </main>
-
-                    {/* Mobile Bottom Navigation Bar */}
-                    <nav className="fixed bottom-0 left-0 right-0 h-16 bg-[#111] border-t border-white/10 z-50 lg:hidden flex items-center justify-around px-2 pb-safe-area">
+                    {/* Mobile/Desktop Navigation Bar */}
+                    <nav className="fixed lg:static bottom-0 left-0 right-0 h-16 bg-[#111] border-t lg:border-t-0 lg:border-b border-white/10 z-50 flex items-center justify-around px-2 pb-safe-area lg:pb-0 shrink-0 lg:order-first">
                         {steps.map(step => {
                             const isActive = state.currentStep === step.id || (step.subItems && step.subItems.some(s => s.id === state.currentStep));
                             return (
                                 <div key={step.id} className="relative">
                                     {/* Submenu Popover */}
                                     {step.subItems && activeSubMenu === step.id && (
-                                        <div className="absolute bottom-full mb-4 left-1/2 -translate-x-1/2 min-w-[160px] bg-[#1a1a20] border border-white/10 rounded-xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-2 z-50 flex flex-col p-1">
+                                        <div className="absolute bottom-full lg:bottom-auto lg:top-full mb-4 lg:mb-0 lg:mt-4 left-1/2 -translate-x-1/2 min-w-[160px] bg-[#1a1a20] border border-white/10 rounded-xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-2 lg:slide-in-from-top-2 z-50 flex flex-col p-1">
                                             {step.subItems.map(sub => (
                                                 <button
                                                     key={sub.id}
@@ -470,7 +368,8 @@ const BuilderWizard = () => {
                                                     {sub.label}
                                                 </button>
                                             ))}
-                                            <div className="absolute bottom-[-6px] left-1/2 -translate-x-1/2 w-3 h-3 bg-[#1a1a20] border-r border-b border-white/10 rotate-45"></div>
+                                            {/* Arrow */}
+                                            <div className="absolute bottom-[-6px] lg:bottom-auto lg:top-[-6px] left-1/2 -translate-x-1/2 w-3 h-3 bg-[#1a1a20] border-r border-b lg:border-r-0 lg:border-b-0 lg:border-l lg:border-t border-white/10 rotate-45"></div>
                                         </div>
                                     )}
 
@@ -487,10 +386,10 @@ const BuilderWizard = () => {
                             );
                         })}
 
-                        {/* Mobile More "Hambuger" Menu */}
+                        {/* Mobile/Desktop More "Hambuger" Menu */}
                         <div className="relative">
                             {isMobileMoreMenuOpen && (
-                                <div className="absolute bottom-full right-0 mb-4 w-64 bg-[#1a1a20] border border-white/10 rounded-xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-2 z-50 p-4">
+                                <div className="absolute bottom-full lg:bottom-auto lg:top-full mb-4 lg:mb-0 lg:mt-4 right-0 w-64 bg-[#1a1a20] border border-white/10 rounded-xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-2 lg:slide-in-from-top-2 z-50 p-4">
                                     {/* User Profile */}
                                     <div className="flex items-center gap-3 mb-4 pb-4 border-b border-white/5">
                                         <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center overflow-hidden border border-white/10">
@@ -533,7 +432,8 @@ const BuilderWizard = () => {
                                         </button>
                                     </div>
 
-                                    <div className="absolute bottom-[-6px] right-6 w-3 h-3 bg-[#1a1a20] border-r border-b border-white/10 rotate-45"></div>
+                                    {/* Arrow */}
+                                    <div className="absolute bottom-[-6px] lg:bottom-auto lg:top-[-6px] right-6 w-3 h-3 bg-[#1a1a20] border-r border-b lg:border-r-0 lg:border-b-0 lg:border-l lg:border-t border-white/10 rotate-45"></div>
                                 </div>
                             )}
 
@@ -549,6 +449,24 @@ const BuilderWizard = () => {
                         </div>
                     </nav>
 
+                    {/* Main Canvas Area */}
+                    <main className={`flex-1 overflow-y-auto relative custom-scrollbar w-full ${state.currentStep === 3 ? 'p-0' : 'p-4 lg:p-8'}`}>
+                        {/* Background */}
+                        <ParticleBackground />
+
+                        {/* Content */}
+                        <div className={`${state.currentStep === 3 ? 'w-full h-full' : 'max-w-5xl mx-auto h-full pb-24 lg:pb-0'} relative z-10`}>
+                            {state.currentStep === 0 && <ConfigStep />}
+                            {state.currentStep === 10 && <TeamManagementStep />}
+                            {state.currentStep === 11 && <PlayerManagementStep />}
+                            {state.currentStep === 12 && <RefereesStep />}
+
+                            {state.currentStep === 13 && <AdminsStep />}
+                            {state.currentStep === 2 && <FormatStep />}
+                            {state.currentStep === 3 && <FixtureStep />}
+                            {state.currentStep === 4 && <CalendarStep />}
+                        </div>
+                    </main>
                 </div>
             </div>
             <EditProfileModal
