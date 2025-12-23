@@ -9,6 +9,12 @@ export const DashboardGamePage: React.FC = () => {
     const matchId = searchParams.get('matchId');
     const setNumber = searchParams.get('setNumber') ? parseInt(searchParams.get('setNumber')!) : null;
 
+    const gameNumber = searchParams.get('gameNumber');
+    const local = searchParams.get('local');
+    const visitor = searchParams.get('visitor');
+    const startTime = searchParams.get('startTime');
+    const scorerName = searchParams.get('scorerName');
+
     return (
         <div className="min-h-screen w-full bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-slate-900 via-purple-950 to-black text-white selection:bg-purple-500 selection:text-white flex flex-col relative overflow-hidden">
             {/* Reuse Particles for consistency */}
@@ -33,7 +39,18 @@ export const DashboardGamePage: React.FC = () => {
                         </div>
                     </div>
 
-                    <ScoreCard matchId={matchId} setNumber={setNumber} />
+                    <ScoreCard
+                        matchId={matchId}
+                        setNumber={setNumber}
+                        initialData={{
+                            gameNum: gameNumber,
+                            home: local,
+                            visitor: visitor,
+                            startTime: startTime,
+                            scorer: scorerName,
+                            setNum: setNumber?.toString()
+                        }}
+                    />
                 </div>
             </main>
         </div>

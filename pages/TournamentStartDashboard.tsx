@@ -738,27 +738,28 @@ const MatchCard = ({ match, teams, sets, onStartSet, tournament, fields, referee
 
                 {/* Teams display */}
                 <div className="p-6">
-                    <div className="flex items-center justify-between gap-2 overflow-hidden">
+                    <div className="flex items-center justify-between gap-4 overflow-hidden relative">
                         {/* Local */}
-                        <div className="flex flex-col items-center gap-2 flex-1 text-center">
-                            <div className="w-16 h-16 rounded-2xl bg-black/40 border border-white/5 flex items-center justify-center shadow-inner group-hover:scale-110 transition-transform">
-                                {localTeam?.logo_url ? <img src={localTeam.logo_url} className="w-10 h-10 object-contain" /> : <Trophy size={32} className="text-white/10" />}
+                        <div className="flex flex-col items-center gap-3 flex-1 text-center group/team">
+                            <div className="w-20 h-20 rounded-full bg-black/40 border-2 border-white/10 flex items-center justify-center shadow-lg group-hover/team:scale-105 group-hover/team:border-blue-500/50 transition-all duration-300 overflow-hidden relative">
+                                <div className="absolute inset-0 bg-gradient-to-tr from-blue-500/20 to-transparent opacity-0 group-hover/team:opacity-100 transition-opacity" />
+                                {localTeam?.logo_url ? <img src={localTeam.logo_url} className="w-full h-full object-cover" /> : <Trophy size={32} className="text-white/10" />}
                             </div>
-                            <p className="text-sm font-black truncate w-full">{localTeam?.name || 'Por asignar'}</p>
+                            <p className="text-sm font-black truncate w-full uppercase tracking-tight">{localTeam?.name || 'Por asignar'}</p>
                         </div>
 
                         {/* VS / Score */}
-                        <div className="flex flex-col items-center gap-1 min-w-[80px]">
+                        <div className="flex flex-col items-center gap-1 min-w-[80px] z-10">
                             {match.status === 'scheduled' ? (
                                 <>
-                                    <span className="text-[10px] font-black italic text-white/10 uppercase tracking-[0.3em]">VS</span>
-                                    <div className="px-3 py-1 bg-white/5 rounded-full border border-white/5 text-[10px] font-black text-white/40">
+                                    <span className="text-3xl font-black italic text-transparent bg-clip-text bg-gradient-to-br from-orange-400 to-red-600 drop-shadow-sm scale-110">VS</span>
+                                    <div className="px-3 py-1 bg-white/5 rounded-full border border-white/5 text-[10px] font-black text-white/40 mt-2">
                                         #{matchIdent}
                                     </div>
                                 </>
                             ) : (
                                 <>
-                                    <div className="text-2xl font-black text-white tracking-widest">
+                                    <div className="text-3xl font-black text-white tracking-widest drop-shadow-[0_0_10px_rgba(255,255,255,0.3)]">
                                         {localSetWins} - {visitorSetWins}
                                     </div>
                                     <div className="px-2 py-0.5 bg-white/5 rounded text-[8px] font-bold text-white/30 uppercase">
@@ -770,11 +771,12 @@ const MatchCard = ({ match, teams, sets, onStartSet, tournament, fields, referee
                         </div>
 
                         {/* Visitor */}
-                        <div className="flex flex-col items-center gap-2 flex-1 text-center">
-                            <div className="w-16 h-16 rounded-2xl bg-black/40 border border-white/5 flex items-center justify-center shadow-inner group-hover:scale-110 transition-transform">
-                                {visitorTeam?.logo_url ? <img src={visitorTeam.logo_url} className="w-10 h-10 object-contain" /> : <Trophy size={32} className="text-white/10" />}
+                        <div className="flex flex-col items-center gap-3 flex-1 text-center group/team">
+                            <div className="w-20 h-20 rounded-full bg-black/40 border-2 border-white/10 flex items-center justify-center shadow-lg group-hover/team:scale-105 group-hover/team:border-red-500/50 transition-all duration-300 overflow-hidden relative">
+                                <div className="absolute inset-0 bg-gradient-to-tr from-red-500/20 to-transparent opacity-0 group-hover/team:opacity-100 transition-opacity" />
+                                {visitorTeam?.logo_url ? <img src={visitorTeam.logo_url} className="w-full h-full object-cover" /> : <Trophy size={32} className="text-white/10" />}
                             </div>
-                            <p className="text-sm font-black truncate w-full">{visitorTeam?.name || 'Por asignar'}</p>
+                            <p className="text-sm font-black truncate w-full uppercase tracking-tight">{visitorTeam?.name || 'Por asignar'}</p>
                         </div>
                     </div>
 

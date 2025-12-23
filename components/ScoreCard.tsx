@@ -4416,8 +4416,35 @@ interface ScoreCardProps {
   setNumber?: number | null;
 }
 
-export const ScoreCard: React.FC<ScoreCardProps> = ({ matchId, setNumber }) => {
+export const ScoreCard: React.FC<{ matchId: string | null; setNumber: number | null; initialData?: any }> = ({ matchId, setNumber, initialData }) => {
   const [loading, setLoading] = useState(false);
+  // Assuming ScoreCardState and initialState are defined elsewhere or will be added.
+  // For now, I'll add a placeholder state as per the instruction's snippet.
+  const [gameState, setGameState] = useState<ScoreCardState>(initialState);
+
+  // Initial Data Effect [NEW]
+  useEffect(() => {
+    if (initialData) {
+      setGameState(prev => ({
+        ...prev,
+        gameInfo: {
+          ...prev.gameInfo,
+          gameNum: initialData.gameNum || (prev.gameInfo ? prev.gameInfo.gameNum : undefined),
+          setNum: initialData.setNum || (prev.gameInfo ? prev.gameInfo.setNum : undefined),
+          visitor: initialData.visitor || (prev.gameInfo ? prev.gameInfo.visitor : undefined),
+          home: initialData.home || (prev.gameInfo ? prev.gameInfo.home : undefined),
+          officials: {
+            ...(prev.gameInfo && prev.gameInfo.officials),
+            table: initialData.scorer || (prev.gameInfo && prev.gameInfo.officials ? prev.gameInfo.officials.table : undefined)
+          },
+          times: {
+            ...(prev.gameInfo && prev.gameInfo.times),
+            start: initialData.startTime || (prev.gameInfo && prev.gameInfo.times ? prev.gameInfo.times.start : undefined)
+          }
+        }
+      }));
+    }
+  }, [initialData]);
   const [currentSet, setCurrentSet] = useState(setNumber || 1);
   const [setWinners, setSetWinners] = useState<({ name: string; score: string; isVisitor: boolean } | null)[]>([null, null, null]);
   const [matchWinner, setMatchWinner] = useState<{ name: string; score: string; setsWon: number } | null>(null);
