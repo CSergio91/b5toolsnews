@@ -60,6 +60,12 @@ export interface TournamentTeam {
     runs_allowed: number;
     gp?: number;
     pts?: number;
+    // Calculated Stats
+    stats_ab?: number;
+    stats_h?: number;
+    stats_r?: number;
+    stats_e_def?: number;
+    stats_e_of?: number;
 }
 
 export interface TournamentRoster {
@@ -94,6 +100,9 @@ export interface TournamentMatch {
     winner_team_id?: string;
     score_text?: string;
     referee_id?: string;
+    visitor_team?: TournamentTeam;
+    local_team?: TournamentTeam;
+    location?: string;
 }
 
 export interface TournamentField {
@@ -116,6 +125,14 @@ export interface TournamentSet {
     local_errors?: number;
     data?: any; // detailed stats
     status?: string;
+    // Extended Score Columns
+    vis_inn1?: number; vis_inn2?: number; vis_inn3?: number; vis_inn4?: number; vis_inn5?: number;
+    vis_ex6?: number; vis_ex7?: number; vis_ex8?: number; vis_ex9?: number; vis_ex10?: number;
+    loc_inn1?: number; loc_inn2?: number; loc_inn3?: number; loc_inn4?: number; loc_inn5?: number;
+    loc_ex6?: number; loc_ex7?: number; loc_ex8?: number; loc_ex9?: number; loc_ex10?: number;
+    away_score?: number; home_score?: number;
+    away_hits?: number; home_hits?: number;
+    away_errors?: number; home_errors?: number;
 }
 
 export interface RefereeProfile {

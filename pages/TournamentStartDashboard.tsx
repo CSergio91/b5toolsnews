@@ -3,11 +3,12 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { UserNavbar } from '../components/UserNavbar';
 import { ParticlesBackground } from '../components/ParticlesBackground';
-import { ArrowLeft, Award, Calendar, ChevronDown, Info, MapPin, Play, RefreshCcw, Search, Trophy, Users, BookOpen, Clock, Notebook, Loader2, Layout, CheckCircle, Check, X } from 'lucide-react';
+import { ArrowLeft, Award, Calendar, ChevronDown, Info, MapPin, Play, RefreshCcw, Search, Trophy, Users, BookOpen, Clock, Notebook, Loader2, Layout, CheckCircle, Check, X, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Tournament, TournamentTeam, TournamentMatch, TournamentSet, TournamentStage } from '../types/tournament';
 import { ConfirmationModal } from '../components/ConfirmationModal';
 import { OfficialScoreKeeper } from '../components/OfficialScoreKeeper';
+import { generateMatchReport } from '../utils/pdfGenerator';
 
 export const TournamentStartDashboard: React.FC = () => {
     const { id } = useParams<{ id: string }>();
@@ -228,7 +229,7 @@ export const TournamentStartDashboard: React.FC = () => {
         }));
 
         matches.forEach(match => {
-            if (match.stage_id !== activeStageId) return;
+            if (activeStageId && match.stage_id !== activeStageId) return;
 
             const matchSets = sets.filter(s => s.match_id === match.id && s.status === 'finished');
             if (matchSets.length === 0) return;
@@ -294,6 +295,13 @@ export const TournamentStartDashboard: React.FC = () => {
     };
 
     const handleStartSet = (match: TournamentMatch, setNumber: number) => {
+        // Direct navigation for finished sets (Read Only)
+        const setRec = sets.find(s => s.match_id === match.id && s.set_number === setNumber);
+        if (setRec && setRec.status === 'finished') {
+            const teamsSlug = `${match.visitor_team?.name || 'Visitante'}-vs-${match.local_team?.name || 'Local'}`.replace(/\s+/g, '-');
+            window.open(`/dashboard/torneos/${match.tournament_id}/Start/ScoreRegister/${teamsSlug}/${match.id}/${setNumber}`, '_blank');
+            return;
+        }
         setStartMatchModal({ isOpen: true, match, setNumber });
     };
 
@@ -307,6 +315,22 @@ export const TournamentStartDashboard: React.FC = () => {
             // Construct slug "TeamA-vs-TeamB"
             const teamsSlug = `${startMatchModal.match.visitor_team?.name || 'Visitante'}-vs-${startMatchModal.match.local_team?.name || 'Local'}`.replace(/\s+/g, '-');
             const tournamentId = startMatchModal.match.tournament_id;
+
+            // Update Match Status to 'ongoing' if currently 'scheduled'
+            if (startMatchModal.match.status === 'scheduled') {
+                supabase.from('tournament_matches')
+                    .update({ status: 'live' })
+                    .eq('id', startMatchModal.match.id)
+                    .then(({ error }) => {
+                        if (error) console.error("Error updating match status to ongoing:", error);
+                        else {
+                            // Optimistic Update locally if needed, but page refresh creates new data anyway or we can fetch.
+                            // For now, fire and forget (React Query or reload usually handles it, or explicit refresh).
+                            // If we had setMatches logic exposed here we could use it.
+                            // Assuming the user navigates away (new tab) and comes back or the dashboard auto-refreshes.
+                        }
+                    });
+            }
 
             window.open(`/dashboard/torneos/${tournamentId}/Start/ScoreRegister/${teamsSlug}/${startMatchModal.match.id}/${startMatchModal.setNumber}`, '_blank');
             setStartMatchModal(null);
@@ -499,9 +523,9 @@ export const TournamentStartDashboard: React.FC = () => {
                                             <tr className="bg-white/5 text-[10px] uppercase tracking-widest text-white/40">
                                                 <th className="px-6 py-4">P</th>
                                                 <th className="px-6 py-4">Equipo</th>
-                                                <th className="px-3 py-4 text-center">JJ</th>
-                                                <th className="px-3 py-4 text-center">JG</th>
-                                                <th className="px-3 py-4 text-center">JP</th>
+                                                <th className="px-3 py-4 text-center">GP</th>
+                                                <th className="px-3 py-4 text-center">W</th>
+                                                <th className="px-3 py-4 text-center">L</th>
                                                 <th className="px-3 py-4 text-center">PTS</th>
                                                 <th className="px-6 py-4 text-right">RC / RP</th>
                                             </tr>
@@ -537,105 +561,162 @@ export const TournamentStartDashboard: React.FC = () => {
 
                         {activeTab === 'teams' && (
                             <div className="space-y-4">
-                                {teams.map(team => (
-                                    <div key={team.id} className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden backdrop-blur-md transition-all">
-                                        <div className="w-full flex flex-col md:flex-row items-center justify-between p-4 hover:bg-white/5 transition-colors gap-4">
-                                            {/* Team Info */}
-                                            <div
-                                                onClick={() => toggleTeamExpansion(team.id)}
-                                                className="flex flex-1 items-center gap-4 cursor-pointer w-full"
-                                            >
-                                                <div className="w-14 h-14 rounded-full bg-black/40 flex items-center justify-center border-2 border-white/10 shadow-lg overflow-hidden group-hover:border-white/20 transition-all">
-                                                    {team.logo_url ? <img src={team.logo_url} className="w-full h-full object-cover" /> : <Users size={24} className="text-white/20" />}
-                                                </div>
-                                                <div className="text-left flex-1">
-                                                    <h3 className="font-black text-lg leading-tight">{team.name}</h3>
-                                                    <p className="text-xs text-white/40 uppercase tracking-widest mb-2">{rosters.filter(r => r.team_id === team.id).length} Integrantes</p>
+                                {/* Use calculated stats for display */}
+                                {(() => {
+                                    // Calculate Team Stats on the fly
+                                    const teamsWithStats = teams.map(t => {
+                                        const stats = { ab: 0, h: 0, r: 0, e: 0 };
 
-                                                    {/* TEAM STATS ROW */}
-                                                    <div className="flex items-center gap-3 overflow-x-auto pb-1">
-                                                        {[
-                                                            { l: 'AB', v: team.stats_ab },
-                                                            { l: 'H', v: team.stats_h },
-                                                            { l: 'R', v: team.stats_r },
-                                                            { l: 'E(Def)', v: team.stats_e_def },
-                                                            { l: 'E(Of)', v: team.stats_e_of },
-                                                            { l: 'AVE', v: team.stats_ab ? (team.stats_h / team.stats_ab).toFixed(3) : '.000', w: 'w-12', c: 'text-yellow-400' }
-                                                        ].map((s, idx) => (
-                                                            <div key={idx} className={`flex flex-col items-center bg-black/20 rounded px-1.5 py-0.5 border border-white/5 ${s.w || 'w-10'}`}>
-                                                                <span className="text-[8px] font-bold text-white/30 uppercase">{s.l}</span>
-                                                                <span className={`text-[10px] font-mono font-bold ${s.c || 'text-white/80'}`}>{s.v || 0}</span>
-                                                            </div>
-                                                        ))}
+                                        // Aggregate from finished sets
+                                        sets.filter(s => s.status === 'finished').forEach(s => {
+                                            const isVisitor = (matches.find(m => m.id === s.match_id)?.visitor_team_id === t.id);
+                                            const isLocal = (matches.find(m => m.id === s.match_id)?.local_team_id === t.id);
+
+                                            if (!isVisitor && !isLocal) return;
+
+                                            // 1. Core Stats from Columns (Preferred)
+                                            if (isVisitor) {
+                                                stats.r += (s.away_score ?? s.visitor_runs ?? 0);
+                                                stats.h += (s.away_hits ?? s.visitor_hits ?? 0);
+                                                stats.e += (s.away_errors ?? s.visitor_errors ?? 0);
+                                            } else {
+                                                stats.r += (s.home_score ?? s.local_runs ?? 0);
+                                                stats.h += (s.home_hits ?? s.local_hits ?? 0);
+                                                stats.e += (s.home_errors ?? s.local_errors ?? 0);
+                                            }
+
+                                            // 2. AB Calculation (From JSON if available)
+                                            // Approximation: H + Out + reached_on_error - sacrifices? 
+                                            // Simple parser: Look at all non-empty score slots.
+                                            // NOTE: This is a rough approximation if exact AB isn't tracked.
+                                            // In OfficialScoreSheet, we count AB as appearances minus BB/HBP/SAC.
+
+                                            // Let's try to extract from JSON state
+                                            if (s.state_json) {
+                                                const teamJson = isVisitor ? s.state_json.visitorTeam : s.state_json.localTeam;
+                                                if (teamJson && teamJson.slots) {
+                                                    teamJson.slots.forEach((slot: any) => {
+                                                        ['starter', 'sub'].forEach(role => {
+                                                            const p = slot[role];
+                                                            if (p && p.scores) {
+                                                                p.scores.flat().forEach((val: string) => {
+                                                                    const v = val.toUpperCase();
+                                                                    // Valid AB: H, X (Out), E (Error), KC (Strikeout), F (Fly), etc.
+                                                                    // Exclude: BB, HP, SAC (if recorded)
+                                                                    // Simple check: if it has content and is NOT BB/HP
+                                                                    if (v && v.length > 0 && !['BB', 'HP', 'SF', 'SH'].includes(v)) {
+                                                                        stats.ab++;
+                                                                    }
+                                                                });
+                                                            }
+                                                        });
+                                                    });
+                                                }
+                                            }
+                                        });
+
+                                        return { ...t, stats_ab: stats.ab, stats_h: stats.h, stats_r: stats.r, stats_e_def: stats.e };
+                                    });
+
+                                    return teamsWithStats.map(team => (
+                                        <div key={team.id} className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden backdrop-blur-md transition-all">
+                                            <div className="w-full flex flex-col md:flex-row items-center justify-between p-4 hover:bg-white/5 transition-colors gap-4">
+                                                {/* Team Info */}
+                                                <div
+                                                    onClick={() => toggleTeamExpansion(team.id)}
+                                                    className="flex flex-1 items-center gap-4 cursor-pointer w-full"
+                                                >
+                                                    <div className="w-14 h-14 rounded-full bg-black/40 flex items-center justify-center border-2 border-white/10 shadow-lg overflow-hidden group-hover:border-white/20 transition-all">
+                                                        {team.logo_url ? <img src={team.logo_url} className="w-full h-full object-cover" /> : <Users size={24} className="text-white/20" />}
+                                                    </div>
+                                                    <div className="text-left flex-1">
+                                                        <h3 className="font-black text-lg leading-tight">{team.name}</h3>
+                                                        <p className="text-xs text-white/40 uppercase tracking-widest mb-2">{rosters.filter(r => r.team_id === team.id).length} Integrantes</p>
+
+                                                        {/* TEAM STATS ROW */}
+                                                        <div className="flex items-center gap-3 overflow-x-auto pb-1">
+                                                            {[
+                                                                { l: 'AB', v: team.stats_ab },
+                                                                { l: 'H', v: team.stats_h },
+                                                                { l: 'R', v: team.stats_r },
+                                                                { l: 'E', v: team.stats_e_def },
+                                                                { l: 'AVG', v: (team.stats_h && team.stats_ab) ? (team.stats_h / team.stats_ab).toFixed(3) : '.000', w: 'w-14', c: 'text-yellow-400' }
+                                                            ].map((s, idx) => (
+                                                                <div key={idx} className={`flex flex-col items-center bg-black/20 rounded px-1.5 py-0.5 border border-white/5 ${s.w || 'w-10'}`}>
+                                                                    <span className="text-[8px] font-bold text-white/30 uppercase">{s.l}</span>
+                                                                    <span className={`text-[10px] font-mono font-bold ${s.c || 'text-white/80'}`}>{s.v || 0}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
                                                     </div>
                                                 </div>
+
+                                                <button
+                                                    onClick={() => toggleTeamExpansion(team.id)}
+                                                    className={`p-2 rounded-lg bg-white/5 border border-white/10 transition-transform ${expandedTeams.includes(team.id) ? 'rotate-180' : ''}`}
+                                                >
+                                                    <ChevronDown size={20} />
+                                                </button>
                                             </div>
 
-                                            <button
-                                                onClick={() => toggleTeamExpansion(team.id)}
-                                                className={`p-2 rounded-lg bg-white/5 border border-white/10 transition-transform ${expandedTeams.includes(team.id) ? 'rotate-180' : ''}`}
-                                            >
-                                                <ChevronDown size={20} />
-                                            </button>
+                                            <AnimatePresence>
+                                                {expandedTeams.includes(team.id) && (
+                                                    <motion.div
+                                                        initial={{ height: 0, opacity: 0 }}
+                                                        animate={{ height: 'auto', opacity: 1 }}
+                                                        exit={{ height: 0, opacity: 0 }}
+                                                        className="border-t border-white/5 bg-[#000]/20"
+                                                    >
+                                                        <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                                            {rosters.filter(r => r.team_id === team.id).map(player => (
+                                                                <div key={player.id} className="flex flex-col gap-3 p-3 bg-white/5 border border-white/5 rounded-xl hover:bg-white/10 transition-colors">
+                                                                    <div className="flex items-center gap-3">
+                                                                        <div className="w-10 h-10 rounded-lg bg-white/5 border border-white/5 overflow-hidden flex items-center justify-center">
+                                                                            {player.photo_url ? (
+                                                                                <img src={player.photo_url} className="w-full h-full object-cover" />
+                                                                            ) : (
+                                                                                <span className="text-sm font-black text-white/10">#{player.number || '00'}</span>
+                                                                            )}
+                                                                        </div>
+                                                                        <div>
+                                                                            <p className="font-bold text-sm leading-tight">{player.first_name} {player.last_name}</p>
+                                                                            <div className="flex items-center gap-2 mt-1">
+                                                                                <span className="text-[10px] font-bold text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded border border-blue-500/20 uppercase">#{player.number || '00'}</span>
+                                                                                <span className="text-[10px] text-white/40 uppercase tracking-widest">{player.role || 'Jugador'}</span>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    {/* PLAYER STATS ROW */}
+                                                                    <div className="grid grid-cols-6 gap-1 border-t border-white/5 pt-2">
+                                                                        {[
+                                                                            { l: 'AB', v: player.stats_ab },
+                                                                            { l: 'H', v: player.stats_h },
+                                                                            { l: 'R', v: player.stats_r },
+                                                                            { l: 'E(D)', v: player.stats_e_def },
+                                                                            { l: 'E(O)', v: player.stats_e_of },
+                                                                            { l: 'AVE', v: player.stats_ab ? (player.stats_h / player.stats_ab).toFixed(3) : '.000', c: 'text-yellow-400 col-span-1' }
+                                                                        ].map((s, idx) => (
+                                                                            <div key={idx} className={`flex flex-col items-center bg-black/20 rounded py-0.5 ${s.c ? '' : ''}`}>
+                                                                                <span className="text-[7px] font-bold text-white/30 uppercase">{s.l}</span>
+                                                                                <span className={`text-[9px] font-mono font-bold ${s.c ? 'text-yellow-400' : 'text-white/80'}`}>{s.v || 0}</span>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                            {rosters.filter(r => r.team_id === team.id).length === 0 && (
+                                                                <div className="col-span-full py-8 text-center text-white/20 text-xs italic">
+                                                                    No hay jugadores registrados en este roster.
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </motion.div>
+                                                )}
+                                            </AnimatePresence>
                                         </div>
-
-                                        <AnimatePresence>
-                                            {expandedTeams.includes(team.id) && (
-                                                <motion.div
-                                                    initial={{ height: 0, opacity: 0 }}
-                                                    animate={{ height: 'auto', opacity: 1 }}
-                                                    exit={{ height: 0, opacity: 0 }}
-                                                    className="border-t border-white/5 bg-[#000]/20"
-                                                >
-                                                    <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                                                        {rosters.filter(r => r.team_id === team.id).map(player => (
-                                                            <div key={player.id} className="flex flex-col gap-3 p-3 bg-white/5 border border-white/5 rounded-xl hover:bg-white/10 transition-colors">
-                                                                <div className="flex items-center gap-3">
-                                                                    <div className="w-10 h-10 rounded-lg bg-white/5 border border-white/5 overflow-hidden flex items-center justify-center">
-                                                                        {player.photo_url ? (
-                                                                            <img src={player.photo_url} className="w-full h-full object-cover" />
-                                                                        ) : (
-                                                                            <span className="text-sm font-black text-white/10">#{player.number || '00'}</span>
-                                                                        )}
-                                                                    </div>
-                                                                    <div>
-                                                                        <p className="font-bold text-sm leading-tight">{player.first_name} {player.last_name}</p>
-                                                                        <div className="flex items-center gap-2 mt-1">
-                                                                            <span className="text-[10px] font-bold text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded border border-blue-500/20 uppercase">#{player.number || '00'}</span>
-                                                                            <span className="text-[10px] text-white/40 uppercase tracking-widest">{player.role || 'Jugador'}</span>
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-
-                                                                {/* PLAYER STATS ROW */}
-                                                                <div className="grid grid-cols-6 gap-1 border-t border-white/5 pt-2">
-                                                                    {[
-                                                                        { l: 'AB', v: player.stats_ab },
-                                                                        { l: 'H', v: player.stats_h },
-                                                                        { l: 'R', v: player.stats_r },
-                                                                        { l: 'E(D)', v: player.stats_e_def },
-                                                                        { l: 'E(O)', v: player.stats_e_of },
-                                                                        { l: 'AVE', v: player.stats_ab ? (player.stats_h / player.stats_ab).toFixed(3) : '.000', c: 'text-yellow-400 col-span-1' }
-                                                                    ].map((s, idx) => (
-                                                                        <div key={idx} className={`flex flex-col items-center bg-black/20 rounded py-0.5 ${s.c ? '' : ''}`}>
-                                                                            <span className="text-[7px] font-bold text-white/30 uppercase">{s.l}</span>
-                                                                            <span className={`text-[9px] font-mono font-bold ${s.c ? 'text-yellow-400' : 'text-white/80'}`}>{s.v || 0}</span>
-                                                                        </div>
-                                                                    ))}
-                                                                </div>
-                                                            </div>
-                                                        ))}
-                                                        {rosters.filter(r => r.team_id === team.id).length === 0 && (
-                                                            <div className="col-span-full py-8 text-center text-white/20 text-xs italic">
-                                                                No hay jugadores registrados en este roster.
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </motion.div>
-                                            )}
-                                        </AnimatePresence>
-                                    </div>
-                                ))}
+                                    ));
+                                })()}
                             </div>
                         )}
                         {activeTab === 'fields' && (
@@ -713,18 +794,56 @@ export const TournamentStartDashboard: React.FC = () => {
                             </h2>
 
                             <div className="flex flex-col items-center mb-6 relative z-10">
-                                <CircularProgress
-                                    value={matches.length > 0 ? (matches.filter(m => m.status === 'finished').length / matches.length) * 100 : 0}
-                                    size={160}
-                                    color="text-blue-400"
-                                />
+                                {(() => {
+                                    // Calculate Sets Progress manually
+                                    // Total Sets = Sum of sets_per_match for all matches (or default 1/3)
+                                    // Finished Sets = Count of sets with status 'finished'
+                                    const totalSetsExpected = matches.reduce((acc, m) => {
+                                        const setNum = m.is_single_set ? 1 : (tournament?.sets_per_match || 1);
+                                        // If set_number is explicitly providing the "Best Of" count? 
+                                        // Usually sets_per_match is 3 (Best of 3) or 1.
+                                        // Let's assume max possible sets (3) or 1.
+                                        return acc + (m.set_number ? parseInt(m.set_number.split(' ')[0]) || (m.is_single_set ? 1 : 3) : (m.is_single_set ? 1 : 3));
+                                    }, 0);
+
+                                    // Actually a better metric for "Sets Completed" is literally just the sets rows in DB that are finished.
+                                    // But we need a denominator. 
+                                    // Denominator: Matches * (Sets Per Match). 
+                                    // If Best of 3, do we count 3? Or 2-3?
+                                    // For progress bar, usually we plan for Max Sets. 
+                                    // Let's iterate matches. 
+
+                                    let calcTotalSets = 0;
+                                    matches.forEach(m => {
+                                        calcTotalSets += (m.is_single_set || tournament?.sets_per_match === 1) ? 1 : 3;
+                                    });
+
+                                    const finishedSetsCount = sets.filter(s => s.status === 'finished').length;
+                                    const progressVal = calcTotalSets > 0 ? (finishedSetsCount / calcTotalSets) * 100 : 0;
+
+                                    return (
+                                        <>
+                                            <CircularProgress
+                                                value={progressVal}
+                                                size={160}
+                                                color="text-blue-400"
+                                            />
+                                            {/* Hidden data for layout if needed */}
+                                        </>
+                                    );
+                                })()}
                             </div>
 
                             <div className="grid grid-cols-2 gap-3 relative z-10">
                                 <MiniStatCard icon={Calendar} label="Total Partidos" value={matches.length} color="text-amber-400" />
                                 <MiniStatCard icon={CheckCircle} label="Finalizados" value={matches.filter(m => m.status === 'finished').length} color="text-green-400" />
+                                <MiniStatCard
+                                    icon={Notebook}
+                                    label="Sets"
+                                    value={`${sets.filter(s => s.status === 'finished').length} / ${matches.reduce((acc, m) => acc + ((m.is_single_set || m.set_number === '1 Set') ? 1 : 3), 0)}`}
+                                    color="text-cyan-400"
+                                />
                                 <MiniStatCard icon={Users} label="Equipos" value={teams.length} color="text-purple-400" />
-                                <MiniStatCard icon={Layout} label="Jugadores" value={rosters.length} color="text-rose-400" />
                             </div>
                         </div>
 
@@ -936,6 +1055,26 @@ const MatchCard = ({ match, teams, sets, onStartSet, tournament, fields, referee
                             <Notebook size={12} />
                             <span className="text-[10px] font-bold uppercase tracking-wider">{match.set_number || (isSingleSet ? '1 Set' : '3 Sets')}</span>
                         </div>
+                        {/* PDF Download Button (Only if all sets finished) */}
+                        {sets.length > 0 && sets.every((s: any) => s.status === 'finished') && (
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    generateMatchReport(match, sets, {
+                                        tournamentName: tournament?.name,
+                                        tournamentLogo: tournament?.logo_url,
+                                        fieldName: fieldName,
+                                        localTeam: localTeam,
+                                        visitorTeam: visitorTeam,
+                                        scorerName: scorerName
+                                    });
+                                }}
+                                className="p-1 hover:bg-white/10 rounded-full text-green-400 hover:text-green-300 transition-colors animate-pulse"
+                                title="Descargar Reporte PDF"
+                            >
+                                <Download size={12} />
+                            </button>
+                        )}
                     </div>
                 </div>
 
@@ -993,9 +1132,8 @@ const MatchCard = ({ match, teams, sets, onStartSet, tournament, fields, referee
                         {/* Render sets based on config and win condition */}
                         {Array.from({ length: isSingleSet ? 1 : 3 }).map((_, i) => {
                             const num = i + 1;
-                            // Check if game is already won (Best of 3)
-                            const leaderWins = Math.max(localSetWins, visitorSetWins);
-                            if (!isSingleSet && num === 3 && leaderWins >= 2) return null;
+                            // Check if game is already won (Best of 3) - Only hide 3rd set if it was a 2-0 sweep
+                            if (!isSingleSet && num === 3 && ((localSetWins === 2 && visitorSetWins === 0) || (visitorSetWins === 2 && localSetWins === 0))) return null;
 
                             const set = sets.find((s: any) => s.set_number === num);
                             const isFinished = set?.status === 'finished';
@@ -1082,47 +1220,58 @@ const MatchCard = ({ match, teams, sets, onStartSet, tournament, fields, referee
                                                     </tr>
                                                 </thead>
                                                 <tbody className="text-white/80 font-mono">
-                                                    {/* Visitor Row */}
-                                                    <tr className="border-b border-white/5">
-                                                        <td className="p-1 pl-3 text-left truncate max-w-[80px] font-sans font-bold text-white/60">{visitorTeam?.name}</td>
-                                                        {Array.from({ length: maxInnings }).map((_, idx) => (
-                                                            <td key={idx} className="p-1 text-white/40">{innings.visitor[idx] || '-'}</td>
-                                                        ))}
-                                                        <td className="p-1 font-bold text-white border-l border-white/10 bg-white/5">{set.away_score ?? set.visitor_runs ?? set.state_json?.totals?.visitor ?? 0}</td>
-                                                        <td className="p-1 text-white/60">
-                                                            {set.away_hits || (() => {
-                                                                // Fallback: Calculate from JSON if column is empty
-                                                                if (!set.state_json?.visitorTeam?.slots) return 0;
-                                                                let h = 0;
-                                                                set.state_json.visitorTeam.slots.forEach((s: any) => {
-                                                                    [s.starter, s.sub].forEach((p: any) => p?.scores?.flat().forEach((v: string) => { if (v?.includes('H')) h++; }));
-                                                                });
-                                                                return h;
-                                                            })()}
-                                                        </td>
-                                                        <td className="p-1 text-white/60">{set.away_errors || set.state_json?.errors?.visitor || 0}</td>
-                                                    </tr>
-                                                    {/* Local Row */}
-                                                    <tr>
-                                                        <td className="p-1 pl-3 text-left truncate max-w-[80px] font-sans font-bold text-white/60">{localTeam?.name}</td>
-                                                        {Array.from({ length: maxInnings }).map((_, idx) => (
-                                                            <td key={idx} className="p-1 text-white/40">
-                                                                {innings.local[idx] || (set.state_json?.inningScores?.local?.[idx] || '-')}
-                                                            </td>
-                                                        ))}
-                                                        <td className="p-1 font-bold text-white border-l border-white/10 bg-white/5">{set.home_score ?? set.local_runs ?? set.state_json?.totals?.local ?? 0}</td>
-                                                        <td className="p-1 text-white/60">
-                                                            {set.home_hits || (() => {
-                                                                if (!set.state_json?.localTeam?.slots) return 0;
-                                                                let h = 0;
-                                                                set.state_json.localTeam.slots.forEach((s: any) => {
-                                                                    [s.starter, s.sub].forEach((p: any) => p?.scores?.flat().forEach((v: string) => { if (v?.includes('H')) h++; }));
-                                                                });
-                                                                return h;
-                                                            })()}
-                                                        </td>
-                                                        <td className="p-1 text-white/60">{set.home_errors || set.state_json?.errors?.local || 0}</td>
-                                                    </tr>
+                                                    {(() => {
+                                                        const vRun = Number(set.away_score ?? set.visitor_runs ?? set.state_json?.totals?.visitor ?? 0);
+                                                        const lRun = Number(set.home_score ?? set.local_runs ?? set.state_json?.totals?.local ?? 0);
+                                                        const isFin = set.status === 'finished';
+                                                        const vWin = isFin && vRun > lRun;
+                                                        const lWin = isFin && lRun > vRun;
+
+                                                        return (
+                                                            <>
+                                                                {/* Visitor Row */}
+                                                                <tr className={`border-b border-white/5 ${vWin ? 'bg-yellow-500/10' : ''}`}>
+                                                                    <td className={`p-1 pl-3 text-left truncate max-w-[80px] font-sans font-bold ${vWin ? 'text-yellow-400' : 'text-white/60'}`}>{visitorTeam?.name}</td>
+                                                                    {Array.from({ length: maxInnings }).map((_, idx) => (
+                                                                        <td key={idx} className={`p-1 ${vWin ? 'text-yellow-200/60' : 'text-white/40'}`}>{innings.visitor[idx] || '-'}</td>
+                                                                    ))}
+                                                                    <td className={`p-1 font-bold border-l border-white/10 ${vWin ? 'text-yellow-400 bg-yellow-500/20' : 'text-white bg-white/5'}`}>{vRun}</td>
+                                                                    <td className="p-1 text-white/60">
+                                                                        {set.away_hits || (() => {
+                                                                            if (!set.state_json?.visitorTeam?.slots) return 0;
+                                                                            let h = 0;
+                                                                            set.state_json.visitorTeam.slots.forEach((s: any) => {
+                                                                                [s.starter, s.sub].forEach((p: any) => p?.scores?.flat().forEach((v: string) => { if (v?.includes('H')) h++; }));
+                                                                            });
+                                                                            return h;
+                                                                        })()}
+                                                                    </td>
+                                                                    <td className="p-1 text-white/60">{set.away_errors || set.state_json?.errors?.visitor || 0}</td>
+                                                                </tr>
+                                                                {/* Local Row */}
+                                                                <tr className={lWin ? 'bg-yellow-500/10' : ''}>
+                                                                    <td className={`p-1 pl-3 text-left truncate max-w-[80px] font-sans font-bold ${lWin ? 'text-yellow-400' : 'text-white/60'}`}>{localTeam?.name}</td>
+                                                                    {Array.from({ length: maxInnings }).map((_, idx) => (
+                                                                        <td key={idx} className={`p-1 ${lWin ? 'text-yellow-200/60' : 'text-white/40'}`}>
+                                                                            {innings.local[idx] || (set.state_json?.inningScores?.local?.[idx] || '-')}
+                                                                        </td>
+                                                                    ))}
+                                                                    <td className={`p-1 font-bold border-l border-white/10 ${lWin ? 'text-yellow-400 bg-yellow-500/20' : 'text-white bg-white/5'}`}>{lRun}</td>
+                                                                    <td className="p-1 text-white/60">
+                                                                        {set.home_hits || (() => {
+                                                                            if (!set.state_json?.localTeam?.slots) return 0;
+                                                                            let h = 0;
+                                                                            set.state_json.localTeam.slots.forEach((s: any) => {
+                                                                                [s.starter, s.sub].forEach((p: any) => p?.scores?.flat().forEach((v: string) => { if (v?.includes('H')) h++; }));
+                                                                            });
+                                                                            return h;
+                                                                        })()}
+                                                                    </td>
+                                                                    <td className="p-1 text-white/60">{set.home_errors || set.state_json?.errors?.local || 0}</td>
+                                                                </tr>
+                                                            </>
+                                                        );
+                                                    })()}
                                                 </tbody>
                                             </table>
                                         </div>

@@ -1,5 +1,6 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { TournamentMatch, TournamentSet } from '../types/tournament';
 
 export interface PlayerStats {
   name: string;
@@ -349,3 +350,175 @@ export const generateStatsPDF = async (state: ScoreCardState) => {
 };
 
 export const generatePDF = async () => { };
+
+// --- NEW MATCH REPORT GENERATOR ---
+export const generateMatchReport = async (
+  match: TournamentMatch,
+  sets: TournamentSet[],
+  context: {
+    tournamentName?: string,
+    tournamentLogo?: string,
+    fieldName?: string,
+    localTeam?: any,
+    visitorTeam?: any,
+    scorerName?: string
+  }
+) => {
+  const doc = new jsPDF('p', 'mm', 'a4');
+
+  // 1. Load Tournament Logo
+  let logoBase64 = '';
+  try {
+    if (context.tournamentLogo) logoBase64 = await getImageDataUrl(context.tournamentLogo);
+    else logoBase64 = await getImageDataUrl('/logo.png');
+  } catch (e) { }
+
+  // 2. Load Team Logos
+  let localLogo = null;
+  let visitorLogo = null;
+  try {
+    if (context.localTeam?.logo_url) localLogo = await getImageDataUrl(context.localTeam.logo_url);
+    if (context.visitorTeam?.logo_url) visitorLogo = await getImageDataUrl(context.visitorTeam.logo_url);
+  } catch (e) { console.error("Error loading team logos", e); }
+
+  // Prepare Header Data
+  const dateStr = match.start_time ? new Date(match.start_time).toLocaleDateString() : new Date().toLocaleDateString();
+  const gameNum = match.name || match.id.slice(0, 5).toUpperCase();
+  const setNum = sets.every(s => s.status === 'finished') ? 'FINAL' : `${sets.length} SETS`;
+
+  const headerState: ScoreCardState = {
+    gameInfo: {
+      competition: context.tournamentName || 'TORNEO B5TOOLS',
+      place: context.fieldName || match.location || 'B5 Arena',
+      date: dateStr,
+      gameNum: gameNum,
+      setNum: setNum,
+      visitor: context.visitorTeam?.name || 'VISITANTE',
+      home: context.localTeam?.name || 'LOCAL',
+    } as any,
+    visitorTeam: { slots: [] }, localTeam: { slots: [] },
+    inningScores: { visitor: [], local: [] },
+    totals: { visitor: '0', local: '0' },
+    errors: { visitor: '0', local: '0' }
+  };
+
+  drawProfessionalHeader(doc, headerState, logoBase64, 'REPORTE FINAL DE PARTIDO');
+
+  // Title Section (Teams + Logos)
+  const titleBarY = 55;
+  const titleBarHeight = 15; // Increased height for logos
+  doc.setFillColor(30, 41, 59);
+  doc.roundedRect(15, titleBarY, 180, titleBarHeight, 1, 1, 'F');
+
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+
+  // Center Point
+  const centerX = 105;
+  const logoSize = 12;
+  const logoY = titleBarY + 1.5;
+  const textY = titleBarY + 9.5;
+
+  const vName = (context.visitorTeam?.name || 'VISITANTE').toUpperCase();
+  const lName = (context.localTeam?.name || 'LOCAL').toUpperCase();
+
+  // Draw Visitor (Left)
+  let vTextX = centerX - 10; // Offset from center VS
+  if (visitorLogo) {
+    try {
+      doc.addImage(visitorLogo, 'PNG', 20, logoY, logoSize, logoSize);
+      // Align text left of logo roughly? No, let's put logos on far ends or near center?
+      // Let's put logos next to names.
+      // Layout: [Logo V] [Name V]  VS  [Name L] [Logo L] ?
+      // Or: [Name V] vs [Name L] with logos inside?
+
+      // Standard Layout: 
+      // [Logo V (20, y)]  [Name V (35)] ........ VS (center) ........ [Name L] [Logo L]
+
+      doc.text(vName, 35, textY);
+    } catch (e) {
+      doc.text(vName, 20, textY);
+    }
+  } else {
+    doc.text(vName, 20, textY);
+  }
+
+  // Draw Local (Right)
+  // Align right
+  if (localLogo) {
+    try {
+      doc.addImage(localLogo, 'PNG', 190 - logoSize, logoY, logoSize, logoSize);
+      doc.text(lName, 190 - logoSize - 2, textY, { align: 'right' });
+    } catch (e) {
+      doc.text(lName, 190, textY, { align: 'right' });
+    }
+  } else {
+    doc.text(lName, 190, textY, { align: 'right' });
+  }
+
+  // Draw VS center
+  doc.setTextColor(148, 163, 184); // slate-400
+  doc.setFontSize(10);
+  doc.text('vs', centerX, textY, { align: 'center' });
+
+
+  let currentY = titleBarY + titleBarHeight + 5;
+
+  sets.sort((a, b) => a.set_number - b.set_number).forEach((set) => {
+    // Prepare Miniscore Data
+    const vParams = [
+      set.vis_inn1, set.vis_inn2, set.vis_inn3, set.vis_inn4, set.vis_inn5,
+      set.vis_ex6, set.vis_ex7
+    ].filter(x => x !== undefined).map(v => v !== null ? v.toString() : '-').slice(0, 10);
+
+    // Auto-fill to at least 5 columns
+    while (vParams.length < 5) vParams.push('-');
+
+    const lParams = [
+      set.loc_inn1, set.loc_inn2, set.loc_inn3, set.loc_inn4, set.loc_inn5,
+      set.loc_ex6, set.loc_ex7
+    ].filter(x => x !== undefined).map(v => v !== null ? v.toString() : '-').slice(0, 10);
+    while (lParams.length < 5) lParams.push('-');
+
+
+    const vRun = set.away_score ?? set.visitor_runs ?? 0;
+    const lRun = set.home_score ?? set.local_runs ?? 0;
+    const vHit = set.away_hits ?? 0;
+    const lHit = set.home_hits ?? 0;
+    const vErr = set.away_errors ?? 0;
+    const lErr = set.home_errors ?? 0;
+
+    // Draw Section Header for Set
+    doc.setFillColor(71, 85, 105);
+    doc.roundedRect(15, currentY, 180, 7, 1, 1, 'F');
+    doc.setFontSize(10);
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`SET ${set.set_number} - ${set.status === 'finished' ? 'FINALIZADO' : 'PENDIENTE'}`, 20, currentY + 4.5);
+
+    // Build Table Header
+    const colCount = Math.max(vParams.length, 5);
+    const headerRow = ['EQUIPO', ...Array.from({ length: colCount }, (_, i) => (i + 1).toString()), 'C', 'H', 'E'];
+
+    // Table
+    autoTable(doc, {
+      startY: currentY + 8,
+      head: [headerRow],
+      body: [
+        [context.visitorTeam?.name || 'VISITANTE', ...vParams, vRun, vHit, vErr],
+        [context.localTeam?.name || 'LOCAL', ...lParams, lRun, lHit, lErr]
+      ],
+      theme: 'grid',
+      headStyles: { fillColor: [15, 23, 42], halign: 'center', fontSize: 9 },
+      styles: { halign: 'center', fontSize: 9 },
+      columnStyles: { 0: { halign: 'left', fontStyle: 'bold', cellWidth: 40 } },
+      margin: { left: 15, right: 15 }
+    });
+
+    currentY = (doc as any).lastAutoTable.finalY + 10;
+  });
+
+  applyGlobalBranding(doc, logoBase64);
+  doc.save(`B5Tools_Match_${match.id.slice(0, 6)}_${dateStr.replace(/\//g, '-')}.pdf`);
+};

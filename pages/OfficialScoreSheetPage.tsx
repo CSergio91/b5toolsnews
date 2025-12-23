@@ -6,6 +6,7 @@ import {
     Circle, Pencil, Share2, Download, Users, Save, Loader2,
     UserCircle2, Camera, User, ClipboardList, Flag
 } from 'lucide-react';
+import { ConfirmationModal } from '../components/ConfirmationModal';
 import { supabase } from '../lib/supabase';
 import { useParams, useNavigate } from 'react-router-dom';
 
@@ -367,26 +368,56 @@ export const OfficialScoreSheetPage: React.FC = () => {
     const [saving, setSaving] = useState(false);
     const [lastSaved, setLastSaved] = useState<Date | null>(null);
     const [officials, setOfficials] = useState<OfficialsData>({ plate: '', field1: '', field2: '', field3: '', table: '' });
+    const [isReadOnly, setIsReadOnly] = useState(false);
 
     // UI State
     const [visibleInnings, setVisibleInnings] = useState(5);
     const [rosterModalOpen, setRosterModalOpen] = useState<{ isOpen: boolean, team: 'visitor' | 'local', slotIdx: number, type: 'starter' | 'sub' } | null>(null);
     const [scoringModal, setScoringModal] = useState<{ isOpen: boolean, pos: { x: number, y: number } | null, slotIdx: number, type: 'starter' | 'sub', inningIdx: number, scoreIdx: number, team: 'visitor' | 'local' } | null>(null);
     const [officialsOpen, setOfficialsOpen] = useState(false);
+
     const [rosters, setRosters] = useState<{ visitor: RosterItem[], local: RosterItem[] }>({ visitor: [], local: [] });
+    const [resetModal, setResetModal] = useState(false);
+    const [matchData, setMatchData] = useState<any | null>(null);
 
     // Actions
     const handleClearScores = async () => {
+        if (isReadOnly) {
+            setResetModal(true);
+            return;
+        }
         if (!gameState || !confirm("¿Estás seguro de que quieres BORRAR TODAS las anotaciones y reiniciar la planilla? Esta acción no se puede deshacer.")) return;
 
+        performClear();
+    };
+
+    const performClear = async (resetStatus = false) => {
         const newState = { ...initialState };
         // Preserve game info but reset scores
-        newState.gameInfo = { ...gameState.gameInfo };
+        newState.gameInfo = { ...gameState!.gameInfo };
         newState.visitorTeam = createEmptyTeam();
         newState.localTeam = createEmptyTeam();
 
         setGameState(newState);
-        await saveToDB(newState, null);
+
+        const payload: any = { status: resetStatus ? 'pending' : 'live' }; // or keep current status if not resetting?
+        // Actually if we clear, we usually keep 'live' or whatever it was. 
+        // But if resetStatus is true, we force 'pending' (or 'live' but not 'finished').
+        if (resetStatus) {
+            payload.status = 'pending';
+            setIsReadOnly(false);
+        }
+
+        await saveToDB(newState, null); // Save new empty state
+        if (resetStatus) {
+            await supabase.from('tournament_sets').update({ status: 'pending' }).eq('match_id', matchId).eq('set_number', setNumber);
+        }
+    };
+
+    const confirmReset = async () => {
+        setResetModal(false);
+        await performClear(true);
+        alert("El Set ha sido reiniciado a estado PENDING y la planilla limpiada.");
     };
 
     // Load Data
@@ -404,6 +435,7 @@ export const OfficialScoreSheetPage: React.FC = () => {
                     setLoading(false);
                     return;
                 }
+                setMatchData(match);
 
                 // Fetch Referee Manually
                 let refereeData = null;
@@ -424,7 +456,12 @@ export const OfficialScoreSheetPage: React.FC = () => {
                 if (setRec) {
                     // Game State
                     if (setRec.state_json) setGameState(setRec.state_json);
-                    else {
+
+                    if (setRec.status === 'finished') {
+                        setIsReadOnly(true);
+                    }
+
+                    if (!setRec.state_json) {
                         // Init Defaults
                         const newState = { ...initialState };
                         newState.gameInfo = {
@@ -453,11 +490,11 @@ export const OfficialScoreSheetPage: React.FC = () => {
     }, [matchId, setNumber]);
 
     // Save Logic
-    const saveToDB = async (newState: ScoreCardState | null, newOfficials: OfficialsData | null) => {
+    const saveToDB = async (newState: ScoreCardState | null, newOfficials: OfficialsData | null, extraPayload: any = {}) => {
         if (!matchId || !setNumber) return;
         setSaving(true);
         try {
-            const payload: any = {};
+            const payload: any = { ...extraPayload };
 
             if (newState) {
                 // Simplified stat calc for metadata
@@ -489,7 +526,22 @@ export const OfficialScoreSheetPage: React.FC = () => {
                 payload.home_score = lStats.runs;
                 payload.away_hits = vStats.hits;
                 payload.home_hits = lStats.hits;
-                // Add innings counts if needed, omitting for brevity
+                payload.away_errors = vStats.errors;
+                payload.home_errors = lStats.errors;
+
+                // Sync Inning Columns explicitly
+                const mapInnings = (t: TeamData, pre: 'vis' | 'loc') => {
+                    for (let i = 0; i < 10; i++) {
+                        let r = 0;
+                        t.slots.forEach(s => [s.starter, s.sub].forEach(p =>
+                            p.scores[i]?.forEach(v => { if (v?.includes('●')) r++; })
+                        ));
+                        const key = (i + 1) <= 5 ? `${pre}_inn${i + 1}` : `${pre}_ex${i + 1}`;
+                        payload[key] = r;
+                    }
+                };
+                mapInnings(newState.visitorTeam, 'vis');
+                mapInnings(newState.localTeam, 'loc');
             }
 
             if (newOfficials) {
@@ -521,16 +573,90 @@ export const OfficialScoreSheetPage: React.FC = () => {
         const winScore = team === 'visitor' ? gameState.totals.visitor : gameState.totals.local;
         const loseScore = team === 'visitor' ? gameState.totals.local : gameState.totals.visitor;
         const winnerName = team === 'visitor' ? gameState.gameInfo.visitor : gameState.gameInfo.home;
+        const winnerId = team === 'visitor' ? matchData?.visitor_team_id : matchData?.local_team_id;
 
         const newState = { ...gameState, winner: { name: winnerName, score: `${winScore}-${loseScore}`, isVisitor: team === 'visitor' } };
         setGameState(newState);
 
-        await supabase.from('tournament_sets').update({
-            state_json: newState,
-            status: 'finished',
-        }).eq('match_id', matchId).eq('set_number', setNumber);
 
-        alert("Set Finalizado.");
+
+        // Single Update for everything: State + Status + Stats (handled by saveToDB default logic + extraPayload)
+        await saveToDB(newState, null, {
+            status: 'finished'
+        });
+
+        alert("Set Finalizado correctamente.");
+
+        // --- MATCH WIN CHECK LOGIC ---
+        // --- MATCH WIN CHECK LOGIC ---
+        if (matchData) {
+            // Fetch all sets to check series status - RELOAD to be safe
+            const { data: sets } = await supabase.from('tournament_sets').select('*').eq('match_id', matchId);
+
+            if (sets) {
+                // Calculate series Wins
+                let vWins = 0;
+                let lWins = 0;
+
+                // Set Config Logic
+                // If match specific set_number is defined (e.g. "1 Set"), use it. 
+                // Else fallback to tournament defaults or 3 sets.
+                const isSingleSet = matchData.is_single_set === true || matchData.set_number === '1 Set' || matchData.set_number === 1;
+                const setsToWin = isSingleSet ? 1 : 2;
+
+                const currentSetNum = parseInt(setNumber);
+
+                // ITERATE SETS
+                // We must consider the current set as WON by 'team' argument, 
+                // because the DB update might verify slightly later or earlier.
+
+                // Check past sets + current set
+                // We create a list of results. 
+                // For the current set, we FORCE the result based on user action.
+
+                const allSetNumbers = new Set([...sets.map(s => s.set_number), currentSetNum]);
+
+                allSetNumbers.forEach(num => {
+                    let setWinner = '';
+
+                    if (num === currentSetNum) {
+                        setWinner = team; // The user just clicked "Winner Visitor/Local"
+                    } else {
+                        const s = sets.find(sx => sx.set_number === num);
+                        if (s && s.status === 'finished') {
+                            const vR = s.away_score ?? s.visitor_runs ?? 0;
+                            const lR = s.home_score ?? s.local_runs ?? 0;
+                            if (vR > lR) setWinner = 'visitor';
+                            else if (lR > vR) setWinner = 'local';
+                        }
+                    }
+
+                    if (setWinner === 'visitor') vWins++;
+                    if (setWinner === 'local') lWins++;
+                });
+
+                console.log(`Match Win Check: V=${vWins}, L=${lWins}, Goal=${setsToWin}`);
+
+                let matchWinnerId = null;
+                if (vWins >= setsToWin) matchWinnerId = matchData.visitor_team_id;
+                if (lWins >= setsToWin) matchWinnerId = matchData.local_team_id;
+
+                if (matchWinnerId) {
+                    const { error: matchUpdateError } = await supabase.from('tournament_matches').update({
+                        status: 'finished',
+                        winner_team_id: matchWinnerId
+                    }).eq('id', matchId);
+
+                    if (matchUpdateError) {
+                        console.error("Error closing match:", matchUpdateError);
+                        alert("Error al cerrar el partido en base de datos. Verifique consola.");
+                    } else {
+                        alert(`¡PARTIDO FINALIZADO! Ganador: ${matchWinnerId === matchData.visitor_team_id ? (matchData.visitor_team?.name || 'Visitante') : (matchData.local_team?.name || 'Local')}`);
+                        navigate(`/dashboard/torneos/${tournamentId}/start`);
+                    }
+                }
+            }
+        }
     };
 
     const handleRosterSelect = (player: RosterItem) => {
@@ -550,7 +676,7 @@ export const OfficialScoreSheetPage: React.FC = () => {
     };
 
     const handleScoreUpdate = (val: string) => {
-        if (!scoringModal || !gameState) return;
+        if (!scoringModal || !gameState || isReadOnly) return;
         const { team, slotIdx, type, inningIdx, scoreIdx } = scoringModal;
         const teamKey = team === 'visitor' ? 'visitorTeam' : 'localTeam';
 
@@ -634,6 +760,7 @@ export const OfficialScoreSheetPage: React.FC = () => {
     };
 
     const addInningColumn = (ingIdx: number) => {
+        if (isReadOnly) return;
         updateState(prev => {
             const currentLayout = prev.inningLayout || Array(9).fill(1);
             const newLayout = [...currentLayout];
@@ -810,8 +937,8 @@ export const OfficialScoreSheetPage: React.FC = () => {
             <header className="bg-[#1e1e24] border-b border-white/5 pb-4">
                 {/* 1. Navbar Actions */}
                 <div className="flex items-center justify-between px-4 py-2 mb-2">
-                    <div className="flex gap-2">
-                        <button onClick={handleClearScores} className="p-2 bg-red-900/20 hover:bg-red-900/40 border border-red-500/20 rounded-lg text-red-400 transition-colors" title="Limpiar Planilla">
+                    <div className="flex gap-2 items-center">
+                        <button onClick={handleClearScores} className={`p-2 bg-red-900/20 hover:bg-red-900/40 border border-red-500/20 rounded-lg text-red-400 transition-colors ${isReadOnly ? 'animate-pulse' : ''}`} title={isReadOnly ? "Reiniciar Set" : "Limpiar Planilla"}>
                             <RotateCcw size={20} />
                         </button>
                         <button onClick={() => setOfficialsOpen(true)} className="p-2 bg-white/5 hover:bg-white/10 rounded-lg text-purple-400 hover:text-purple-300 transition-colors" title="Oficiales">
@@ -823,6 +950,12 @@ export const OfficialScoreSheetPage: React.FC = () => {
                         <button className="p-2 bg-white/5 hover:bg-white/10 rounded-lg text-green-400 hover:text-green-300 transition-colors" title="Captura">
                             <Camera size={20} />
                         </button>
+                        {isReadOnly && (
+                            <div className="ml-2 px-3 py-1.5 bg-yellow-500/10 border border-yellow-500/20 rounded-lg flex items-center gap-2">
+                                <AlertTriangle size={16} className="text-yellow-500" />
+                                <span className="text-[10px] md:text-xs font-black text-yellow-500 uppercase tracking-wider">Solo Lectura</span>
+                            </div>
+                        )}
                     </div>
 
                     <div className="text-center">
