@@ -4543,46 +4543,77 @@ export const ScoreCard: React.FC<{ matchId: string | null; setNumber: number | n
 
     const saveState = async () => {
       try {
-        // Calculate Stats for Dashboard Mini-Scoreboard
-        const getHits = (team: TeamData) => {
+        // --- CALCULATION LOGIC (Source of Truth: The Grid) ---
+        // We reuse the rigorous counting logic to ensure DB stats match the UI exactly.
+        const calculateTeamStats = (team: TeamData) => {
           let hits = 0;
+          let errors = 0;
+          const inningRuns: number[] = [];
+
+          // 1. Calculate Hits & Errors
           team.slots.forEach(slot => {
-            // Check starter and sub scores for 'H'
-            [slot.starter, slot.sub].forEach(player => {
-              player.scores.forEach(inning => {
-                // Assuming inning is array of box codes. If contains 'H' (Hit)
-                // Note: Implementation depends on scoring codes. 'H' or '1B', '2B', '3B', 'HR'?
-                // For now, looking for explicit 'H' or numbers indicating hits if stored differently.
-                // Simplistic approach: If string contains "H"
-                inning.forEach(code => {
-                  if (code && (code === 'H' || code.includes('1B') || code.includes('2B') || code.includes('3B') || code.includes('HR'))) {
-                    hits++;
-                  }
-                });
+            [slot.starter, slot.sub].forEach(p => {
+              p.scores.flat().forEach(val => {
+                const v = val ? val.toUpperCase() : '';
+                if (v.includes('H')) hits++;
+                if (v.includes('E')) errors++;
               });
             });
           });
-          return hits;
+
+          // 2. Calculate Runs per Inning (Column-based)
+          const maxCols = team.slots[0]?.starter.scores.length || 9;
+          for (let i = 0; i < maxCols; i++) {
+            let runsInInning = 0;
+            team.slots.forEach(slot => {
+              [slot.starter, slot.sub].forEach(p => {
+                const inningData = p.scores[i];
+                if (inningData) {
+                  inningData.forEach(code => {
+                    if (code && code.includes('●')) runsInInning++;
+                  });
+                }
+              });
+            });
+            inningRuns.push(runsInInning);
+          }
+
+          const totalRuns = inningRuns.reduce((a, b) => a + b, 0);
+          return { hits, errors, totalRuns, inningRuns };
         };
 
-        const localRuns = parseInt(gameState.totals.local || '0');
-        const visitorRuns = parseInt(gameState.totals.visitor || '0');
-        const localErrors = parseInt(gameState.errors.local || '0');
-        const visitorErrors = parseInt(gameState.errors.visitor || '0');
-        const localHits = getHits(gameState.localTeam);
-        const visitorHits = getHits(gameState.visitorTeam);
+        const localStats = calculateTeamStats(gameState.localTeam);
+        const visitorStats = calculateTeamStats(gameState.visitorTeam);
+
+        // Update State Copy with calculated values 
+        const updatedState = {
+          ...gameState,
+          inningScores: {
+            local: localStats.inningRuns.map(r => r.toString()),
+            visitor: visitorStats.inningRuns.map(r => r.toString())
+          },
+          totals: {
+            local: localStats.totalRuns.toString(),
+            visitor: visitorStats.totalRuns.toString()
+          },
+          // We do NOT overwrite errors object structure broadly, but we could if we want consistency.
+          // But errors object has structure { local: string, visitor: string }.
+          errors: {
+            local: localStats.errors.toString(),
+            visitor: visitorStats.errors.toString()
+          }
+        };
 
         const updateData = {
-          state_json: gameState,
-          local_runs: localRuns,
-          visitor_runs: visitorRuns,
-          home_hits: localHits,
-          away_hits: visitorHits,
-          home_errors: localErrors,
-          away_errors: visitorErrors
+          state_json: updatedState,
+          local_runs: localStats.totalRuns,
+          visitor_runs: visitorStats.totalRuns,
+          home_hits: localStats.hits,
+          away_hits: visitorStats.hits,
+          home_errors: localStats.errors,
+          away_errors: visitorStats.errors
         };
 
-        // Update DB
         const { error } = await supabase
           .from('tournament_sets')
           .update(updateData)

@@ -31,11 +31,18 @@ export const TournamentStartDashboard: React.FC = () => {
     const [publicPageName, setPublicPageName] = useState('');
 
     useEffect(() => {
-        if (id) fetchTournamentData();
+        if (id) {
+            fetchTournamentData();
+            // Auto-refresh every 30 seconds
+            const interval = setInterval(() => {
+                fetchTournamentData(true);
+            }, 30000);
+            return () => clearInterval(interval);
+        }
     }, [id]);
 
-    const fetchTournamentData = async () => {
-        setLoading(true);
+    const fetchTournamentData = async (silent = false) => {
+        if (!silent) setLoading(true);
         try {
             // Fetch Tournament
             const { data: tData } = await supabase.from('tournaments').select('*').eq('id', id).single();
@@ -449,6 +456,7 @@ export const TournamentStartDashboard: React.FC = () => {
                                                 tournament={tournament}
                                                 fields={fields}
                                                 referees={referees}
+                                                onRefresh={() => fetchTournamentData(true)}
                                             />
                                         ))
                                     ) : (
@@ -853,7 +861,7 @@ const SmallTeamInfo = ({ team, align = 'left' }: any) => (
     </div>
 );
 
-const MatchCard = ({ match, teams, sets, onStartSet, tournament, fields, referees }: any) => {
+const MatchCard = ({ match, teams, sets, onStartSet, tournament, fields, referees, onRefresh }: any) => {
     const localTeam = teams.find((t: any) => t.id === match.local_team_id);
     const visitorTeam = teams.find((t: any) => t.id === match.visitor_team_id);
 
@@ -893,6 +901,16 @@ const MatchCard = ({ match, teams, sets, onStartSet, tournament, fields, referee
                         </div>
                     </div>
                     <div className="flex items-center gap-3">
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                if (onRefresh) onRefresh();
+                            }}
+                            className="p-1 hover:bg-white/10 rounded-full text-white/30 hover:text-white transition-colors"
+                            title="Actualizar Marcador"
+                        >
+                            <RefreshCcw size={12} />
+                        </button>
                         <div className="flex items-center gap-1.5 text-white/30 truncate max-w-[150px]">
                             <MapPin size={12} />
                             <span className="text-[10px] font-bold uppercase tracking-wider truncate">{fieldName}</span>
@@ -964,7 +982,30 @@ const MatchCard = ({ match, teams, sets, onStartSet, tournament, fields, referee
                             const hasData = set?.state_json;
 
                             // Extract data for scoreboard
-                            const innings = hasData ? (set.state_json.inningScores || { local: [], visitor: [] }) : { local: [], visitor: [] };
+                            // Prioritize DB Columns if available
+                            const getRunsFromCols = (prefix: 'vis' | 'loc') => {
+                                const arr: string[] = [];
+                                // Max 10 columns checked
+                                for (let i = 1; i <= 10; i++) {
+                                    const key = i <= 5 ? `${prefix}_inn${i}` : `${prefix}_ex${i}`;
+                                    const val = (set as any)[key];
+                                    if (val !== null && val !== undefined) arr.push(val.toString());
+                                }
+                                return arr;
+                            };
+
+                            const visRuns = getRunsFromCols('vis');
+                            const locRuns = getRunsFromCols('loc');
+
+                            let innings = { local: [] as string[], visitor: [] as string[] };
+
+                            if (visRuns.length > 0 || locRuns.length > 0) {
+                                innings = { local: locRuns, visitor: visRuns };
+                            } else if (hasData) {
+                                // Fallback to state_json
+                                innings = (set.state_json.inningScores || { local: [], visitor: [] });
+                            }
+
                             const maxInnings = Math.max(5, innings.local.length, innings.visitor.length); // Min 5 cols
 
                             return (
