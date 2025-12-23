@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { UserNavbar } from '../components/UserNavbar';
 import { ParticlesBackground } from '../components/ParticlesBackground';
-import { ArrowLeft, Award, Calendar, ChevronDown, Info, MapPin, Play, RefreshCcw, Search, Trophy, Users, BookOpen, Clock, Notebook, Loader2, Layout } from 'lucide-react';
+import { ArrowLeft, Award, Calendar, ChevronDown, Info, MapPin, Play, RefreshCcw, Search, Trophy, Users, BookOpen, Clock, Notebook, Loader2, Layout, CheckCircle, Check, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Tournament, TournamentTeam, TournamentMatch, TournamentSet, TournamentStage } from '../types/tournament';
 import { ConfirmationModal } from '../components/ConfirmationModal';
@@ -26,6 +26,9 @@ export const TournamentStartDashboard: React.FC = () => {
     const [activeTab, setActiveTab] = useState<'matches' | 'standings' | 'teams'>('matches');
     const [expandedTeams, setExpandedTeams] = useState<string[]>([]);
     const [startMatchModal, setStartMatchModal] = useState<{ isOpen: boolean, match: any, setNumber: number } | null>(null);
+    const [isPublicLive, setIsPublicLive] = useState(false);
+    const [showPublicModal, setShowPublicModal] = useState(false);
+    const [publicPageName, setPublicPageName] = useState('');
 
     useEffect(() => {
         if (id) fetchTournamentData();
@@ -354,12 +357,52 @@ export const TournamentStartDashboard: React.FC = () => {
                         >
                             <ArrowLeft size={16} /> Volver
                         </button>
-                        <button
-                            onClick={() => window.open(`/dashboard/torneos/B5ToolsBuilder/${id}/previewnew`, '_blank')}
-                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-xl text-sm font-bold shadow-lg shadow-blue-600/20 transition-all flex items-center gap-2"
-                        >
-                            <Layout size={16} /> Ver Publico
-                        </button>
+                        <div className="relative z-50 flex flex-col items-center">
+                            <span className={`absolute -top-4 text-[10px] font-black uppercase tracking-widest transition-colors duration-300 ${isPublicLive ? 'text-green-400 drop-shadow-[0_0_8px_rgba(74,222,128,0.6)]' : 'text-white/10'}`}>
+                                LIVE
+                            </span>
+                            <B5BallToggle
+                                isActive={isPublicLive}
+                                onToggle={() => {
+                                    if (!isPublicLive) {
+                                        setIsPublicLive(true);
+                                        setShowPublicModal(true);
+                                    } else {
+                                        setIsPublicLive(false);
+                                        setShowPublicModal(false);
+                                    }
+                                }}
+                            />
+                            <AnimatePresence>
+                                {showPublicModal && (
+                                    <motion.div
+                                        initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                                        exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                                        className="absolute top-full right-0 mt-4 w-72 bg-[#1a1a2e] border border-white/10 rounded-2xl shadow-xl p-4 flex flex-col gap-3 backdrop-blur-xl"
+                                    >
+                                        <div className="flex items-center justify-between">
+                                            <h3 className="text-sm font-bold text-white">Configurar Página Pública</h3>
+                                            <button onClick={() => setShowPublicModal(false)} className="text-white/40 hover:text-white"><X size={14} /></button>
+                                        </div>
+                                        <div className="bg-black/20 rounded-xl p-3 border border-white/5">
+                                            <label className="text-[10px] uppercase font-bold text-blue-400 block mb-1">Nombre del enlace</label>
+                                            <div className="flex items-center gap-1 text-xs text-white/40 mb-1">b5tools.com/p/</div>
+                                            <input
+                                                type="text"
+                                                value={publicPageName}
+                                                onChange={(e) => setPublicPageName(e.target.value)}
+                                                placeholder="mi-torneo"
+                                                className="w-full bg-transparent border-none outline-none text-white font-bold text-sm placeholder:text-white/20"
+                                            />
+                                        </div>
+                                        <button onClick={() => setShowPublicModal(false)} className="w-full py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-xs font-black text-white uppercase tracking-wider transition-colors">
+                                            Guardar y Publicar
+                                        </button>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+                        </div>
                     </div>
                 </div>
 
@@ -445,8 +488,8 @@ export const TournamentStartDashboard: React.FC = () => {
                                                     <td className="px-6 py-4 font-black text-white/20 text-lg">{idx + 1}</td>
                                                     <td className="px-6 py-4">
                                                         <div className="flex items-center gap-3">
-                                                            <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center border border-white/10 group-hover:border-blue-500/30 transition-all">
-                                                                {team.logo_url ? <img src={team.logo_url} className="w-6 h-6 object-contain" /> : <Trophy size={14} className="text-white/20" />}
+                                                            <div className="w-10 h-10 rounded-full bg-black/40 flex items-center justify-center border-2 border-white/10 shadow-lg overflow-hidden group-hover:border-blue-500/30 transition-all">
+                                                                {team.logo_url ? <img src={team.logo_url} className="w-full h-full object-cover" /> : <Trophy size={16} className="text-white/20" />}
                                                             </div>
                                                             <span className="font-bold group-hover:text-blue-400 transition-colors">{team.name}</span>
                                                         </div>
@@ -477,8 +520,8 @@ export const TournamentStartDashboard: React.FC = () => {
                                             className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors"
                                         >
                                             <div className="flex items-center gap-4">
-                                                <div className="w-12 h-12 rounded-xl bg-[#111] flex items-center justify-center border border-white/5">
-                                                    {team.logo_url ? <img src={team.logo_url} className="w-8 h-8 object-contain" /> : <Users size={24} className="text-white/20" />}
+                                                <div className="w-14 h-14 rounded-full bg-black/40 flex items-center justify-center border-2 border-white/10 shadow-lg overflow-hidden group-hover:border-white/20 transition-all">
+                                                    {team.logo_url ? <img src={team.logo_url} className="w-full h-full object-cover" /> : <Users size={24} className="text-white/20" />}
                                                 </div>
                                                 <div className="text-left">
                                                     <h3 className="font-black text-lg leading-tight">{team.name}</h3>
@@ -595,30 +638,28 @@ export const TournamentStartDashboard: React.FC = () => {
 
                     {/* Right Column: Status Summary */}
                     <div className="lg:col-span-4 space-y-6">
-                        <div className="bg-gradient-to-br from-blue-600/20 to-purple-600/20 border border-white/10 rounded-3xl p-6 backdrop-blur-md">
-                            <h2 className="text-xl font-black mb-4 flex items-center gap-2">
+                        <div className="bg-gradient-to-br from-blue-600/10 via-purple-900/40 to-blue-900/20 border border-white/10 rounded-3xl p-6 backdrop-blur-md relative overflow-hidden">
+                            <div className="absolute top-0 right-0 p-4 opacity-10">
+                                <Info size={120} className="text-white transform rotate-12" />
+                            </div>
+
+                            <h2 className="text-xl font-black mb-6 flex items-center gap-2 relative z-10">
                                 <Info className="text-blue-400" /> Resumen Torneo
                             </h2>
-                            <div className="space-y-4">
-                                <StatsLabel label="Partidos Totales" value={matches.length} />
-                                <StatsLabel label="Partidos Finalizados" value={matches.filter(m => m.status === 'finished').length} />
-                                <StatsLabel label="Equipos" value={teams.length} />
-                                <StatsLabel label="Jugadores" value={rosters.length} />
+
+                            <div className="flex flex-col items-center mb-6 relative z-10">
+                                <CircularProgress
+                                    value={matches.length > 0 ? (matches.filter(m => m.status === 'finished').length / matches.length) * 100 : 0}
+                                    size={160}
+                                    color="text-blue-400"
+                                />
                             </div>
-                            <div className="mt-6 pt-6 border-t border-white/10">
-                                <div className="flex justify-between items-center mb-2">
-                                    <span className="text-xs text-white/40 uppercase tracking-widest font-bold">Progreso General</span>
-                                    <span className="text-xs font-black text-blue-400">
-                                        {matches.length > 0 ? Math.round((matches.filter(m => m.status === 'finished').length / matches.length) * 100) : 0}%
-                                    </span>
-                                </div>
-                                <div className="w-full h-2 bg-white/5 rounded-full overflow-hidden border border-white/5">
-                                    <motion.div
-                                        initial={{ width: 0 }}
-                                        animate={{ width: `${matches.length > 0 ? (matches.filter(m => m.status === 'finished').length / matches.length) * 100 : 0}%` }}
-                                        className="h-full bg-gradient-to-r from-blue-500 to-purple-500 shadow-[0_0_15px_rgba(59,130,246,0.5)]"
-                                    />
-                                </div>
+
+                            <div className="grid grid-cols-2 gap-3 relative z-10">
+                                <MiniStatCard icon={Calendar} label="Total Partidos" value={matches.length} color="text-amber-400" />
+                                <MiniStatCard icon={CheckCircle} label="Finalizados" value={matches.filter(m => m.status === 'finished').length} color="text-green-400" />
+                                <MiniStatCard icon={Users} label="Equipos" value={teams.length} color="text-purple-400" />
+                                <MiniStatCard icon={Layout} label="Jugadores" value={rosters.length} color="text-rose-400" />
                             </div>
                         </div>
 
@@ -629,7 +670,7 @@ export const TournamentStartDashboard: React.FC = () => {
                                 {matches.filter(m => m.status === 'finished').slice(0, 5).map(match => (
                                     <div key={match.id} className="flex flex-col gap-2 p-3 bg-white/5 rounded-xl border border-white/5">
                                         <div className="flex items-center justify-between gap-4">
-                                            <SmallTeamInfo team={teams.find(t => t.id === match.local_team_id)} />
+                                            <SmallTeamInfo team={teams.find(t => t.id === match.local_team_id)} align="left" />
                                             <span className="text-xs font-black text-blue-400">{match.score_text || '0 - 0'}</span>
                                             <SmallTeamInfo team={teams.find(t => t.id === match.visitor_team_id)} align="right" />
                                         </div>
@@ -668,17 +709,104 @@ const TabButton = ({ active, onClick, icon: Icon, label }: any) => (
     </button>
 );
 
-const StatsLabel = ({ label, value }: any) => (
-    <div className="flex justify-between items-center">
-        <span className="text-[10px] text-white/40 uppercase tracking-widest font-bold">{label}</span>
-        <span className="text-lg font-black text-white">{value}</span>
+const B5BallToggle = ({ isActive, onToggle }: any) => (
+    <div
+        onClick={onToggle}
+        className={`relative w-20 h-10 rounded-full cursor-pointer transition-colors duration-500 ease-out border shadow-inner ${isActive ? 'bg-green-500/20 border-green-500/50' : 'bg-white/5 border-white/10'}`}
+    >
+        <motion.div
+            layout
+            initial={false}
+            whileHover={{ scale: 1.15 }}
+            animate={{
+                x: isActive ? 40 : 0,
+                rotate: isActive ? 360 : 0,
+                backgroundColor: isActive ? "#FFD700" : "#e4e4e7" // Yellow when active, gray when inactive
+            }}
+            transition={{ type: "spring", stiffness: 500, damping: 25 }}
+            className={`absolute top-0.5 left-0.5 w-[36px] h-[36px] rounded-full shadow-lg flex items-center justify-center border border-black/10 overflow-hidden z-10`}
+        >
+            {/* Seams Effect */}
+            <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full opacity-60 pointer-events-none">
+                <path d="M25,0 Q60,50 25,100" fill="none" stroke="black" strokeWidth="8" strokeLinecap="round" />
+                <path d="M75,0 Q40,50 75,100" fill="none" stroke="black" strokeWidth="8" strokeLinecap="round" />
+            </svg>
+
+            {/* Logo */}
+            <img src="/logo.png" className="w-[18px] h-[18px] object-contain relative z-20 drop-shadow-sm" />
+        </motion.div>
     </div>
 );
 
+const MiniStatCard = ({ icon: Icon, label, value, color }: any) => (
+    <div className="bg-white/5 border border-white/5 rounded-2xl p-3 flex flex-col items-center justify-center gap-2 hover:bg-white/10 transition-colors group relative overflow-hidden">
+        <div className={`absolute inset-0 opacity-0 group-hover:opacity-10 transition-opacity ${color.replace('text-', 'bg-')}`} />
+        <div className={`p-2 rounded-full bg-white/5 ${color} shadow-lg ring-1 ring-white/10`}>
+            <Icon size={16} />
+        </div>
+        <div className="text-center z-10">
+            <div className="text-xl font-black text-white leading-none mb-1 shadow-black drop-shadow-md">{value}</div>
+            <div className="text-[8px] uppercase font-bold text-white/30 tracking-wider leading-tight">{label}</div>
+        </div>
+    </div>
+);
+
+const CircularProgress = ({ value, size = 120, strokeWidth = 8, color = "text-blue-500" }: any) => {
+    const radius = (size - strokeWidth) / 2;
+    const circumference = radius * 2 * Math.PI;
+    const offset = circumference - (value / 100) * circumference;
+
+    return (
+        <div className="relative flex items-center justify-center p-4">
+            <div className="relative" style={{ width: size, height: size }}>
+                {/* Background Circle */}
+                <svg className="transform -rotate-90 w-full h-full">
+                    <circle
+                        cx={size / 2}
+                        cy={size / 2}
+                        r={radius}
+                        stroke="currentColor"
+                        strokeWidth={strokeWidth}
+                        fill="transparent"
+                        className="text-black/20"
+                    />
+                    {/* Animated Progress Circle */}
+                    <motion.circle
+                        initial={{ strokeDashoffset: circumference }}
+                        animate={{ strokeDashoffset: offset }}
+                        transition={{ duration: 1.5, ease: "easeOut", delay: 0.2 }}
+                        cx={size / 2}
+                        cy={size / 2}
+                        r={radius}
+                        stroke="currentColor"
+                        strokeWidth={strokeWidth}
+                        fill="transparent"
+                        strokeDasharray={circumference}
+                        strokeLinecap="round"
+                        className={`${color} drop-shadow-[0_0_15px_currentColor]`}
+                    />
+                </svg>
+                {/* Center Text */}
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                    <motion.span
+                        initial={{ opacity: 0, scale: 0.5 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ delay: 0.5 }}
+                        className="text-3xl font-black text-white"
+                    >
+                        {Math.round(value)}%
+                    </motion.span>
+                    <span className="text-[8px] uppercase text-white/40 font-bold tracking-widest mt-1">Completo</span>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 const SmallTeamInfo = ({ team, align = 'left' }: any) => (
     <div className={`flex items-center gap-2 flex-1 ${align === 'right' ? 'flex-row-reverse' : ''} overflow-hidden`}>
-        <div className="w-6 h-6 rounded bg-black flex items-center justify-center border border-white/10 flex-shrink-0">
-            {team?.logo_url ? <img src={team.logo_url} className="w-4 h-4 object-contain" /> : <Trophy size={10} className="text-white/20" />}
+        <div className="w-8 h-8 rounded-full bg-black/40 flex items-center justify-center border border-white/10 shadow-sm flex-shrink-0 overflow-hidden">
+            {team?.logo_url ? <img src={team.logo_url} className="w-full h-full object-cover" /> : <Trophy size={10} className="text-white/20" />}
         </div>
         <span className="text-[10px] font-black truncate text-white/80">{team?.name || '???'}</span>
     </div>
