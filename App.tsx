@@ -42,7 +42,9 @@ const App: React.FC = () => {
                 <Route path="/dashboard/torneos/B5ToolsBuilder/:id" element={<B5ToolsBuilderPage />} />
                 <Route path="/dashboard/torneos/B5ToolsBuilder/:id/preview" element={<TournamentPreviewPage />} />
                 <Route path="/dashboard/torneos/B5ToolsBuilder/:id/previewnew" element={<TournamentPreviewNewPage />} />
+                {/* Official Game Routes */}
                 <Route path="/dashboard/official-game/:matchId/:setNumber" element={<OfficialScoreSheetPage />} />
+                <Route path="/dashboard/torneos/:tournamentId/Start/ScoreRegister/:teamNames/:matchId/:setNumber" element={<OfficialScoreSheetPage />} />
                 {/* Fallback Legacy Route - can be removed eventually or redirected */}
                 <Route path="/torneos" element={<Navigate to="/dashboard/torneos" replace />} />
                 <Route path="/torneosinvitados" element={<Navigate to="/dashboard/torneosinvitados" replace />} />

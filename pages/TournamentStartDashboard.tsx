@@ -302,8 +302,13 @@ export const TournamentStartDashboard: React.FC = () => {
 
     const confirmStartSet = () => {
         if (startMatchModal) {
-            // New Implementation: Navigate to Official Page
-            window.open(`/dashboard/official-game/${startMatchModal.match.id}/${startMatchModal.setNumber}`, '_blank');
+            // New Implementation: Navigate to Official Page (Verbose Route)
+            // /dashboard/torneos/:tournamentId/Start/ScoreRegister/:teamNames/:matchId/:setNumber
+            // Construct slug "TeamA-vs-TeamB"
+            const teamsSlug = `${startMatchModal.match.visitor_team?.name || 'Visitante'}-vs-${startMatchModal.match.local_team?.name || 'Local'}`.replace(/\s+/g, '-');
+            const tournamentId = startMatchModal.match.tournament_id;
+
+            window.open(`/dashboard/torneos/${tournamentId}/Start/ScoreRegister/${teamsSlug}/${startMatchModal.match.id}/${startMatchModal.setNumber}`, '_blank');
             setStartMatchModal(null);
         }
     };
