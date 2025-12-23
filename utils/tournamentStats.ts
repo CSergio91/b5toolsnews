@@ -28,6 +28,8 @@ export const calculateTeamStats = (
     // 1. Initialize with all teams found in groups
     // NOTE: Only 'group' type phases contribute to the Classification Table. 
     // Elimination phases (Brackets) are excluded.
+    if (!phases || !Array.isArray(phases)) return [];
+
     phases.forEach(phase => {
         if (phase.type === 'group' && phase.groups) {
             phase.groups.forEach(group => {

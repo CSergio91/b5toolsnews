@@ -1,13 +1,16 @@
 
 import React, { useEffect, useState, useRef } from 'react';
 import { useBuilder } from '../../context/BuilderContext';
-import { ZoomIn, ZoomOut, RefreshCcw, GripVertical, Trash2, Plus, Edit2, X, Check, Save, Link as LinkIcon, AlertCircle, ArrowLeft, ArrowRight, Play, Trophy, ArrowLeftRight, Menu, Maximize, Minimize, Settings, Calendar, Layout } from 'lucide-react';
+import { ZoomIn, ZoomOut, RefreshCcw, Trash2, Plus, Edit2, X, Check, Link as LinkIcon, ArrowLeft, ArrowRight, Play, Trophy, ArrowLeftRight, Layout, Minimize, Maximize, Target } from 'lucide-react';
 import { TournamentPhase, RoundMatch, ReferenceSource } from '../../types/structure';
 import { useToast } from '../../context/ToastContext';
 import { ClassificationTable } from './ClassificationTable';
 import { calculateTeamStats, getSortedStandings } from '../../utils/tournamentStats';
 import { Podium } from '../Tournament/Podium';
-import { ConfirmationModal } from '../ConfirmationModal';
+
+// DnD Kit
+import { DndContext, useSensor, useSensors, PointerSensor, DragEndEvent, DragOverlay } from '@dnd-kit/core';
+import { MatchDropZone } from './MatchDropZone';
 
 // Helpers
 const generateId = () => {
@@ -17,7 +20,7 @@ const generateId = () => {
 };
 
 export const BracketStep: React.FC = () => {
-    const { state, teams, updateStructure, updateConfig, setStep } = useBuilder();
+    const { state, teams, updateStructure } = useBuilder();
     const { addToast } = useToast();
 
     // -- State --
@@ -31,23 +34,6 @@ export const BracketStep: React.FC = () => {
     const [isSetsModalOpen, setIsSetsModalOpen] = useState(false);
     const [pendingPhaseType, setPendingPhaseType] = useState<'elimination' | 'placement' | 'group' | null>(null);
 
-    // Confirmation Modal State
-    const [confirmation, setConfirmation] = useState<{
-        isOpen: boolean;
-        title: string;
-        message: string;
-        onConfirm: () => void;
-        confirmText?: string;
-        cancelText?: string;
-        variant?: 'warning' | 'danger' | 'info';
-    }>({
-        isOpen: false,
-        title: '',
-        message: '',
-        onConfirm: () => { },
-    });
-    const closeConfirmation = () => setConfirmation(prev => ({ ...prev, isOpen: false }));
-
     // Canvas State
     const [zoom, setZoom] = useState(1);
     const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -58,16 +44,11 @@ export const BracketStep: React.FC = () => {
     // Editing
     const [editingMatchId, setEditingMatchId] = useState<string | null>(null); // For connecting sources
 
-    // Mobile Menu
-    const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-
-
-
     // -- Persistence Sync --
     useEffect(() => {
         if (phases.length > 0) {
-            const currentStr = JSON.stringify({ phases, sim: simulationResults });
-            const prevStr = JSON.stringify({ phases: state.structure?.phases || [], sim: state.structure?.simulationResults || {} });
+            const currentStr = JSON.stringify({ phases });
+            const prevStr = JSON.stringify({ phases: state.structure?.phases || [] });
 
             if (currentStr !== prevStr) {
                 const debounce = setTimeout(() => {
@@ -75,22 +56,20 @@ export const BracketStep: React.FC = () => {
                     updateStructure({
                         phases: sorted,
                         globalMatchCount: 0
-                        // REMOVED simulationResults from sync as requested
                     });
                 }, 1000);
                 return () => clearTimeout(debounce);
             }
         }
-    }, [phases, simulationResults]);
+    }, [phases]);
 
-    // --- Auto-Migration: Ensure all matches have 'sets' (Fix for existing JSONs) ---
+    // --- Auto-Migration: Ensure all matches have 'sets' ---
     useEffect(() => {
         if (!phases || phases.length === 0) return;
 
         let hasChanges = false;
         const setsCount = state.config.sets_per_match || 3;
 
-        // Helper to check and fix a match
         const fixMatch = (m: RoundMatch) => {
             if (!m.sets || m.sets.length === 0) {
                 hasChanges = true;
@@ -126,14 +105,12 @@ export const BracketStep: React.FC = () => {
             }
 
             if (pChanged || hasChanges) {
-                // Note: hasChanges is set by fixMatch side-effect
                 return { ...p, groups: newGroups, matches: newMatches };
             }
             return p;
         });
 
         if (hasChanges) {
-            console.log("🛠️ Migrating matches: Automatically adding 'sets' structure to existing matches.");
             setPhases(migratedPhases);
         }
     }, [phases.length, state.config.sets_per_match]);
@@ -161,18 +138,15 @@ export const BracketStep: React.FC = () => {
     };
 
     const generateStructure = () => {
-        // -- DYNAMIC GENERATION LOGIC --
         const type = state.config.tournament_type || 'knockout';
         const teamsList = state.teams || [];
         const defaultSets = state.config.sets_per_match || 3;
 
-        if (teamsList.length === 0) addToast("Advertencia: No se detectaron equipos. Asegúrate de haber agregado equipos en el paso anterior.", 'error');
+        if (teamsList.length === 0) addToast("Advertencia: No se detectaron equipos.", 'error');
 
         const newPhases: TournamentPhase[] = [];
 
         if (type === 'cup') {
-            // ELIMINACION DIRECTA -> User defined as "League + Finals"
-            // 1. Group Phase (Single Group "Todos contra Todos")
             const groupPhase: TournamentPhase = {
                 id: generateId(),
                 type: 'group',
@@ -182,7 +156,6 @@ export const BracketStep: React.FC = () => {
             };
             newPhases.push(groupPhase);
 
-            // 2. Finals Phase
             const finalsPhase: TournamentPhase = {
                 id: generateId(),
                 type: 'elimination',
@@ -191,137 +164,62 @@ export const BracketStep: React.FC = () => {
                 matches: []
             };
             finalsPhase.matches = [{
-                id: generateId(),
-                globalId: 1,
-                name: 'Gran Final',
-                roundIndex: 0,
-                phaseId: finalsPhase.id,
-                location: `${defaultSets} Sets`
+                id: generateId(), globalId: 1, name: 'Gran Final', roundIndex: 0, phaseId: finalsPhase.id, location: `${defaultSets} Sets`
             }];
             newPhases.push(finalsPhase);
 
         } else if (type === 'double_elimination') {
-            // DOBLE ELIMINACION
-            const winnersPhase: TournamentPhase = {
-                id: generateId(),
-                type: 'elimination',
-                name: 'Ganadores',
-                order: 0,
-                matches: []
-            };
+            const winnersPhase: TournamentPhase = { id: generateId(), type: 'elimination', name: 'Ganadores', order: 0, matches: [] };
             const wM1 = generateId(); const wM2 = generateId();
             winnersPhase.matches = [
                 { id: wM1, globalId: 1, name: 'Ronda 1 - P1', roundIndex: 0, phaseId: winnersPhase.id },
                 { id: wM2, globalId: 2, name: 'Ronda 1 - P2', roundIndex: 0, phaseId: winnersPhase.id }
             ];
             newPhases.push(winnersPhase);
-
             const losersPhase: TournamentPhase = {
-                id: generateId(),
-                type: 'elimination',
-                name: 'Perdedores',
-                order: 1,
-                matches: [
-                    {
-                        id: generateId(), globalId: 3, name: 'Ronda P1', roundIndex: 0, phaseId: generateId(),
-                        sourceHome: { type: 'match.loser', id: wM1 },
-                        sourceAway: { type: 'match.loser', id: wM2 }
-                    }
+                id: generateId(), type: 'elimination', name: 'Perdedores', order: 1, matches: [
+                    { id: generateId(), globalId: 3, name: 'Ronda P1', roundIndex: 0, phaseId: generateId(), sourceHome: { type: 'match.loser', id: wM1 }, sourceAway: { type: 'match.loser', id: wM2 } }
                 ]
             };
             newPhases.push(losersPhase);
-
             const finalPhase: TournamentPhase = {
-                id: generateId(),
-                type: 'elimination',
-                name: 'Finales',
-                order: 2,
-                matches: [{
-                    id: generateId(), globalId: 4, name: 'Gran Final', roundIndex: 0, phaseId: generateId(),
-                    sourceHome: { type: 'match.winner', id: wM1 },
-                    sourceAway: { type: 'match.winner', id: losersPhase.matches![0].id }
+                id: generateId(), type: 'elimination', name: 'Finales', order: 2, matches: [{
+                    id: generateId(), globalId: 4, name: 'Gran Final', roundIndex: 0, phaseId: generateId(), sourceHome: { type: 'match.winner', id: wM1 }, sourceAway: { type: 'match.winner', id: losersPhase.matches![0].id }
                 }]
             };
             newPhases.push(finalPhase);
 
         } else if (type === 'groups') {
-            // GRUPOS + PLAYOFF (Standard)
-            // 1. Generate Group Phase
             const numGroups = state.config.number_of_groups || 4;
             const groups: any[] = [];
-
-            // Match Generator (Round Robin) - Simplified for Groups
             const generateRoundRobin = (teamIds: string[], groupName: string) => {
                 const matches: RoundMatch[] = [];
                 const n = teamIds.length;
                 if (n < 2) return matches;
-
                 const setsCount = state.config.sets_per_match || 3;
-                // Helper to generate empty set structure
-                const generateSets = (count: number) => {
-                    return Array.from({ length: count }, (_, i) => ({
-                        set_number: i + 1,
-                        home_score: 0,
-                        away_score: 0,
-                        status: 'pending' as const
-                    }));
-                };
-
+                const generateSets = (count: number) => Array.from({ length: count }, (_, i) => ({ set_number: i + 1, home_score: 0, away_score: 0, status: 'pending' as const }));
                 let matchCount = 1;
                 for (let i = 0; i < n; i++) {
                     for (let j = i + 1; j < n; j++) {
                         matches.push({
-                            id: generateId(),
-                            globalId: 0,
-                            name: `G${groupName} (J${matchCount})`,
-                            roundIndex: 0,
-                            phaseId: 'group-temp',
-                            sourceHome: { type: 'team', id: teamIds[i] },
-                            sourceAway: { type: 'team', id: teamIds[j] },
-                            location: `${setsCount} Sets`,
-                            sets: generateSets(setsCount)
+                            id: generateId(), globalId: 0, name: `G${groupName} (J${matchCount})`, roundIndex: 0, phaseId: 'group-temp',
+                            sourceHome: { type: 'team', id: teamIds[i] }, sourceAway: { type: 'team', id: teamIds[j] },
+                            location: `${setsCount} Sets`, sets: generateSets(setsCount)
                         });
                         matchCount++;
                     }
                 }
                 return matches;
             };
-
             const groupNames = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split('');
             for (let i = 0; i < numGroups; i++) {
                 const teamIds: string[] = [];
-                teamsList.forEach((team, idx) => {
-                    if (idx % numGroups === i) teamIds.push(team.id);
-                });
-                groups.push({
-                    name: groupNames[i] || `G${i + 1}`,
-                    teams: teamIds,
-                    matches: generateRoundRobin(teamIds, groupNames[i] || `G${i + 1}`)
-                });
+                teamsList.forEach((team, idx) => { if (idx % numGroups === i) teamIds.push(team.id); });
+                groups.push({ name: groupNames[i] || `G${i + 1}`, teams: teamIds, matches: generateRoundRobin(teamIds, groupNames[i] || `G${i + 1}`) });
             }
-
-            newPhases.push({
-                id: generateId(),
-                type: 'group',
-                name: 'Fase de Grupos',
-                order: 0,
-                groups: groups
-            });
-
-            // NO Playoff Phase generated automatically for "groups" type, as requested.
-
+            newPhases.push({ id: generateId(), type: 'group', name: 'Fase de Grupos', order: 0, groups: groups });
         } else {
-            // FREE MODE (Default)
-            const groupPhase: TournamentPhase = {
-                id: generateId(),
-                type: 'group',
-                name: 'Fase de Grupos',
-                order: 0,
-                groups: [
-                    { name: 'A', teams: [], matches: [] },
-                    { name: 'B', teams: [], matches: [] }
-                ]
-            };
+            const groupPhase: TournamentPhase = { id: generateId(), type: 'group', name: 'Fase de Grupos', order: 0, groups: [{ name: 'A', teams: [], matches: [] }, { name: 'B', teams: [], matches: [] }] };
             newPhases.push(groupPhase);
         }
 
@@ -331,27 +229,20 @@ export const BracketStep: React.FC = () => {
     // -- Init Load & Auto-Gen --
     useEffect(() => {
         let shouldGen = false;
-
-        // 1. If no phases, generate
         if (!state.structure || !state.structure.phases || state.structure.phases.length === 0) {
             shouldGen = true;
         }
-        // 2. If Groups Display, check strict sync with config
         else if (state.config.tournament_type === 'groups') {
             const groupPhase = state.structure.phases.find(p => p.type === 'group');
             const currentGroupsCount = groupPhase?.groups?.length || 0;
             const configGroupsCount = state.config.number_of_groups || 4;
-
-            // If mismatch in group count, force regenerate to match config
             if (currentGroupsCount !== configGroupsCount) {
                 shouldGen = true;
             }
         }
-
         if (shouldGen && state.config.tournament_type) {
             generateStructure();
         } else if (state.structure?.phases) {
-            // Load existing
             setPhases(state.structure.phases);
             if (state.structure.simulationResults) {
                 setSimulationResults(state.structure.simulationResults);
@@ -372,113 +263,27 @@ export const BracketStep: React.FC = () => {
         setPendingPhaseType(null);
 
         const setsInfo = `${sets} Sets`;
-        // Helper inline for this scope if needed, or define broadly. 
-        // Redefining here for safety/simplicity as `generateSets` above is scoped to generateStructure
-        const createSets = (n: number) => Array.from({ length: n }, (_, i) => ({
-            set_number: i + 1,
-            home_score: 0,
-            away_score: 0,
-            status: 'pending' as const
-        }));
+        const createSets = (n: number) => Array.from({ length: n }, (_, i) => ({ set_number: i + 1, home_score: 0, away_score: 0, status: 'pending' as const }));
 
         setPhases(prev => {
             let newPhase: TournamentPhase;
-
             if (type === 'group') {
-                // Generic Group Phase - Insert at START
-                // Shift all existing phases
-                const shiftedPhases = prev.map(p => ({ ...p, order: p.order + 1 }));
-
-                newPhase = {
-                    id: generateId(),
-                    type: 'group',
-                    name: 'Fase de Grupos',
-                    order: 0, // Always first
-                    groups: [
-                        { name: 'A', teams: [], matches: [] },
-                        { name: 'B', teams: [], matches: [] }
-                    ]
-                };
-                return recalculateGlobalIds([...shiftedPhases, newPhase]);
-
+                const shifted = prev.map(p => ({ ...p, order: p.order + 1 }));
+                newPhase = { id: generateId(), type: 'group', name: 'Fase de Grupos', order: 0, groups: [{ name: 'A', teams: [], matches: [] }, { name: 'B', teams: [], matches: [] }] };
+                return recalculateGlobalIds([...shifted, newPhase]);
             } else if (type === 'placement') {
-                // "Finales" Logic
-                newPhase = {
-                    id: generateId(),
-                    type: 'elimination',
-                    name: 'Finales',
-                    order: prev.length,
-                    matches: []
-                };
-
-                // Semis, 3rd Place, Final
-                const finalId = generateId();
-                const thirdPlaceId = generateId();
-                const semi1Id = generateId();
-                const semi2Id = generateId();
-
+                newPhase = { id: generateId(), type: 'elimination', name: 'Finales', order: prev.length, matches: [] };
+                const semi1Id = generateId(); const semi2Id = generateId();
                 newPhase.matches = [
-                    {
-                        id: semi1Id,
-                        globalId: 0,
-                        name: 'Semifinal 1',
-                        roundIndex: 0,
-                        phaseId: newPhase.id,
-                        location: setsInfo,
-                        sets: createSets(sets)
-                    },
-                    {
-                        id: semi2Id,
-                        globalId: 0,
-                        name: 'Semifinal 2',
-                        roundIndex: 0,
-                        phaseId: newPhase.id,
-                        location: setsInfo,
-                        sets: createSets(sets)
-                    },
-                    {
-                        id: thirdPlaceId,
-                        globalId: 0,
-                        name: '3er y 4to Puesto',
-                        roundIndex: 1,
-                        phaseId: newPhase.id,
-                        location: setsInfo,
-                        sourceHome: { type: 'match.loser', id: semi1Id },
-                        sourceAway: { type: 'match.loser', id: semi2Id },
-                        sets: createSets(sets)
-                    },
-                    {
-                        id: finalId,
-                        globalId: 0,
-                        name: 'Gran Final',
-                        roundIndex: 1,
-                        phaseId: newPhase.id,
-                        location: setsInfo,
-                        sourceHome: { type: 'match.winner', id: semi1Id },
-                        sourceAway: { type: 'match.winner', id: semi2Id },
-                        sets: createSets(sets)
-                    }
+                    { id: semi1Id, globalId: 0, name: 'Semifinal 1', roundIndex: 0, phaseId: newPhase.id, location: setsInfo, sets: createSets(sets) },
+                    { id: semi2Id, globalId: 0, name: 'Semifinal 2', roundIndex: 0, phaseId: newPhase.id, location: setsInfo, sets: createSets(sets) },
+                    { id: generateId(), globalId: 0, name: '3er y 4to Puesto', roundIndex: 1, phaseId: newPhase.id, location: setsInfo, sourceHome: { type: 'match.loser', id: semi1Id }, sourceAway: { type: 'match.loser', id: semi2Id }, sets: createSets(sets) },
+                    { id: generateId(), globalId: 0, name: 'Gran Final', roundIndex: 1, phaseId: newPhase.id, location: setsInfo, sourceHome: { type: 'match.winner', id: semi1Id }, sourceAway: { type: 'match.winner', id: semi2Id }, sets: createSets(sets) }
                 ];
             } else {
-                // Standard Elimination Phase add
-                newPhase = {
-                    id: generateId(),
-                    type: type, // 'elimination'
-                    name: 'Nueva Ronda',
-                    order: prev.length,
-                    matches: [{
-                        id: generateId(),
-                        globalId: 0,
-                        name: 'Partido 1',
-                        roundIndex: 0,
-                        phaseId: generateId(), // Temp ID?
-                        location: setsInfo,
-                        sets: createSets(sets)
-                    }]
-                };
+                newPhase = { id: generateId(), type: type, name: 'Nueva Ronda', order: prev.length, matches: [{ id: generateId(), globalId: 0, name: 'Partido 1', roundIndex: 0, phaseId: generateId(), location: setsInfo, sets: createSets(sets) }] };
                 newPhase.matches![0].phaseId = newPhase.id;
             }
-
             return recalculateGlobalIds([...prev, newPhase]);
         });
     };
@@ -497,19 +302,14 @@ export const BracketStep: React.FC = () => {
         setPhases(prev => {
             const current = prev.find(p => p.id === id);
             if (!current) return prev;
-
             const targetOrder = direction === 'left' ? current.order - 1 : current.order + 1;
             const target = prev.find(p => p.order === targetOrder);
-
-            if (!target) return prev; // Cannot move
-
-            // Swap orders
+            if (!target) return prev;
             const newPhases = prev.map(p => {
                 if (p.id === current.id) return { ...p, order: targetOrder };
                 if (p.id === target.id) return { ...p, order: current.order };
                 return p;
             });
-
             return recalculateGlobalIds(newPhases);
         });
     };
@@ -528,12 +328,7 @@ export const BracketStep: React.FC = () => {
                             roundIndex: 0,
                             phaseId: phaseId,
                             location: `${setsCount} Sets`,
-                            sets: Array.from({ length: setsCount }, (_, i) => ({
-                                set_number: i + 1,
-                                home_score: 0,
-                                away_score: 0,
-                                status: 'pending' as const
-                            }))
+                            sets: Array.from({ length: setsCount }, (_, i) => ({ set_number: i + 1, home_score: 0, away_score: 0, status: 'pending' as const }))
                         }]
                     };
                 }
@@ -547,19 +342,10 @@ export const BracketStep: React.FC = () => {
         setPhases(prev => {
             const newPhases = prev.map(p => {
                 if (p.id === phaseId && p.groups) {
-                    // Determine next letter
                     const lastGroup = p.groups[p.groups.length - 1];
                     const nextCharCode = lastGroup ? lastGroup.name.charCodeAt(0) + 1 : 65; // 65 = 'A'
                     const nextName = String.fromCharCode(nextCharCode);
-
-                    return {
-                        ...p,
-                        groups: [...p.groups, {
-                            name: nextName,
-                            teams: [],
-                            matches: []
-                        }]
-                    };
+                    return { ...p, groups: [...p.groups, { name: nextName, teams: [], matches: [] }] };
                 }
                 return p;
             });
@@ -568,16 +354,13 @@ export const BracketStep: React.FC = () => {
     };
 
     const handleDeleteGroup = (phaseId: string, groupIndex: number) => {
-        if (!confirm("¿Eliminar este grupo y sus partidos?")) return;
+        if (!confirm("¿Eliminar este grupo?")) return;
         setPhases(prev => {
             const newPhases = prev.map(p => {
                 if (p.id === phaseId && p.groups) {
                     const newGroups = [...p.groups];
                     newGroups.splice(groupIndex, 1);
-                    return {
-                        ...p,
-                        groups: newGroups
-                    };
+                    return { ...p, groups: newGroups };
                 }
                 return p;
             });
@@ -590,10 +373,7 @@ export const BracketStep: React.FC = () => {
         setPhases(prev => {
             const newPhases = prev.map(p => {
                 if (p.id === phaseId && p.matches) {
-                    return {
-                        ...p,
-                        matches: p.matches.filter(m => m.id !== matchId)
-                    };
+                    return { ...p, matches: p.matches.filter(m => m.id !== matchId) };
                 }
                 return p;
             });
@@ -601,43 +381,28 @@ export const BracketStep: React.FC = () => {
         });
     };
 
-    // -- Connection Logic --
 
-    // Returns available sources for a specific match
-    // Returns available sources for a specific match
+    // -- Connection & Swap Logic --
     const getAvailableSources = (targetPhaseOrder: number) => {
-        // Collect all potential sources from PREVIOUS phases
-        const sources: { label: string, value: ReferenceSource, phaseName: string }[] = [];
-
+        const sources: { label: string, value: ReferenceSource, phaseName: string, key?: string }[] = [];
         phases.filter(p => p.order < targetPhaseOrder).forEach(p => {
             if (p.type === 'group' && p.groups) {
                 p.groups.forEach(g => {
-                    // Add positions 1..4 (or matches length?)
-                    // "1st Group A"
                     const count = Math.max(4, g.teams.length);
                     Array.from({ length: count }, (_, i) => i + 1).forEach(pos => {
                         sources.push({
                             label: pos + 'º Grupo ' + g.name,
                             value: { type: 'group.pos', id: g.name, index: pos },
-                            phaseName: p.name
+                            phaseName: p.name,
+                            key: `pos-${p.id}-${g.name}-${pos}`
                         });
                     });
                 });
             } else if (p.matches) {
                 p.matches.forEach(m => {
-                    sources.push({
-                        label: 'Ganador #' + m.globalId + ' (' + m.name + ')',
-                        value: { type: 'match.winner', id: String(m.globalId) }, // Use global ID as ref? Or internal ID? Global is better for user, but internal is safer.
-                        phaseName: p.name
-                    });
-
-                    // Smart Context for Losers (Placement)
+                    sources.push({ label: 'Ganador #' + m.globalId + ' (' + m.name + ')', value: { type: 'match.winner', id: String(m.globalId) }, phaseName: p.name });
                     const context = targetPhaseOrder - p.order === 1 ? ' (Para 3er/4to o Clasif.)' : '';
-                    sources.push({
-                        label: 'Perdedor #' + m.globalId + ' (' + m.name + ')' + context,
-                        value: { type: 'match.loser', id: String(m.globalId) },
-                        phaseName: p.name
-                    });
+                    sources.push({ label: 'Perdedor #' + m.globalId + ' (' + m.name + ')' + context, value: { type: 'match.loser', id: String(m.globalId) }, phaseName: p.name });
                 });
             }
         });
@@ -653,7 +418,6 @@ export const BracketStep: React.FC = () => {
                         const match = p.matches[matchIdx];
                         if (side === 'home') match.sourceHome = source;
                         else match.sourceAway = source;
-                        // Update name if generic?
                     }
                 }
                 return p;
@@ -666,7 +430,7 @@ export const BracketStep: React.FC = () => {
     const handleSwapTeams = (phaseId: string, matchId: string) => {
         setPhases(prev => {
             return prev.map(p => {
-                if (p.id === phaseId) { // Check phase ID to avoid scanning all phases if we pass it
+                if (p.id === phaseId) {
                     if (p.matches) {
                         return {
                             ...p,
@@ -679,7 +443,6 @@ export const BracketStep: React.FC = () => {
                         };
                     }
                     if (p.groups) {
-                        // Handle swap inside groups? Usually group matches generated automatically.
                         const newGroups = p.groups.map(g => ({
                             ...g,
                             matches: g.matches.map(m => {
@@ -693,61 +456,52 @@ export const BracketStep: React.FC = () => {
                 return p;
             });
         });
+        addToast("Equipos intercambiados", 'info');
     };
 
+    // -- DND Logic --
+    const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
+    const handleDragEnd = (event: DragEndEvent) => {
+        const { active, over } = event;
+        if (!over) return;
+        const activeId = String(active.id); // Not used now as sidebar is gone, but keeping for future or internal drag
+        const overId = String(over.id);
+        // ... (Logic removed as request asked to remove sidebar dragging)
+    };
+
+    // -- Simulation Logic --
     const handleSimulationClick = (matchId: string, teamId: string | null) => {
         if (!isSimulation || !teamId) return;
-        setSimulationResults(prev => ({
-            ...prev,
-            [matchId]: teamId
-        }));
+        setSimulationResults(prev => ({ ...prev, [matchId]: teamId }));
     };
 
-    // -- Resolution --
-    // -- Resolution --
     const resolveTeamId = (source: ReferenceSource | undefined): string | null => {
         if (!source) return null;
         if (source.type === 'team') return source.id;
 
-        // Resolve Group Position (Smart Sim)
         if (source.type === 'group.pos' && isSimulation) {
-            // Calculate Standings specially for this
-            // Note: This might be expensive if called often. Consider memoizing if slow.
-            // For now, calculating on fly is safer for correctness.
             const stats = calculateTeamStats(phases, teams, simulationResults, state.config);
-
-            // Filter by group
             const groupStats = stats.filter(s => s.group === source.id);
-
-            // Sort
             const sorted = getSortedStandings(groupStats);
-
-            // source.index is 1-based (1st, 2nd, etc.)
             const targetStat = sorted[source.index - 1];
             return targetStat ? targetStat.id : null;
         }
 
-        // Resolve Match Winner/Loser
         if (source.type === 'match.winner' || source.type === 'match.loser') {
-            // Find match
             let foundMatch: RoundMatch | undefined;
-            // Search all phases
             for (const p of phases) {
                 if (p.matches) {
-                    // Support looking up by Internal ID (programmatic links) OR Global ID (user links)
                     const m = p.matches.find(m => m.id === source.id || String(m.globalId) === source.id);
                     if (m) { foundMatch = m; break; }
                 }
-                // Check group matches too if needed - usually groups don't have winners fed to brackets by ID, but by POS
             }
 
             if (foundMatch) {
                 const winnerId = simulationResults[foundMatch.id];
-                if (!winnerId) return null; // Not played yet
+                if (!winnerId) return null;
 
                 if (source.type === 'match.winner') return winnerId;
                 if (source.type === 'match.loser') {
-                    // Find loser logic
                     const homeId = resolveTeamId(foundMatch.sourceHome);
                     const awayId = resolveTeamId(foundMatch.sourceAway);
                     if (homeId === winnerId) return awayId;
@@ -755,7 +509,6 @@ export const BracketStep: React.FC = () => {
                 }
             }
         }
-
         return null;
     };
 
@@ -766,630 +519,361 @@ export const BracketStep: React.FC = () => {
         return t ? t.name : 'Unknown';
     };
 
-    // -- Render --
+    // Label Detection (Heuristic)
+    const getMatchLabel = (match: RoundMatch, phase: TournamentPhase, isLastPhase: boolean): { text: string, color: string } | null => {
+        // Explicit names in structure?
+        if (match.name.toLowerCase().includes('final') && !match.name.toLowerCase().includes('semi')) return { text: 'GRAN FINAL', color: 'text-amber-400' };
+        if (match.name.toLowerCase().includes('3er')) return { text: '3ER PUESTO', color: 'text-orange-400' };
+        if (match.name.toLowerCase().includes('semi')) return { text: 'SEMIFINAL', color: 'text-blue-300' };
+
+        // Heuristic fallback
+        if (!phase.matches) return null;
+
+        if (isLastPhase && phase.matches.length === 1) return { text: 'GRAN FINAL', color: 'text-amber-400' };
+
+        // If last phase has 2 matches (e.g. Final + 3rd place), usually Final is the last one or identified by source
+        if (isLastPhase && phase.matches.length === 2) {
+            // If this match depends on LOSERS, it's 3rd place
+            if (match.sourceHome?.type === 'match.loser') return { text: '3ER PUESTO', color: 'text-orange-400' };
+            // If depends on WINNERS, it's Final
+            if (match.sourceHome?.type === 'match.winner') return { text: 'GRAN FINAL', color: 'text-amber-400' };
+        }
+
+        return null;
+    };
+
+    const renderMatchCard = (match: RoundMatch, phaseOrder: number, isLastPhase: boolean = false, phase: TournamentPhase) => {
+        const label = getMatchLabel(match, phase, isLastPhase);
+
+        return (
+            <div key={match.id} className={`relative bg-[#222] border border-white/5 rounded-lg p-2 min-w-[240px] shadow-lg flex flex-col gap-1 hover:border-blue-500/50 transition-colors group ${label?.text === 'GRAN FINAL' ? 'ring-1 ring-amber-500/30' : ''}`}>
+                {/* Header */}
+                <div className="flex justify-between items-center text-[10px] text-white/30 uppercase font-bold tracking-wider relative z-20">
+                    <div className="flex items-center gap-2">
+                        <span>M#{match.globalId}</span>
+                        {label && <span className={`${label.color} font-extrabold px-1.5 py-0.5 bg-white/5 rounded-[2px] ml-1`}>{label.text}</span>}
+                    </div>
+                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => handleSwapTeams(phase.id, match.id)} className="hover:text-yellow-400 p-0.5" title="Intercambiar Local/Visitante"><ArrowLeftRight size={10} /></button>
+                        <button onClick={() => setEditingMatchId(match.id + '-home')} className="hover:text-blue-400 p-0.5"><LinkIcon size={10} /></button>
+                        <button onClick={() => handleDeleteMatch(phase.id, match.id)} className="hover:text-red-400 p-0.5"><Trash2 size={10} /></button>
+                    </div>
+                </div>
+
+                {/* Slots */}
+                <div className="flex flex-col gap-1 mt-1">
+                    <MatchDropZone matchId={match.id} side="home">
+                        {renderSourceButtonFull(match, 'home', phaseOrder)}
+                    </MatchDropZone>
+
+                    <div className="h-px bg-white/5 w-full my-0.5" />
+
+                    <MatchDropZone matchId={match.id} side="away">
+                        {renderSourceButtonFull(match, 'away', phaseOrder)}
+                    </MatchDropZone>
+                </div>
+            </div>
+        );
+    };
 
     const renderSourceButtonFull = (match: RoundMatch, side: 'home' | 'away', phaseOrder: number) => {
         const source = side === 'home' ? match.sourceHome : match.sourceAway;
         const available = getAvailableSources(phaseOrder);
-
-        // Sim Resolution
-        const resolvedTeamId = resolveTeamId(source); // Recursive resolution!
+        const resolvedTeamId = resolveTeamId(source);
         const resolvedTeamName = resolvedTeamId ? getTeamName(resolvedTeamId, teams) : null;
-
-        // Winner Check
         const isWinner = simulationResults[match.id] === resolvedTeamId && resolvedTeamId !== null;
 
-        // If picking
+        // Manual Selection Popover
         if (editingMatchId === match.id + '-' + side && !isSimulation) {
             return (
                 <div className="absolute top-0 left-0 bg-[#333] border border-blue-500 rounded-lg p-2 z-50 w-72 shadow-2xl max-h-60 overflow-y-auto font-sans">
-                    <div className="text-xs text-blue-300 mb-2 font-bold uppercase sticky top-0 bg-[#333] pb-1 border-b border-white/10">Seleccionar Origen</div>
-                    {available.length === 0 && <div className="text-white/30 text-xs italic">No hay fases previas</div>}
-                    {Object.entries(available.reduce((acc, curr) => {
-                        (acc[curr.phaseName] = acc[curr.phaseName] || []).push(curr);
-                        return acc;
-                    }, {} as Record<string, typeof available>)).map(([pName, opts]) => (
-                        <div key={pName} className="mb-2">
-                            <div className="text-[10px] text-white/50 uppercase font-bold px-1 mb-1">{pName}</div>
-                            {opts.map((opt, idx) => (
-                                <button
-                                    key={idx}
-                                    className="w-full text-left p-1.5 text-xs text-white hover:bg-blue-500/20 rounded truncate flex items-center gap-2"
-                                    onClick={() => handleConnectSource(match.id, side, opt.value)}
-                                >
-                                    <div className="w-1 h-1 bg-white/30 rounded-full" />
-                                    {opt.label}
-                                </button>
-                            ))}
-                        </div>
+                    <div className="text-xs text-blue-300 mb-2 font-bold uppercase sticky top-0 bg-[#333] pb-1 border-b border-white/10 flex justify-between">
+                        <span>Seleccionar Origen</span>
+                        <button onClick={() => setEditingMatchId(null)}><X size={12} /></button>
+                    </div>
+                    {/* Add Teams to dropdown too */}
+                    <div className="mb-2">
+                        <div className="text-[10px] text-white/50 uppercase font-bold px-1 mb-1">Equipos</div>
+                        {teams.map(t => (
+                            <button key={t.id} className="w-full text-left p-1.5 text-xs text-white hover:bg-blue-500/20 rounded truncate flex items-center gap-2"
+                                onClick={() => handleConnectSource(match.id, side, { type: 'team', id: t.id })}>
+                                <div className="w-4 h-4 rounded-full overflow-hidden bg-white/10">{t.logo_url && <img src={t.logo_url} className="w-full h-full object-cover" />}</div>
+                                {t.name}
+                            </button>
+                        ))}
+                    </div>
+
+                    {available.map(opt => (
+                        <button key={opt.key || (opt.value.id + opt.value.type)} className="w-full text-left p-1.5 text-xs text-white hover:bg-blue-500/20 rounded truncate"
+                            onClick={() => handleConnectSource(match.id, side, opt.value)}>
+                            {opt.label}
+                        </button>
                     ))}
-                    <button onClick={() => setEditingMatchId(null)} className="mt-2 w-full text-center text-[10px] text-red-400 p-1 border border-red-500/20 rounded hover:bg-red-500/10 hover:text-red-300 transition-colors">Cancelar</button>
                 </div>
             );
         }
 
-        let label = '';
-        // If Simulating, show resolved name better
-        if (isSimulation && resolvedTeamName) {
-            label = resolvedTeamName;
+        let displayText = 'Vacío';
+
+        if (resolvedTeamName) {
+            displayText = resolvedTeamName;
         } else if (source) {
-            if (source.type === 'group.pos') label = source.index + 'º G' + source.id;
-            else if (source.type === 'match.winner') label = 'Ganador';
-            else if (source.type === 'match.loser') label = 'Perdedor';
-            else if (source.type === 'team') label = getTeamName(source.id, teams);
+            if (source.type === 'team') displayText = 'Equipo desconocido';
+            else if (source.type === 'group.pos') displayText = `${source.index}º Grupo ${source.id}`;
+            else if (source.type === 'match.winner') displayText = `Ganador M${source.id}`;
+            else if (source.type === 'match.loser') displayText = `Perdedor M${source.id}`;
+            else displayText = 'Esperando...';
         }
 
-        return (
-            <button
-                onClick={() => {
-                    if (isSimulation) {
-                        if (resolvedTeamId) handleSimulationClick(match.id, resolvedTeamId);
-                    } else {
-                        setEditingMatchId(match.id + '-' + side);
-                    }
-                }}
-                className={'w-full p-2 text-xs text-left rounded border transition-colors relative group ' +
-                    (isWinner ? 'bg-yellow-500/20 border-yellow-500 text-yellow-200' :
-                        source ? 'bg-blue-900/20 border-blue-500/50 text-blue-200' : 'bg-white/5 border-dashed border-white/10 text-white/20 hover:border-white/30 hover:text-white')
-                }
-            >
-                {source || resolvedTeamName ? (
-                    <div className="flex items-center gap-2">
-                        {!isSimulation && <LinkIcon size={12} className="opacity-50" />}
-                        {isSimulation && <div className={`w-2 h-2 rounded-full ${isWinner ? 'bg-yellow-400' : 'bg-white/20'}`} />}
-                        <span className="truncate">
-                            {/* Hint Source in Edit Mode */}
-                            {!isSimulation && source && source.type !== 'team' && (
-                                <span className="text-[9px] opacity-70 block">
-                                    {phases.find(p => p.groups?.some(g => g.name === source.id) || p.matches?.some(m => String(m.globalId) === source.id))?.name || 'Origen'} &gt;
-                                </span>
-                            )}
-                            {label}
-                            {!isSimulation && source && source.type !== 'group.pos' && (
-                                <span className="ml-1 opacity-50 text-[10px]">
-                                    (#{phases.flatMap(p => p.matches || []).find(m => String(m.globalId) === source.id || m.id === source.id)?.globalId || '?'})
-                                </span>
-                            )}
-                        </span>
-                    </div>
-                ) : (
-                    <span>+ Seleccionar</span>
-                )}
-            </button>
-        );
-    };
-
-    const renderMatch = (match: RoundMatch, phase: TournamentPhase) => {
         return (
             <div
-                key={match.id}
-                className={`border rounded-lg p-3 shadow-lg transition-all group relative ${match.name === 'Gran Final'
-                    ? 'bg-gradient-to-br from-yellow-900/20 to-black border-yellow-500/50 hover:border-yellow-400'
-                    : phase.name === 'Finales'
-                        ? 'bg-[#1a1a20] border-purple-500/30 hover:border-purple-400'
-                        : 'bg-[#1a1a20] border-white/10 hover:border-blue-500/30'
-                    }`}
+                className={`flex items-center gap-2 p-1.5 rounded cursor-pointer relative ${isWinner ? 'bg-green-500/10 text-green-300' : 'bg-black/20 hover:bg-white/5'}`}
+                onClick={() => {
+                    if (isSimulation) handleSimulationClick(match.id, resolvedTeamId);
+                    else setEditingMatchId(match.id + '-' + side);
+                }}
             >
-                {/* Match Header */}
-                <div className="flex justify-between items-center mb-3">
-                    <div className="flex items-center gap-2">
-                        <span className={`text-[10px] px-2 py-0.5 rounded ${match.name === 'Gran Final' ? 'bg-yellow-500/20 text-yellow-300' : 'bg-black/40 text-white/40'}`}>
-                            #{match.globalId}
+                {/* Status Dot / Logo */}
+                <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold overflow-hidden ${isWinner ? 'bg-green-500 text-black' : 'bg-white/5 text-white/50'}`}>
+                    {resolvedTeamId && teams.find(t => t.id === resolvedTeamId)?.logo_url ? <img src={teams.find(t => t.id === resolvedTeamId)?.logo_url} className="w-full h-full object-cover" /> : (side === 'home' ? 'H' : 'A')}
+                </div>
+
+                <div className="flex-1 min-w-0 flex flex-col leading-none">
+                    <span className={`text-xs font-medium truncate ${isWinner ? 'text-green-300' : 'text-white/80'}`}>
+                        {displayText}
+                    </span>
+                    {source && source.type !== 'team' && resolvedTeamName && (
+                        <span className="text-[9px] text-white/30 truncate">
+                            {source.type === 'match.winner' ? `Ganador M${source.id}` : source.type === 'match.loser' ? `Perdedor M${source.id}` : source.type === 'group.pos' ? `${source.index}º Grupo ${source.id}` : source.id}
                         </span>
-                        {!isSimulation && (
-                            <button
-                                onClick={() => handleDeleteMatch(phase.id, match.id)}
-                                className="text-white/10 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
-                                title="Eliminar Partido"
-                            >
-                                <Trash2 size={12} />
-                            </button>
-                        )}
-                        {/* Swap Button */}
-                        <button
-                            onClick={() => handleSwapTeams(phase.id, match.id)}
-                            className="text-white/10 hover:text-blue-400 transition-colors opacity-0 group-hover:opacity-100"
-                            title="Intercambiar Local/Visita"
-                        >
-                            <ArrowLeftRight size={12} />
-                        </button>
-                    </div>
+                    )}
                 </div>
-
-                <div className="flex flex-col gap-2">
-                    {renderSourceButtonFull(match, 'home', phase.order)}
-                    <div className="flex justify-center -my-3 z-10">
-                        <span className="text-[10px] bg-[#1a1a20] px-2 text-white/20 font-bold">VS</span>
-                    </div>
-                    {renderSourceButtonFull(match, 'away', phase.order)}
-                </div>
-
-                {/* Sets Visualization (Preview) */}
-                {match.sets && match.sets.length > 0 && (
-                    <details className="mt-2 group/sets">
-                        <summary className="list-none flex items-center justify-between text-[10px] text-white/30 cursor-pointer hover:text-white/60 transition-colors py-1">
-                            <span className="flex items-center gap-1">
-                                <span className="bg-white/5 px-1.5 rounded">{match.sets.length} Sets</span>
-                            </span>
-                            <span className="group-open/sets:rotate-180 transition-transform">▼</span>
-                        </summary>
-                        <div className="mt-1 flex flex-col gap-0.5 animate-in slide-in-from-top-1 fade-in duration-200">
-                            {match.sets.map((s, idx) => (
-                                <div key={idx} className="flex justify-between items-center bg-black/20 px-2 py-1 rounded text-[9px] text-white/40">
-                                    <span>SET {s.set_number}</span>
-                                    <div className="flex gap-2 font-mono">
-                                        <span>_</span> : <span>_</span>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </details>
-                )}
-
-                <div className="flex flex-col items-end mt-2 border-t border-white/5 pt-2">
-                    <input
-                        className={`bg-transparent text-xs text-right outline-none w-full focus:bg-white/5 rounded px-1 ${match.name === 'Gran Final' ? 'text-yellow-200 font-bold' : 'text-white/70 focus:text-white'}`}
-                        value={match.name}
-                        onChange={(e) => {
-                            // Simple name update
-                            const val = e.target.value;
-                            setPhases(prev => {
-                                const copy = [...prev];
-                                const pIdx = copy.findIndex(p => p.id === phase.id);
-                                if (pIdx === -1) return prev;
-
-                                if (copy[pIdx].matches) {
-                                    const mIdx = copy[pIdx].matches!.findIndex(m => m.id === match.id);
-                                    if (mIdx !== -1) {
-                                        copy[pIdx].matches![mIdx].name = val;
-                                    }
-                                }
-                                return copy;
-                            })
-                        }}
-                        readOnly={isSimulation}
-                    />
-                    <span className="text-[9px] text-white/30">{match.location}</span>
-                </div>
-            </div >
+                {!isSimulation && <Edit2 size={10} className="text-white/10 opacity-0 group-hover:opacity-100" />}
+            </div>
         );
     };
 
-    // -- Canvas Events --
-    const handleWheel = (e: React.WheelEvent) => {
-        if (e.ctrlKey) {
-            setZoom(z => Math.max(0.2, Math.min(2, z + e.deltaY * -0.001)));
-        } else {
-            setPan(p => ({ x: p.x - e.deltaX, y: p.y - e.deltaY }));
+    // calculate podium data
+    const getPodiumData = () => {
+        // Find Final match
+        // Heuristic: Last match of last phase? or explicitly named "Gran Final"?
+        let finalMatch: RoundMatch | undefined;
+        let thirdPlaceMatch: RoundMatch | undefined;
+
+        for (const p of phases) {
+            if (p.matches) {
+                const f = p.matches.find(m => m.name.includes("Gran Final") || getMatchLabel(m, p, p.order === phases.length - 1)?.text === 'GRAN FINAL');
+                if (f) finalMatch = f;
+
+                const t = p.matches.find(m => m.name.includes("3er") || getMatchLabel(m, p, p.order === phases.length - 1)?.text === '3ER PUESTO')
+                if (t) thirdPlaceMatch = t;
+            }
         }
-    };
-    const handleMouseDown = (e: React.MouseEvent) => {
-        isDragging.current = true;
-        lastPos.current = { x: e.clientX, y: e.clientY };
-    };
-    const handleMouseMove = (e: React.MouseEvent) => {
-        if (!isDragging.current) return;
-        // Panning Canvas
-        const dx = e.clientX - lastPos.current.x;
-        const dy = e.clientY - lastPos.current.y;
-        setPan(p => ({ x: p.x + dx, y: p.y + dy }));
-        lastPos.current = { x: e.clientX, y: e.clientY };
-    };
 
-    const handleMouseUp = () => {
-        isDragging.current = false;
-    };
-
-    // Champion Card Logic
-    const renderChampionCard = () => {
-        const finalMatch = phases.find(p => p.name === 'Finales')?.matches?.find(m => m.name === 'Gran Final');
         if (!finalMatch) return null;
 
         const winnerId = simulationResults[finalMatch.id];
         if (!winnerId) return null;
 
-        const team = teams.find(t => t.id === winnerId);
+        const runnerUpId = resolveTeamId(finalMatch.sourceHome) === winnerId ? resolveTeamId(finalMatch.sourceAway) : resolveTeamId(finalMatch.sourceHome);
 
-        return (
-            <div className="mt-8 flex flex-col items-center animate-bounce">
-                <div className="text-yellow-500 font-bold uppercase tracking-[0.2em] text-xs mb-2">Campeón</div>
-                <div className="bg-gradient-to-t from-yellow-600 to-yellow-300 p-1 rounded-full shadow-[0_0_30px_rgba(234,179,8,0.5)]">
-                    <div className="bg-black rounded-full p-1">
-                        <div className="w-24 h-24 bg-[#1a1a20] rounded-full flex items-center justify-center border-2 border-yellow-500 overflow-hidden">
-                            {team?.logo_url ? <img src={team.logo_url} className="w-full h-full object-cover" /> : <Trophy size={40} className="text-yellow-500" />}
-                        </div>
-                    </div>
-                </div>
-                <div className="mt-4 bg-yellow-500 text-black px-6 py-2 rounded-full font-black uppercase tracking-widest text-sm shadow-xl">
-                    {team?.name || 'Campeón'}
-                </div>
-            </div>
-        );
-    };
-
-    // Touch Events
-    const handleTouchStart = (e: React.TouchEvent) => {
-        if (e.touches.length === 1) {
-            isDragging.current = true;
-            lastPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        let thirdPlaceId: string | null = null;
+        if (thirdPlaceMatch) {
+            thirdPlaceId = simulationResults[thirdPlaceMatch.id] || null;
         }
+
+        const getTeam = (id: string | null) => teams.find(t => t.id === id);
+
+        return {
+            first: getTeam(winnerId)!,
+            second: getTeam(runnerUpId)!,
+            third: getTeam(thirdPlaceId) || undefined
+        };
     };
-    const handleTouchMove = (e: React.TouchEvent) => {
-        if (!isDragging.current || e.touches.length !== 1) return;
-        const dx = e.touches[0].clientX - lastPos.current.x;
-        const dy = e.touches[0].clientY - lastPos.current.y;
-        setPan(p => ({ x: p.x + dx, y: p.y + dy }));
-        lastPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+
+    const podiumData = isSimulation ? getPodiumData() : null;
+
+    // Canvas Events
+    const handleCMouseDown = (e: React.MouseEvent) => {
+        if ((e.target as HTMLElement).closest('.node-interactive')) return;
+        isDragging.current = true;
+        lastPos.current = { x: e.clientX, y: e.clientY };
     };
-    const handleTouchEnd = () => isDragging.current = false;
+    const handleCMouseMove = (e: React.MouseEvent) => {
+        if (!isDragging.current) return;
+        const dx = e.clientX - lastPos.current.x;
+        const dy = e.clientY - lastPos.current.y;
+        setPan(prev => ({ x: prev.x + dx, y: prev.y + dy }));
+        lastPos.current = { x: e.clientX, y: e.clientY };
+    };
+    const handleCMouseUp = () => { isDragging.current = false; };
+
 
     return (
-        <div className="h-full flex flex-col bg-[#0f0f13] relative overflow-hidden">
-            {/* Desktop Toolbar */}
-            <div className="hidden md:flex p-4 items-center justify-between border-b border-white/5 z-20 bg-[#0f0f13]/80 backdrop-blur">
-                <div className="flex items-center gap-4">
-                    <div className="flex flex-col">
-                        <span className="text-white/50 text-xs uppercase tracking-wider font-bold">Diseñador de Torneo</span>
-                        {isSimulation ? <span className="text-[10px] text-yellow-400 font-bold uppercase animate-pulse">MODO SIMULACIÓN</span> : <span className="text-[10px] text-green-400 font-bold uppercase">DISEÑO</span>}
-                    </div>
-                    <div className="h-4 w-px bg-white/10" />
-                    <button onClick={() => {
-                        setConfirmation({
-                            isOpen: true,
-                            title: 'Regenerar bracket',
-                            message: "¿Regenerar el bracket? Se perderán los cambios manuales.",
-                            confirmText: 'Regenerar',
-                            variant: 'danger',
-                            onConfirm: generateStructure
-                        });
-                    }} className="p-2 bg-white/5 hover:bg-yellow-500/20 text-white/50 hover:text-yellow-500 rounded border border-white/10 transition-colors" title="Regenerar Estructura">
-                        <RefreshCcw size={14} />
-                    </button>
-                    <div className="h-4 w-px bg-white/10" />
-                    <button onClick={() => {
-                        if (isSimulation) {
-                            setIsSimulation(false);
-                        } else {
-                            const hasActiveTiebreaker = state.config.tiebreaker_rules && state.config.tiebreaker_rules.some(r => r.active);
-                            if (!hasActiveTiebreaker) {
-                                setConfirmation({
-                                    isOpen: true,
-                                    title: 'Reglas de Desempate',
-                                    message: "⚠️ Antes de Simular el torneo debes definir las reglas de desempate para que sea lo mas real posible.\n\n¿Quieres ir a Configuración ahora?",
-                                    confirmText: 'Ir a Configuración',
-                                    variant: 'warning',
-                                    onConfirm: () => setStep(0)
-                                });
-                                return;
-                            }
-                            setIsSimulation(true);
-                        }
-                    }} className={`p-2 rounded border transition-colors flex items-center gap-2 text-xs font-bold ${isSimulation ? 'bg-yellow-500/20 border-yellow-500 text-yellow-200' : 'bg-white/5 border-white/10 text-white/50 hover:text-white'}`}>
-                        <Play size={14} className={isSimulation ? 'fill-current' : ''} /> {isSimulation ? 'Terminar Simulación' : 'Simular Torneo'}
-                    </button>
-                    {isSimulation && (
-                        <button
-                            onClick={() => {
-                                if (Object.keys(simulationResults).length === 0) return;
-                                setConfirmation({
-                                    isOpen: true,
-                                    title: 'Resetear Simulación',
-                                    message: "¿Estás seguro de resetear toda la simulación?",
-                                    confirmText: 'Resetear',
-                                    variant: 'danger',
-                                    onConfirm: () => setSimulationResults({})
-                                });
-                            }}
-                            disabled={Object.keys(simulationResults).length === 0}
-                            className={`p-2 ml-2 rounded border transition-colors ${Object.keys(simulationResults).length === 0 ? 'bg-white/5 border-white/5 text-white/20 cursor-not-allowed' : 'bg-red-500/10 hover:bg-red-500/20 text-red-400 border-red-500/30'}`}
-                            title="Resetear Simulación"
-                        >
-                            <RefreshCcw size={14} />
-                        </button>
-                    )}
-                    {!isSimulation && (
-                        <>
-                            <div className="h-4 w-px bg-white/10" />
-                            <button onClick={() => handleAddPhase('group')} className="px-3 py-1 bg-white/5 hover:bg-green-500/20 text-xs text-white rounded border border-white/10 hover:border-green-500/50 transition-colors">+ Fase de Grupos</button>
-                            <button onClick={() => handleAddPhase('elimination')} className="px-3 py-1 bg-white/5 hover:bg-blue-500/20 text-xs text-white rounded border border-white/10 hover:border-blue-500/50 transition-colors">+ Fase Eliminatoria</button>
-                            <button onClick={() => handleAddPhase('placement')} className="px-3 py-1 bg-white/5 hover:bg-purple-500/20 text-xs text-white rounded border border-white/10 hover:border-purple-500/50 transition-colors">+ Finales</button>
-                        </>
-                    )}
-                </div>
-                <div className="flex items-center gap-2">
-                    <button onClick={() => setZoom(z => Math.max(0.2, z - 0.1))} className="p-2 text-white/50 hover:text-white"><ZoomOut size={16} /></button>
-                    <span className="text-xs font-mono text-white/30">{Math.round(zoom * 100)}%</span>
-                    <button onClick={() => setZoom(z => Math.min(2, z + 0.1))} className="p-2 text-white/50 hover:text-white"><ZoomIn size={16} /></button>
-                </div>
-            </div>
-
-            {/* Canvas */}
-            <div
-                className="flex-1 relative cursor-default touch-none"
-                onWheel={handleWheel}
-                onMouseDown={handleMouseDown}
-                onMouseMove={handleMouseMove}
-                onMouseUp={handleMouseUp}
-                onTouchStart={handleTouchStart}
-                onTouchMove={handleTouchMove}
-                onTouchEnd={handleTouchEnd}
-            >
-                <div className="absolute inset-0 overflow-hidden" ref={containerRef}>
-                    <div className="absolute inset-0 z-0 opacity-20 pointer-events-none"
-                        style={{
-                            backgroundImage: 'radial-gradient(circle at center, #333 1px, transparent 1px)',
-                            backgroundSize: '20px 20px',
-                            transform: `scale(${zoom}) translate(${pan.x}px, ${pan.y}px)`
-                        }}
-                    />
-
-                    <div
-                        className="absolute top-0 left-0 flex flex-col items-start p-20 gap-16 transition-transform duration-75"
-                        style={{ transform: 'translate(' + pan.x + 'px, ' + pan.y + 'px) scale(' + zoom + ')' }}
-                    >
-                        {/* Classification Table */}
-                        <div className="w-full max-w-4xl">
-                            {/* Pass empty simulation results if not in simulation mode to force reset view */}
-                            <ClassificationTable phases={phases} simulationResults={isSimulation ? simulationResults : undefined} isSimulation={isSimulation} />
+        <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+            <div className="flex flex-col h-full bg-[#111] text-white overflow-hidden relative">
+                {/* Top Bar */}
+                <div className="h-12 border-b border-white/5 flex items-center justify-between px-4 bg-[#1a1a1a] z-50">
+                    <div className="flex items-center gap-4">
+                        <div className="flex gap-1">
+                            <button onClick={generateStructure} className="flex items-center gap-2 px-3 py-1.5 text-xs bg-red-600/20 hover:bg-red-600/40 text-red-300 rounded border border-red-500/20">
+                                <RefreshCcw size={12} /> Regenerar
+                            </button>
+                            <button onClick={() => setIsSimulation(!isSimulation)} className={`flex items-center gap-2 px-3 py-1.5 text-xs rounded border transition-all ${isSimulation ? 'bg-amber-500/20 text-amber-300 border-amber-500/50' : 'bg-white/5 hover:bg-white/10 border-white/5'}`}>
+                                <Play size={12} fill={isSimulation ? "currentColor" : "none"} /> {isSimulation ? 'Simulando' : 'Simular'}
+                            </button>
                         </div>
+                    </div>
 
-                        {/* Phases */}
-                        <div className="flex items-start gap-16 relative min-h-[800px]">
-                            {phases.map((phase) => {
-                                const width = phase.name === 'Finales' ? 800 : 320;
+                    <div className="flex items-center gap-2">
+                        <ZoomOut className="cursor-pointer text-white/50 hover:text-white" size={16} onClick={() => setZoom(z => Math.max(0.5, z - 0.1))} />
+                        <span className="text-xs font-mono text-white/30 min-w-[3ch] text-center">{Math.round(zoom * 100)}%</span>
+                        <ZoomIn className="cursor-pointer text-white/50 hover:text-white" size={16} onClick={() => setZoom(z => Math.min(2, z + 0.1))} />
+                    </div>
+                </div>
 
+                <div className="flex flex-1 overflow-hidden relative">
+                    {/* Canvas Area */}
+                    <div
+                        ref={containerRef}
+                        className="flex-1 bg-[#111] overflow-hidden cursor-grab active:cursor-grabbing relative"
+                        style={{ backgroundImage: 'radial-gradient(#333 1px, transparent 1px)', backgroundSize: '20px 20px' }}
+                        onMouseDown={handleCMouseDown}
+                        onMouseMove={handleCMouseMove}
+                        onMouseUp={handleCMouseUp}
+                        onMouseLeave={handleCMouseUp}
+                    >
+                        <div
+                            className="absolute top-0 left-0 transition-transform duration-75 ease-out origin-top-left flex items-start p-20 gap-16 min-w-max min-h-max"
+                            style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
+                        >
+                            {/* Render Phases Columns */}
+                            {phases.sort((a, b) => a.order - b.order).map((phase, pIdx) => {
+                                const isLastPhase = pIdx === phases.length - 1;
                                 return (
-                                    <div
-                                        key={phase.id}
-                                        className="flex flex-col gap-4 transition-shadow bg-[#0f0f13]/50 backdrop-blur-sm rounded-xl flex-shrink-0 relative z-10"
-                                        style={{ width }}
-                                    >
+                                    <div key={phase.id} className="flex flex-col gap-4 min-w-[280px] node-interactive">
                                         {/* Phase Header */}
-                                        <div className={`flex items-center justify-between border p-3 rounded-lg hover:border-white/20 transition-all ${phase.name === 'Finales' ? 'bg-purple-900/10 border-purple-500/30' : 'bg-white/5 border-white/10'}`}>
+                                        <div className="flex items-center justify-between group mb-2">
                                             <div className="flex items-center gap-2">
+                                                {pIdx > 0 && <button onClick={() => handleMovePhase(phase.id, 'left')} className="p-1 hover:bg-white/10 rounded opacity-0 group-hover:opacity-100 transition-opacity"><ArrowLeft size={10} /></button>}
                                                 <input
                                                     value={phase.name}
                                                     onChange={(e) => handleUpdatePhaseName(phase.id, e.target.value)}
-                                                    className="bg-transparent text-sm font-bold outline-none text-white w-full"
+                                                    className="bg-transparent text-sm font-bold uppercase tracking-widest text-blue-400 outline-none w-32 focus:bg-white/5 rounded px-1"
                                                 />
+                                                {pIdx < phases.length - 1 && <button onClick={() => handleMovePhase(phase.id, 'right')} className="p-1 hover:bg-white/10 rounded opacity-0 group-hover:opacity-100 transition-opacity"><ArrowRight size={10} /></button>}
                                             </div>
-                                            <div className="flex items-center gap-1">
-                                                {phase.order > 0 && (
-                                                    <button onClick={() => handleMovePhase(phase.id, 'left')} className="text-white/20 hover:text-white p-1 hover:bg-white/10 rounded">
-                                                        <ArrowLeft size={12} />
-                                                    </button>
-                                                )}
-                                                {phase.order < phases.length - 1 && (
-                                                    <button onClick={() => handleMovePhase(phase.id, 'right')} className="text-white/20 hover:text-white p-1 hover:bg-white/10 rounded">
-                                                        <ArrowRight size={12} />
-                                                    </button>
-                                                )}
-                                                {(phase.order > 0 || phase.type === 'group') && (
-                                                    <button onClick={() => handleDeletePhase(phase.id)} className="p-1 hover:text-red-400 text-white/20"><Trash2 size={14} /></button>
-                                                )}
+                                            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                {phase.type === 'group' && <button onClick={() => handleAddGroup(phase.id)} title="Agregar Grupo" className="p-1 hover:bg-green-500/20 rounded text-green-400"><Plus size={12} /></button>}
+                                                {phase.type !== 'group' && <button onClick={() => handleAddMatchToPhase(phase.id)} title="Agregar Partido" className="p-1 hover:bg-blue-500/20 rounded text-blue-400"><Plus size={12} /></button>}
+                                                <button onClick={() => handleDeletePhase(phase.id)} className="p-1 hover:bg-red-500/20 rounded text-red-400"><Trash2 size={12} /></button>
                                             </div>
                                         </div>
 
-                                        {/* Phase Body */}
-                                        {phase.name === 'Finales' ? (
-                                            // Custom Finals Layout
-                                            <div className="grid grid-cols-2 gap-16 items-center min-h-[500px] border-l border-purple-500/20 pl-4 relative">
-                                                {/* Decor */}
-                                                <div className="absolute left-0 top-0 bottom-0 w-px bg-purple-500/20" />
-
-                                                {/* Column 1: Semis */}
-                                                <div className="flex flex-col justify-center gap-20">
-                                                    {phase.matches?.filter(m => m.name.includes('Semifinal')).map(m => renderMatch(m, phase))}
-                                                </div>
-
-                                                {/* Column 2: Final + Champion */}
-                                                <div className="flex flex-col items-center gap-8 translate-y-8">
-                                                    {phase.matches?.filter(m => m.name === 'Gran Final').map(m => renderMatch(m, phase))}
-
-                                                    {/* Champion / Podium */}
-                                                    {isSimulation && (() => {
-                                                        // Determine Podium
-                                                        const finalMatch = phase.matches?.find(m => m.name === 'Gran Final');
-                                                        const thirdPlaceMatch = phase.matches?.find(m => m.name.includes('3er'));
-
-                                                        if (finalMatch && simulationResults[finalMatch.id]) {
-                                                            const winnerId = simulationResults[finalMatch.id];
-                                                            const loserId = resolveTeamId(finalMatch.sourceHome) === winnerId
-                                                                ? resolveTeamId(finalMatch.sourceAway)
-                                                                : resolveTeamId(finalMatch.sourceHome);
-
-                                                            const thirdId = thirdPlaceMatch ? simulationResults[thirdPlaceMatch.id] : undefined;
-
-                                                            if (winnerId && loserId && thirdId) {
-                                                                const getTeamData = (id: string) => {
-                                                                    const t = teams.find(team => team.id === id);
-                                                                    return { name: t?.name || 'Unknown', logo: t?.logo_url, color: t?.color };
-                                                                };
-
-                                                                return (
-                                                                    <Podium teams={[
-                                                                        { place: 1, ...getTeamData(winnerId) },
-                                                                        { place: 2, ...getTeamData(loserId) },
-                                                                        { place: 3, ...getTeamData(thirdId) }
-                                                                    ]} />
-                                                                );
-                                                            }
-
-                                                            // Fallback to simpler champion card if not full podium ready
-                                                            return renderChampionCard();
-                                                        }
-                                                        return null;
-                                                    })()}
-
-                                                    {phase.matches?.filter(m => m.name.includes('3er')).map(m => renderMatch(m, phase))}
-                                                </div>
-                                            </div>
-                                        ) : phase.type === 'group' ? (
-                                            // Group Render
-                                            <div className="flex flex-col gap-6">
-                                                {phase.groups?.map((group, idx) => (
-                                                    <div key={idx} className="bg-[#1a1a20]/50 border border-white/10 rounded-xl p-4">
-                                                        <div className="text-sm font-bold text-blue-400 mb-4 px-1 flex justify-between">
-                                                            <span>Grupo {group.name}</span>
-                                                            {!isSimulation && <button onClick={() => handleDeleteGroup(phase.id, idx)} className="text-white/20 hover:text-red-400"><Trash2 size={12} /></button>}
+                                        {/* Groups or Matches */}
+                                        <div className="flex flex-col gap-6">
+                                            {phase.type === 'group' && phase.groups ? (
+                                                phase.groups.map((group, gIdx) => (
+                                                    <div key={gIdx} className="border border-white/10 bg-[#1a1a1a]/50 rounded-xl p-3 flex flex-col gap-3 backdrop-blur-sm">
+                                                        <div className="flex justify-between items-center border-b border-white/5 pb-2">
+                                                            <span className="text-xs font-bold text-white/50">GRUPO {group.name}</span>
+                                                            <button onClick={() => handleDeleteGroup(phase.id, gIdx)} className="text-white/10 hover:text-red-400"><X size={10} /></button>
                                                         </div>
-                                                        <div className="grid gap-3">
-                                                            {group.matches.map(m => renderMatch(m, phase))}
+
+                                                        {/* Classification / Standing */}
+                                                        <ClassificationTable
+                                                            groupName={group.name}
+                                                            phases={phases}
+                                                            simulationResults={simulationResults}
+                                                            isSimulation={isSimulation}
+                                                        />
+
+                                                        {/* Matches List */}
+                                                        <div className="flex flex-col gap-2 mt-2">
+                                                            {group.matches.map(m => renderMatchCard(m, phase.order, isLastPhase, phase))}
                                                         </div>
                                                     </div>
-                                                ))}
-                                                {!isSimulation && <button onClick={() => handleAddGroup(phase.id)} className="w-full py-3 border border-dashed border-white/10 rounded text-center text-xs text-white/30 hover:text-white">+ Añadir Grupo</button>}
-                                            </div>
-                                        ) : (
-                                            // Standard Elimination
-                                            <div className="flex flex-col gap-4 min-h-[500px] border-l border-white/5 pl-4 relative">
-                                                <div className="absolute left-0 top-0 bottom-0 w-px bg-white/5" />
-                                                {phase.matches?.map(m => renderMatch(m, phase))}
-                                                {!isSimulation && <button onClick={() => handleAddMatchToPhase(phase.id)} className="w-full py-3 border border-dashed border-white/10 rounded text-center text-xs text-white/30 hover:text-white">+ Añadir Partido</button>}
-                                            </div>
-                                        )}
-
-
+                                                ))
+                                            ) : (
+                                                // Elimination Matches
+                                                <div className="flex flex-col gap-4">
+                                                    {phase.matches?.map(m => renderMatchCard(m, phase.order, isLastPhase, phase))}
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
-                                );
+                                )
                             })}
 
-                            {/* Add Column Button */}
-                            {!isSimulation && (
-                                <div className="h-full flex items-center pt-20 z-0">
-                                    <button onClick={() => handleAddPhase('elimination')} className="w-16 h-96 border border-dashed border-white/10 rounded-full text-white/10 flex items-center justify-center hover:bg-white/5"><Plus size={24} /></button>
-                                </div>
-                            )}
+                            {/* Add Phase Button Column */}
+                            <div className="flex flex-col gap-2 pt-8 node-interactive opacity-50 hover:opacity-100 transition-opacity">
+                                <button onClick={() => handleAddPhase('elimination')} className="w-10 h-10 rounded-full bg-white/5 hover:bg-blue-500/20 flex items-center justify-center border border-white/10 hover:border-blue-500/50 text-white/30 hover:text-blue-400 transition-all shadow-xl" title="Agregar Ronda Eliminatoria">
+                                    <Trophy size={16} />
+                                </button>
+                                <button onClick={() => handleAddPhase('placement')} className="w-10 h-10 rounded-full bg-white/5 hover:bg-amber-500/20 flex items-center justify-center border border-white/10 hover:border-amber-500/50 text-white/30 hover:text-amber-400 transition-all shadow-xl" title="Agregar Finales / Definición">
+                                    <Target size={16} />
+                                </button>
+                                <button onClick={() => handleAddPhase('group')} className="w-10 h-10 rounded-full bg-white/5 hover:bg-green-500/20 flex items-center justify-center border border-white/10 hover:border-green-500/50 text-white/30 hover:text-green-400 transition-all shadow-xl" title="Agregar Fase de Grupos">
+                                    <Layout size={16} />
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
-            {/* Sets Config Modal */}
-            {isSetsModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-                    <div className="bg-[#1a1a20] border border-white/10 rounded-2xl p-6 w-full max-w-md shadow-2xl scale-100 animate-in zoom-in-95 duration-200">
-                        <h3 className="text-xl font-bold text-white mb-2">Configuración de Sets</h3>
-                        <p className="text-white/50 text-sm mb-6">¿Cuántos sets se jugarán por partido en esta fase?</p>
 
-                        <div className="grid grid-cols-2 gap-4">
+                {/* Podium Overlay */}
+                {podiumData && podiumData.first && (
+                    <div className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center animate-in fade-in duration-500">
+                        <div className="relative w-full h-full p-10 flex flex-col items-center justify-center">
                             <button
-                                onClick={() => handleConfirmAddPhase(1)}
-                                className="group relative overflow-hidden rounded-xl border border-white/10 bg-white/5 p-4 hover:border-purple-500 hover:bg-purple-500/10 transition-all text-left"
+                                onClick={() => setIsSimulation(false)}
+                                className="absolute top-8 right-8 flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-full transition-colors font-bold z-50 backdrop-blur-md"
                             >
-                                <div className="text-2xl font-bold text-white mb-1">1 Set</div>
-                                <div className="text-xs text-white/40 group-hover:text-purple-200">Partido Único</div>
+                                <X size={20} /> Cerrar Podium
                             </button>
-
-                            <button
-                                onClick={() => handleConfirmAddPhase(3)}
-                                className="group relative overflow-hidden rounded-xl border border-white/10 bg-white/5 p-4 hover:border-blue-500 hover:bg-blue-500/10 transition-all text-left"
-                            >
-                                <div className="text-2xl font-bold text-white mb-1">3 Sets</div>
-                                <div className="text-xs text-white/40 group-hover:text-blue-200">Al Mejor de 3</div>
-                            </button>
-                        </div>
-
-                        <button
-                            onClick={() => setIsSetsModalOpen(false)}
-                            className="mt-6 w-full py-3 rounded-xl border border-white/10 text-white/50 hover:text-white hover:bg-white/5 transition-colors text-sm font-bold"
-                        >
-                            Cancelar
-                        </button>
-                    </div>
-                </div>
-            )}
-            {/* Confirmation Modal */}
-            <ConfirmationModal
-                isOpen={confirmation.isOpen}
-                onClose={closeConfirmation}
-                onConfirm={confirmation.onConfirm}
-                title={confirmation.title}
-                message={confirmation.message}
-                confirmText={confirmation.confirmText}
-                cancelText={confirmation.cancelText}
-                variant={confirmation.variant}
-            />
-            {/* Mobile Fixed Dock Menu */}
-            <div className={`md:hidden fixed bottom-36 left-4 right-4 z-50 flex flex-col items-end gap-2 transition-all duration-300 ${isMobileMenuOpen ? 'pointer-events-auto' : 'pointer-events-none'}`}>
-                <div className={`bg-[#1a1a20] border border-white/10 rounded-xl shadow-2xl p-2 flex flex-col gap-2 min-w-[200px] backdrop-blur-xl transition-all duration-300 ${isMobileMenuOpen ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0'}`}>
-                    <button onClick={() => { setIsMobileMenuOpen(false); handleAddPhase('group'); }} className="p-3 bg-white/5 hover:bg-green-500/20 text-white rounded-lg flex items-center gap-3 text-sm font-bold">
-                        <Plus size={16} className="text-green-500" /> Nueva Fase Grupos
-                    </button>
-                    <button onClick={() => { setIsMobileMenuOpen(false); handleAddPhase('elimination'); }} className="p-3 bg-white/5 hover:bg-blue-500/20 text-white rounded-lg flex items-center gap-3 text-sm font-bold">
-                        <Plus size={16} className="text-blue-500" /> Nueva Eliminatoria
-                    </button>
-                    <button onClick={() => { setIsMobileMenuOpen(false); handleAddPhase('placement'); }} className="p-3 bg-white/5 hover:bg-purple-500/20 text-white rounded-lg flex items-center gap-3 text-sm font-bold">
-                        <Plus size={16} className="text-purple-500" /> Nueva Fase Finales
-                    </button>
-                    <div className="h-px bg-white/10 w-full" />
-                    <button onClick={() => {
-                        if (isSimulation) {
-                            setIsSimulation(false);
-                            // setIsMobileMenuOpen(false); // keep open? User said "toco cualquier elemento del menu debe ocultarse"
-                            // If isSimulation is toggled, better close to see effect?
-                            // Logic below had explicit close. I will add explicit close here too.
-                            setIsMobileMenuOpen(false);
-                        } else {
-                            // Validate Tiebreakers before starting simulation
-                            const hasActiveTiebreaker = state.config.tiebreaker_rules && state.config.tiebreaker_rules.some(r => r.active);
-                            if (!hasActiveTiebreaker) {
-                                setConfirmation({
-                                    isOpen: true,
-                                    title: 'Reglas de Desempate',
-                                    message: "⚠️ Antes de Simular el torneo debes definir las reglas de desempate para que sea lo mas real posible.\n\n¿Quieres ir a Configuración ahora?",
-                                    confirmText: 'Ir a Configuración',
-                                    variant: 'warning',
-                                    onConfirm: () => {
-                                        setIsMobileMenuOpen(false);
-                                        setStep(0);
-                                    }
-                                });
-                                return;
-                            }
-                            setIsMobileMenuOpen(false);
-                            setIsSimulation(true);
-                        }
-                    }} className={`p-3 rounded-lg flex items-center gap-3 text-xs font-bold ${isSimulation ? 'bg-yellow-500/20 text-yellow-200' : 'hover:bg-white/5 text-white/70 hover:text-white'}`}>
-                        <Play size={14} className={isSimulation ? 'fill-current' : ''} /> {isSimulation ? 'Terminar Simulación' : 'Simular Torneo'}
-                    </button>
-                    <button onClick={() => {
-                        setIsMobileMenuOpen(false); // explicit close
-                        setConfirmation({
-                            isOpen: true,
-                            title: 'Regenerar',
-                            message: '¿Regenerar? Se perderán cambios.',
-                            confirmText: 'Regenerar',
-                            variant: 'danger',
-                            onConfirm: generateStructure
-                        });
-                    }} className="p-3 hover:bg-white/5 text-white/70 hover:text-white rounded-lg flex items-center gap-3 text-xs">
-                        <RefreshCcw size={14} /> Regenerar Todo
-                    </button>
-                    <div className="flex items-center justify-between px-2 pt-2 border-t border-white/5">
-                        <span className="text-[10px] text-white/30 uppercase">Zoom</span>
-                        <div className="flex gap-2">
-                            {/* Zoom buttons don't close menu usually, but user asked for ANY element click.  */}
-                            {/* Zoom is repeatable... making it close on every zoom click is super annoying. */}
-                            {/* However, the prompt says "si toco cualquier elemento de ese menu debe ocultarse tambien". */}
-                            {/* I will respect the prompt strictness for buttons, but maybe keep zoom open? */}
-                            {/* Actually, previous implementation didn't close on zoom. I'll leave zoom without close for UX sanity unless forced. */}
-                            <button onClick={() => setZoom(z => Math.max(0.4, z - 0.1))} className="p-1 bg-white/5 rounded"><ZoomOut size={14} className="text-white/50" /></button>
-                            <button onClick={() => setZoom(z => Math.min(2, z + 0.1))} className="p-1 bg-white/5 rounded"><ZoomIn size={14} className="text-white/50" /></button>
+                            <Podium
+                                teams={[
+                                    { place: 1, name: podiumData.first?.name || '?', logo: podiumData.first?.logo_url },
+                                    { place: 2, name: podiumData.second?.name || '?', logo: podiumData.second?.logo_url },
+                                    { place: 3, name: podiumData.third?.name || '?', logo: podiumData.third?.logo_url }
+                                ].filter(t => t.name !== '?')}
+                            />
                         </div>
                     </div>
-                </div>
-            </div>
+                )}
 
-            {/* Floating FAB Trigger */}
-            <div className="md:hidden fixed bottom-20 right-4 z-50">
-                <button
-                    onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-                    className={`w-12 h-12 rounded-full flex items-center justify-center shadow-lg border transition-all ${isMobileMenuOpen ? 'bg-white text-black border-white rotate-90' : 'bg-blue-600 text-white border-blue-500 hover:scale-105'}`}
-                >
-                    {isMobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
-                </button>
+                {/* Confirmations & Modals */}
+                {isSetsModalOpen && (
+                    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[100]">
+                        <div className="bg-[#222] border border-white/10 p-6 rounded-xl w-80 shadow-2xl">
+                            <h3 className="text-lg font-bold mb-4">Configurar Partidos</h3>
+                            <p className="text-white/50 text-xs mb-4">¿Cuántos sets por partido en esta fase?</p>
+                            <div className="grid grid-cols-2 gap-2">
+                                {[1, 3].map(n => (
+                                    <button key={n} onClick={() => handleConfirmAddPhase(n)} className="p-3 bg-white/5 hover:bg-blue-600 rounded border border-white/10 hover:border-blue-400 font-mono font-bold transition-all">
+                                        {n}
+                                    </button>
+                                ))}
+                            </div>
+                            <button onClick={() => setIsSetsModalOpen(false)} className="mt-4 text-xs text-white/30 hover:text-white underline w-full text-center">Cancelar</button>
+                        </div>
+                    </div>
+                )}
             </div>
-
-        </div>
+            <DragOverlay>
+                {/* Optional: Render dragging preview */}
+            </DragOverlay>
+        </DndContext>
     );
+
 };
+
+function CustomTargetIcon({ size }: { size: number }) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10" />
+            <circle cx="12" cy="12" r="6" />
+            <circle cx="12" cy="12" r="2" />
+        </svg>
+    );
+}

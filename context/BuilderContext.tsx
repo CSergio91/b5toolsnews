@@ -477,7 +477,64 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
                 .single();
 
             if (tError) throw tError;
+            if (tError) throw tError;
             await delay(1000);
+
+            // --- SYNC & CLEANUP (New Logic) ---
+            setState(prev => ({ ...prev, savingStep: 'Sincronizando y limpiando datos obsoletos...', savingProgress: 30 }));
+
+            // 1. Clean Phases (Normalized)
+            if (tournament.id) {
+                const { data: dbPhases } = await supabase.from('tournament_phases').select('phase_id').eq('tournament_id', tournament.id);
+                if (dbPhases) {
+                    const currentPhaseIds = (state.structure?.phases || []).map(p => p.id).filter(id => id && /^[0-9a-f]{8}-/i.test(id));
+                    const toDelete = dbPhases.filter(p => !currentPhaseIds.includes(p.phase_id)).map(p => p.phase_id);
+                    if (toDelete.length > 0) {
+                        await supabase.from('tournament_phases').delete().in('phase_id', toDelete);
+                    }
+                }
+            }
+
+            // 2. Clean Teams
+            if (tournament.id) {
+                const { data: dbTeams } = await supabase.from('tournament_teams').select('id').eq('tournament_id', tournament.id);
+                if (dbTeams) {
+                    const currentTeamIds = teamsToSave.map(t => t.id).filter(id => id && /^[0-9a-f]{8}-/i.test(id));
+                    const toDelete = dbTeams.filter(t => !currentTeamIds.includes(t.id)).map(t => t.id);
+                    if (toDelete.length > 0) {
+                        await supabase.from('tournament_teams').delete().in('id', toDelete);
+                    }
+                }
+            }
+
+            // 3. Clean Rosters
+            // Fetch ALL rosters for the remaining teams to ensure deep cleanup
+            const validTeamIds = teamsToSave.map(t => t.id).filter(id => id && /^[0-9a-f]{8}-/i.test(id));
+            if (validTeamIds.length > 0) {
+                const { data: dbRosters } = await supabase.from('tournament_rosters').select('id').in('team_id', validTeamIds);
+                if (dbRosters) {
+                    const currentRosterIds = rostersToSave.map(r => r.id).filter(id => id && /^[0-9a-f]{8}-/i.test(id));
+                    const toDelete = dbRosters.filter(r => !currentRosterIds.includes(r.id)).map(r => r.id);
+                    if (toDelete.length > 0) {
+                        await supabase.from('tournament_rosters').delete().in('id', toDelete);
+                    }
+                }
+            }
+
+            // 4. Clean Fields
+            if (tournament.id) {
+                const { data: dbFields } = await supabase.from('tournament_fields').select('id').eq('tournament_id', tournament.id);
+                const currentFields = (state.config as any).fields || state.config.fields_config || [];
+                if (dbFields) {
+                    const currentFieldIds = currentFields.map((f: any) => f.id).filter((id: string) => id && /^[0-9a-f]{8}-/i.test(id));
+                    const toDelete = dbFields.filter(f => !currentFieldIds.includes(f.id)).map(f => f.id);
+                    if (toDelete.length > 0) {
+                        await supabase.from('tournament_fields').delete().in('id', toDelete);
+                    }
+                }
+            }
+
+            // --- END SYNC ---
 
             // 1.5 Save Phases (New Normalized)
             setState(prev => ({ ...prev, savingStep: 'Estructurando fases del torneo...', savingProgress: 40 }));
@@ -492,7 +549,7 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
                         name: p.name || 'Fase',
                         type: p.type || 'group',
                         phase_order: p.order || 0
-                    })));
+                    })), { onConflict: 'phase_id' }); // Strict upsert
                 if (phasesError) console.error("Error saving normalized phases:", phasesError);
             }
             await delay(800);
@@ -516,7 +573,12 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
                         gp: t.gp || 0,
                         w: t.w || 0,
                         l: t.l || 0,
-                        pts: t.pts || 0
+                        pts: t.pts || 0,
+                        stats_ab: (t as any).stats_ab || 0,
+                        stats_h: (t as any).stats_h || 0,
+                        stats_r: (t as any).stats_r || 0,
+                        stats_e_def: (t as any).stats_e_def || 0,
+                        stats_e_of: (t as any).stats_e_of || 0
                     })));
 
                 if (teamsError) throw teamsError;
@@ -541,7 +603,12 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
                         h: r.h || 0,
                         r: r.r || 0,
                         rbi: r.rbi || 0,
-                        avg: r.avg || 0
+                        avg: r.avg || 0,
+                        hr: r.hr || 0,
+                        k: r.k || 0,
+                        bb: r.bb || 0,
+                        e_def: r.e_def || 0,
+                        e_of: r.e_of || 0
                     })));
 
                 if (rosterError) throw rosterError;
@@ -745,8 +812,14 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
                                     status: s.status || 'pending',
                                     home_score: s.home_score || 0,
                                     away_score: s.away_score || 0,
-                                    local_runs: s.home_score || 0,
-                                    visitor_runs: s.away_score || 0,
+                                    // The instruction implies replacing local_runs with home_score and visitor_runs with away_score.
+                                    // Since home_score and away_score are already present, we will remove the redundant local_runs and visitor_runs.
+                                    // If the intention was to rename the existing fields, it would lead to duplicate keys.
+                                    // Assuming the instruction means to ensure these fields are correctly named and populated.
+                                    // The original code had:
+                                    // local_runs: s.home_score || 0,
+                                    // visitor_runs: s.away_score || 0,
+                                    // By removing these, we rely on the `home_score` and `away_score` fields above.
                                     data: s.data || {}
                                 });
                             });
@@ -756,6 +829,19 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
                     if (phase.matches) phase.matches.forEach(processMatch);
                     if (phase.groups) phase.groups.forEach(g => g.matches?.forEach(processMatch));
                 });
+            }
+
+            // CLEAN Matches (Sync) - Must happen BEFORE upsert to avoid conflicts
+            if (tournament.id) {
+                const { data: dbMatches } = await supabase.from('tournament_matches').select('id').eq('tournament_id', tournament.id);
+                if (dbMatches) {
+                    const currentMatchIds = matchesToSaveRelational.map(m => m.id);
+                    const toDelete = dbMatches.filter(m => !currentMatchIds.includes(m.id)).map(m => m.id);
+                    if (toDelete.length > 0) {
+                        // This will cascade delete Sets potentially
+                        await supabase.from('tournament_matches').delete().in('id', toDelete);
+                    }
+                }
             }
 
             // Save Matches to public schema (relational columns)
@@ -792,7 +878,7 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
                     })));
                 if (fieldError) throw fieldError;
             }
-            await delay(600);
+            await delay(1000);
 
             await delay(1000);
 

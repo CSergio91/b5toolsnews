@@ -3,58 +3,28 @@ import { TournamentPhase } from '../../types/structure';
 import { TieBreakerRule } from '../../types/tournament';
 import { useBuilder } from '../../context/BuilderContext';
 import { sortTeamsWithTieBreaker } from '../../utils/tieBreakerLogic';
-import { calculateTeamStats } from '../../utils/tournamentStats';
+import { calculateTeamStats, TeamStats, getSortedStandings } from '../../utils/tournamentStats';
 import { AlertTriangle, HelpCircle, Loader2, Check } from 'lucide-react';
 
 interface ClassificationTableProps {
     phases: TournamentPhase[];
     simulationResults?: Record<string, string>;
     isSimulation?: boolean;
+    groupName?: string; // Optional filter
 }
 
-interface TeamStats {
-    id: string;
-    name: string;
-    group: string;
-    played: number;
-    won: number;
-    lost: number;
-    points: number;
-    runs_scored: number;
-    runs_allowed: number;
-}
+// ... helper ...
 
-// Helper function (assuming it exists or needs to be added)
-// This was implicitly part of the instruction's `stats` useMemo,
-// but the original code used `sortTeamsWithTieBreaker` directly.
-// Let's assume `getSortedStandings` is a wrapper around `sortTeamsWithTieBreaker`
-// or a more comprehensive sorting logic. For now, I'll use `sortTeamsWithTieBreaker`
-// as it's already imported and used in the original code.
-// If `getSortedStandings` is a new utility, it would need to be imported/defined.
-// For the purpose of this edit, I will adapt the instruction's logic to use
-// `sortTeamsWithTieBreaker` and the existing `calculateTeamStats`.
-const getSortedStandings = (rawStats: TeamStats[], rules: TieBreakerRule[]) => {
-    if (rules && rules.length > 0) {
-        return sortTeamsWithTieBreaker(rawStats, rules);
-    }
-    // Standard Sort if no specific rules are applied
-    return rawStats.sort((a, b) => {
-        if (a.group !== b.group) return a.group.localeCompare(b.group);
-        return b.points - a.points;
-    });
-};
-
-
-export const ClassificationTable: React.FC<ClassificationTableProps> = ({ phases, simulationResults, isSimulation }) => {
+export const ClassificationTable: React.FC<ClassificationTableProps> = ({ phases, simulationResults, isSimulation, groupName }) => {
     const { state, updateConfig } = useBuilder();
     const config = state.config;
 
-    // Local override for simulation view (Reset when sim changes or closes)
+    // ... state ...
     const [activeRuleOverride, setActiveRuleOverride] = useState<TieBreakerRule | null>(null);
     const [analyzingRule, setAnalyzingRule] = useState<string | null>(null);
     const [previewRule, setPreviewRule] = useState<TieBreakerRule | null>(null);
 
-    // Reset when simulation stops
+    // ... effect ...
     useEffect(() => {
         if (!isSimulation && activeRuleOverride) {
             setActiveRuleOverride(null);
@@ -75,8 +45,14 @@ export const ClassificationTable: React.FC<ClassificationTableProps> = ({ phases
             rulesToUse = [activeRuleOverride];
         }
 
-        return getSortedStandings(raw, rulesToUse);
-    }, [phases, state.teams, simulationResults, config, activeRuleOverride, previewRule]);
+        const sorted = getSortedStandings(raw, rulesToUse);
+
+        // Filter by group if prop is present
+        if (groupName) {
+            return sorted.filter(s => s.group === groupName);
+        }
+        return sorted;
+    }, [phases, state.teams, simulationResults, config, activeRuleOverride, previewRule, groupName]);
 
     const hasTies = useMemo(() => {
         // Simple check: are there teams with same points?
