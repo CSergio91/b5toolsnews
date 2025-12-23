@@ -4562,7 +4562,13 @@ export const ScoreCard: React.FC<{ matchId: string | null; setNumber: number | n
           });
 
           // 2. Calculate Runs per Inning (Column-based)
-          const maxCols = team.slots[0]?.starter.scores.length || 9;
+          let maxCols = 9;
+          team.slots.forEach(slot => {
+            [slot.starter, slot.sub].forEach(p => {
+              if (p.scores.length > maxCols) maxCols = p.scores.length;
+            });
+          });
+
           for (let i = 0; i < maxCols; i++) {
             let runsInInning = 0;
             team.slots.forEach(slot => {
@@ -4579,6 +4585,7 @@ export const ScoreCard: React.FC<{ matchId: string | null; setNumber: number | n
           }
 
           const totalRuns = inningRuns.reduce((a, b) => a + b, 0);
+          console.log(`[Stats Calc] Team Stats: Hits=${hits}, Errors=${errors}, Runs=${totalRuns}`, inningRuns);
           return { hits, errors, totalRuns, inningRuns };
         };
 
@@ -4604,14 +4611,39 @@ export const ScoreCard: React.FC<{ matchId: string | null; setNumber: number | n
           }
         };
 
-        const updateData = {
+        const updateData: any = {
           state_json: updatedState,
-          local_runs: localStats.totalRuns,
-          visitor_runs: visitorStats.totalRuns,
+          home_score: localStats.totalRuns,
+          away_score: visitorStats.totalRuns,
           home_hits: localStats.hits,
           away_hits: visitorStats.hits,
           home_errors: localStats.errors,
-          away_errors: visitorStats.errors
+          away_errors: visitorStats.errors,
+
+          // Map Innings to Columns (Force 0)
+          // Visitor
+          vis_inn1: visitorStats.inningRuns[0] ?? 0,
+          vis_inn2: visitorStats.inningRuns[1] ?? 0,
+          vis_inn3: visitorStats.inningRuns[2] ?? 0,
+          vis_inn4: visitorStats.inningRuns[3] ?? 0,
+          vis_inn5: visitorStats.inningRuns[4] ?? 0,
+          vis_ex6: visitorStats.inningRuns[5] ?? 0,
+          vis_ex7: visitorStats.inningRuns[6] ?? 0,
+          vis_ex8: visitorStats.inningRuns[7] ?? 0,
+          vis_ex9: visitorStats.inningRuns[8] ?? 0,
+          vis_ex10: visitorStats.inningRuns[9] ?? 0,
+
+          // Local
+          loc_inn1: localStats.inningRuns[0] ?? 0,
+          loc_inn2: localStats.inningRuns[1] ?? 0,
+          loc_inn3: localStats.inningRuns[2] ?? 0,
+          loc_inn4: localStats.inningRuns[3] ?? 0,
+          loc_inn5: localStats.inningRuns[4] ?? 0,
+          loc_ex6: localStats.inningRuns[5] ?? 0,
+          loc_ex7: localStats.inningRuns[6] ?? 0,
+          loc_ex8: localStats.inningRuns[7] ?? 0,
+          loc_ex9: localStats.inningRuns[8] ?? 0,
+          loc_ex10: localStats.inningRuns[9] ?? 0
         };
 
         const { error } = await supabase
@@ -4620,7 +4652,10 @@ export const ScoreCard: React.FC<{ matchId: string | null; setNumber: number | n
           .eq('match_id', mId)
           .eq('set_number', sNum);
 
-        if (error) console.error("Error auto-saving game state:", error);
+        if (error) {
+          console.error("Error auto-saving game state:", error.message);
+          console.error("Supabase Error Details:", error.details || error.hint || error);
+        }
       } catch (e) {
         console.error("Exception auto-saving:", e);
       }

@@ -994,15 +994,25 @@ const MatchCard = ({ match, teams, sets, onStartSet, tournament, fields, referee
                                 return arr;
                             };
 
-                            const visRuns = getRunsFromCols('vis');
-                            const locRuns = getRunsFromCols('loc');
+                            let visRuns = getRunsFromCols('vis');
+                            let locRuns = getRunsFromCols('loc');
 
-                            let innings = { local: [] as string[], visitor: [] as string[] };
+                            let innings = { local: [] as string[], visitor: [] as string[] }; // Default initialization
+
+                            // Trim trailing zeros to avoid showing 10 empty columns by default
+                            const trimZeros = (arr: string[]) => {
+                                const res = [...arr];
+                                while (res.length > 5 && (res[res.length - 1] === '0' || res[res.length - 1] === '')) {
+                                    res.pop();
+                                }
+                                return res;
+                            };
 
                             if (visRuns.length > 0 || locRuns.length > 0) {
+                                visRuns = trimZeros(visRuns);
+                                locRuns = trimZeros(locRuns);
                                 innings = { local: locRuns, visitor: visRuns };
                             } else if (hasData) {
-                                // Fallback to state_json
                                 innings = (set.state_json.inningScores || { local: [], visitor: [] });
                             }
 
@@ -1063,7 +1073,7 @@ const MatchCard = ({ match, teams, sets, onStartSet, tournament, fields, referee
                                                         {Array.from({ length: maxInnings }).map((_, idx) => (
                                                             <td key={idx} className="p-1 text-white/40">{innings.visitor[idx] || '-'}</td>
                                                         ))}
-                                                        <td className="p-1 font-bold text-white border-l border-white/10 bg-white/5">{set.visitor_runs || 0}</td>
+                                                        <td className="p-1 font-bold text-white border-l border-white/10 bg-white/5">{set.away_score ?? set.visitor_runs ?? 0}</td>
                                                         <td className="p-1 text-white/60">{set.away_hits || 0}</td>
                                                         <td className="p-1 text-white/60">{set.away_errors || 0}</td>
                                                     </tr>
@@ -1073,7 +1083,7 @@ const MatchCard = ({ match, teams, sets, onStartSet, tournament, fields, referee
                                                         {Array.from({ length: maxInnings }).map((_, idx) => (
                                                             <td key={idx} className="p-1 text-white/40">{innings.local[idx] || '-'}</td>
                                                         ))}
-                                                        <td className="p-1 font-bold text-white border-l border-white/10 bg-white/5">{set.local_runs || 0}</td>
+                                                        <td className="p-1 font-bold text-white border-l border-white/10 bg-white/5">{set.home_score ?? set.local_runs ?? 0}</td>
                                                         <td className="p-1 text-white/60">{set.home_hits || 0}</td>
                                                         <td className="p-1 text-white/60">{set.home_errors || 0}</td>
                                                     </tr>
