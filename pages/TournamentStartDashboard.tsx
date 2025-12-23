@@ -152,17 +152,19 @@ export const TournamentStartDashboard: React.FC = () => {
             // Fetch Sets (NEW Normalized)
             if (finalMatches.length > 0) {
                 const matchIds = finalMatches.map(m => (m as any).match_id || m.id);
-                const { data: stRelData } = await supabase.from('tournament_sets').select('*').in('match_id', matchIds);
+                // Include state_json for fallback stats
+                const { data: stRelData } = await supabase.from('tournament_sets').select('*, state_json').in('match_id', matchIds);
 
                 if (stRelData && stRelData.length > 0) {
                     setSets(stRelData.map(s => ({
                         ...s,
                         visitor_runs: s.away_score,
-                        local_runs: s.home_score
+                        local_runs: s.home_score,
+                        state_json: s.state_json // ensure it's passed through
                     })));
                 } else {
                     // Fallback to LEGACY Sets
-                    const { data: stData } = await supabase.from('tournament_sets').select('*').in('match_id', matchIds);
+                    const { data: stData } = await supabase.from('tournament_sets').select('*, state_json').in('match_id', matchIds);
                     if (stData) setSets(stData);
                 }
             }
@@ -1073,19 +1075,40 @@ const MatchCard = ({ match, teams, sets, onStartSet, tournament, fields, referee
                                                         {Array.from({ length: maxInnings }).map((_, idx) => (
                                                             <td key={idx} className="p-1 text-white/40">{innings.visitor[idx] || '-'}</td>
                                                         ))}
-                                                        <td className="p-1 font-bold text-white border-l border-white/10 bg-white/5">{set.away_score ?? set.visitor_runs ?? 0}</td>
-                                                        <td className="p-1 text-white/60">{set.away_hits || 0}</td>
-                                                        <td className="p-1 text-white/60">{set.away_errors || 0}</td>
+                                                        <td className="p-1 font-bold text-white border-l border-white/10 bg-white/5">{set.away_score ?? set.visitor_runs ?? set.state_json?.totals?.visitor ?? 0}</td>
+                                                        <td className="p-1 text-white/60">
+                                                            {set.away_hits || (() => {
+                                                                // Fallback: Calculate from JSON if column is empty
+                                                                if (!set.state_json?.visitorTeam?.slots) return 0;
+                                                                let h = 0;
+                                                                set.state_json.visitorTeam.slots.forEach((s: any) => {
+                                                                    [s.starter, s.sub].forEach((p: any) => p?.scores?.flat().forEach((v: string) => { if (v?.includes('H')) h++; }));
+                                                                });
+                                                                return h;
+                                                            })()}
+                                                        </td>
+                                                        <td className="p-1 text-white/60">{set.away_errors || set.state_json?.errors?.visitor || 0}</td>
                                                     </tr>
                                                     {/* Local Row */}
                                                     <tr>
                                                         <td className="p-1 pl-3 text-left truncate max-w-[80px] font-sans font-bold text-white/60">{localTeam?.name}</td>
                                                         {Array.from({ length: maxInnings }).map((_, idx) => (
-                                                            <td key={idx} className="p-1 text-white/40">{innings.local[idx] || '-'}</td>
+                                                            <td key={idx} className="p-1 text-white/40">
+                                                                {innings.local[idx] || (set.state_json?.inningScores?.local?.[idx] || '-')}
+                                                            </td>
                                                         ))}
-                                                        <td className="p-1 font-bold text-white border-l border-white/10 bg-white/5">{set.home_score ?? set.local_runs ?? 0}</td>
-                                                        <td className="p-1 text-white/60">{set.home_hits || 0}</td>
-                                                        <td className="p-1 text-white/60">{set.home_errors || 0}</td>
+                                                        <td className="p-1 font-bold text-white border-l border-white/10 bg-white/5">{set.home_score ?? set.local_runs ?? set.state_json?.totals?.local ?? 0}</td>
+                                                        <td className="p-1 text-white/60">
+                                                            {set.home_hits || (() => {
+                                                                if (!set.state_json?.localTeam?.slots) return 0;
+                                                                let h = 0;
+                                                                set.state_json.localTeam.slots.forEach((s: any) => {
+                                                                    [s.starter, s.sub].forEach((p: any) => p?.scores?.flat().forEach((v: string) => { if (v?.includes('H')) h++; }));
+                                                                });
+                                                                return h;
+                                                            })()}
+                                                        </td>
+                                                        <td className="p-1 text-white/60">{set.home_errors || set.state_json?.errors?.local || 0}</td>
                                                     </tr>
                                                 </tbody>
                                             </table>

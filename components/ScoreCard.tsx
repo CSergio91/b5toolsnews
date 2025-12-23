@@ -4543,54 +4543,56 @@ export const ScoreCard: React.FC<{ matchId: string | null; setNumber: number | n
 
     const saveState = async () => {
       try {
-        // --- CALCULATION LOGIC (Source of Truth: The Grid) ---
-        // We reuse the rigorous counting logic to ensure DB stats match the UI exactly.
-        const calculateTeamStats = (team: TeamData) => {
+        // --- CALCULATION LOGIC (Sync with LiveGameStatus) ---
+        // We now align DB save logic with the real-time LiveGameStatus component.
+        const calculateTeamStats = (team: TeamData, manualInningScores: string[], manualErrors: string, adjustments: number) => {
           let hits = 0;
-          let errors = 0;
-          const inningRuns: number[] = [];
+          let gridRuns = 0;
 
-          // 1. Calculate Hits & Errors
+          // 1. Calculate Grid Stats (Hits & Grid Runs)
           team.slots.forEach(slot => {
             [slot.starter, slot.sub].forEach(p => {
               p.scores.flat().forEach(val => {
                 const v = val ? val.toUpperCase() : '';
                 if (v.includes('H')) hits++;
-                if (v.includes('E')) errors++;
+                if (v.includes('●')) gridRuns++;
+                // We IGNORE errors from grid for the total count, as per LiveGameStatus logic which trusts the manual error input
               });
             });
           });
 
-          // 2. Calculate Runs per Inning (Column-based)
-          let maxCols = 9;
-          team.slots.forEach(slot => {
-            [slot.starter, slot.sub].forEach(p => {
-              if (p.scores.length > maxCols) maxCols = p.scores.length;
-            });
-          });
+          // 2. Parse Manual Inputs
+          const manualRuns = manualInningScores.reduce((acc, curr) => acc + (parseInt(curr) || 0), 0);
 
-          for (let i = 0; i < maxCols; i++) {
-            let runsInInning = 0;
-            team.slots.forEach(slot => {
-              [slot.starter, slot.sub].forEach(p => {
-                const inningData = p.scores[i];
-                if (inningData) {
-                  inningData.forEach(code => {
-                    if (code && code.includes('●')) runsInInning++;
-                  });
-                }
-              });
-            });
-            inningRuns.push(runsInInning);
-          }
+          // 3. Final Totals (Max Logic + Adjustments)
+          const totalRuns = Math.max(manualRuns, gridRuns) + (adjustments || 0);
+          const totalErrors = parseInt(manualErrors) || 0;
 
-          const totalRuns = inningRuns.reduce((a, b) => a + b, 0);
-          console.log(`[Stats Calc] Team Stats: Hits=${hits}, Errors=${errors}, Runs=${totalRuns}`, inningRuns);
-          return { hits, errors, totalRuns, inningRuns };
+          // 4. Innings Array (Use Manual Input directly as source of truth for array)
+          const inningRuns = manualInningScores.map(val => parseInt(val) || 0);
+
+          // Pad with 0s if grid goes further? LiveGameStatus pads visualization but for DB we save what is typed + 0s for missing cols
+          // Actually, let's ensure we at least cover the grid columns if they have data? 
+          // For simplicity and consistency, "What you see in the top bar is what gets saved" is the safest bet for "Manual".
+          // But we need to ensure the array has enough length for the DB columns (up to 9/10).
+          // We will pad in the updateData construction.
+
+          console.log(`[Stats Sync] Runs=${totalRuns} (Grid=${gridRuns}, Man=${manualRuns}), Hits=${hits}, Errors=${totalErrors}`);
+          return { hits, errors: totalErrors, totalRuns, inningRuns };
         };
 
-        const localStats = calculateTeamStats(gameState.localTeam);
-        const visitorStats = calculateTeamStats(gameState.visitorTeam);
+        const localStats = calculateTeamStats(
+          gameState.localTeam,
+          gameState.inningScores.local,
+          gameState.errors.local,
+          gameState.scoreAdjustments.local
+        );
+        const visitorStats = calculateTeamStats(
+          gameState.visitorTeam,
+          gameState.inningScores.visitor,
+          gameState.errors.visitor,
+          gameState.scoreAdjustments.visitor
+        );
 
         // Update State Copy with calculated values 
         const updatedState = {
@@ -4646,15 +4648,48 @@ export const ScoreCard: React.FC<{ matchId: string | null; setNumber: number | n
           loc_ex10: localStats.inningRuns[9] ?? 0
         };
 
-        const { error } = await supabase
+        // Try Full Update first
+        const { error: fullError } = await supabase
           .from('tournament_sets')
           .update(updateData)
           .eq('match_id', mId)
           .eq('set_number', sNum);
 
-        if (error) {
-          console.error("Error auto-saving game state:", error.message);
-          console.error("Supabase Error Details:", error.details || error.hint || error);
+        if (fullError) {
+          console.warn("[SafeSave] Full stats sync failed (missing columns?), attempting minimal save...", fullError.message);
+
+          // Fallback: Save ONLY essential state and Total Score/Hits/Errors (which we know match the schema roughly)
+          // If individual inning columns like vis_inn1 fail, we drop them from the fallback to ensure save.
+          const minimalPayload = {
+            state_json: updatedState,
+            home_score: localStats.totalRuns,
+            away_score: visitorStats.totalRuns,
+            // Try to save hits/errors if they exist, but if they failed in full payload, they might be the cause?
+            // Usually it's the 20 inning columns that are missing.
+            // Let's retry with Hits/Errors but NO Innings columns.
+            home_hits: localStats.hits,
+            away_hits: visitorStats.hits,
+            home_errors: localStats.errors,
+            away_errors: visitorStats.errors
+          };
+
+          const { error: minError } = await supabase
+            .from('tournament_sets')
+            .update(minimalPayload)
+            .eq('match_id', mId)
+            .eq('set_number', sNum);
+
+          if (minError) {
+            console.error("[SafeSave] Critical: Even minimal save failed! Trying ONLY JSON/Score...", minError);
+            // Last Resort: JSON + Score only
+            await supabase.from('tournament_sets').update({
+              state_json: updatedState,
+              home_score: localStats.totalRuns,
+              away_score: visitorStats.totalRuns
+            }).eq('match_id', mId).eq('set_number', sNum);
+          } else {
+            console.log("[SafeSave] Minimal save succeeded (Inning columns likely missing)");
+          }
         }
       } catch (e) {
         console.error("Exception auto-saving:", e);
