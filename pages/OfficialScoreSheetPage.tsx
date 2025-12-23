@@ -40,6 +40,7 @@ interface ScoreCardState {
     scoreAdjustments: { visitor: 0, local: 0 };
     winner: { name: string; score: string; isVisitor: boolean } | null;
     history: any[];
+    inningLayout?: number[]; // Columns count per inning (default 1)
 }
 
 interface OfficialsData {
@@ -79,7 +80,8 @@ const initialState: ScoreCardState = {
     timeouts: { visitor: [false, false], local: [false, false] },
     scoreAdjustments: { visitor: 0, local: 0 },
     winner: null,
-    history: []
+    history: [],
+    inningLayout: Array(9).fill(1)
 };
 
 // --- Helper Components ---
@@ -305,7 +307,7 @@ const ScoringModal: React.FC<{
     const content = (
         <div
             ref={modalRef}
-            className={`bg-[#0f0f13] border border-white/10 p-4 rounded-3xl shadow-2xl flex flex-col gap-3 ring-1 ring-white/5 ${isMobile ? 'w-[90vw] max-w-sm' : 'w-[280px]'}`}
+            className={`bg-[#0f0f13] border border-white/10 p-4 rounded-3xl shadow-2xl flex flex-col gap-3 ring-1 ring-white/5 ${isMobile ? 'w-auto max-w-[95vw]' : 'w-[280px]'}`}
         >
             <div className="grid grid-cols-3 gap-2">
                 {mainActions.map((a) => (
@@ -367,6 +369,7 @@ export const OfficialScoreSheetPage: React.FC = () => {
     const [officials, setOfficials] = useState<OfficialsData>({ plate: '', field1: '', field2: '', field3: '', table: '' });
 
     // UI State
+    const [visibleInnings, setVisibleInnings] = useState(5);
     const [rosterModalOpen, setRosterModalOpen] = useState<{ isOpen: boolean, team: 'visitor' | 'local', slotIdx: number, type: 'starter' | 'sub' } | null>(null);
     const [scoringModal, setScoringModal] = useState<{ isOpen: boolean, pos: { x: number, y: number } | null, slotIdx: number, type: 'starter' | 'sub', inningIdx: number, scoreIdx: number, team: 'visitor' | 'local' } | null>(null);
     const [officialsOpen, setOfficialsOpen] = useState(false);
@@ -549,20 +552,125 @@ export const OfficialScoreSheetPage: React.FC = () => {
     const handleScoreUpdate = (val: string) => {
         if (!scoringModal || !gameState) return;
         const { team, slotIdx, type, inningIdx, scoreIdx } = scoringModal;
+        const teamKey = team === 'visitor' ? 'visitorTeam' : 'localTeam';
+
+        let valToUse = val;
+        let shouldScroll = false;
+
+        if (val === 'X') {
+            const currentTeamData = gameState[teamKey];
+            let outs = 0;
+            // Count outs in this inning
+            currentTeamData.slots.forEach(s =>
+                [s.starter, s.sub].forEach(p =>
+                    (p.scores[inningIdx] || []).forEach(v => { if (v?.includes('X')) outs++; })
+                )
+            );
+
+            const currentCellVal = currentTeamData.slots[slotIdx][type].scores[inningIdx]?.[scoreIdx] || '';
+            // If we are at 2 outs and adding a new one (not editing existing out)
+            if (outs === 2 && !currentCellVal.includes('X')) {
+                valToUse = val + '■';
+                shouldScroll = true;
+            }
+        }
+
         updateState(prev => {
-            const newTeam = team === 'visitor' ? { ...prev.visitorTeam } : { ...prev.localTeam };
-            const slot = newTeam.slots[slotIdx];
-            if (!slot[type].scores[inningIdx]) slot[type].scores[inningIdx] = [''];
-            slot[type].scores[inningIdx][scoreIdx] = val;
-            return { ...prev, [team === 'visitor' ? 'visitorTeam' : 'localTeam']: newTeam };
+            // Immutable update for slots
+            const newSlots = prev[teamKey].slots.map((slot, idx) => {
+                if (idx !== slotIdx) return slot;
+
+                const newPlayer = { ...slot[type] };
+                newPlayer.scores = [...newPlayer.scores];
+
+                if (!newPlayer.scores[inningIdx]) {
+                    newPlayer.scores[inningIdx] = [''];
+                } else {
+                    newPlayer.scores[inningIdx] = [...newPlayer.scores[inningIdx]];
+                }
+
+                return { ...slot, [type]: newPlayer };
+            });
+
+            const newTeam = { ...prev[teamKey], slots: newSlots };
+            const currentScores = newTeam.slots[slotIdx][type].scores[inningIdx];
+            const currentVal = currentScores[scoreIdx] || '';
+            let finalVal = valToUse;
+
+            if (valToUse === '') {
+                finalVal = '';
+            } else if (['●', '■', '⇄'].includes(valToUse)) {
+                // Toggle Modifier Logic
+                if (currentVal.includes(valToUse)) {
+                    finalVal = currentVal.replace(valToUse, '');
+                } else {
+                    finalVal = currentVal + valToUse;
+                }
+            } else {
+                // Composite Logic: Base + Modifiers
+                // Extract valid mods from input (handle composite input like "X■")
+                const inputBase = valToUse.replace(/[●■⇄]/g, '');
+                const inputMods = valToUse.split('').filter(c => ['●', '■', '⇄'].includes(c));
+
+                // Keep existing mods that aren't in input (to avoid dupes if input has them)
+                // Actually, usually we merge.
+                const existingMods = currentVal.split('').filter(c => ['●', '■', '⇄'].includes(c));
+                const allMods = Array.from(new Set([...existingMods, ...inputMods])).join('');
+
+                finalVal = inputBase + allMods;
+            }
+
+            currentScores[scoreIdx] = finalVal;
+            return { ...prev, [teamKey]: newTeam };
+        });
+
+        if (shouldScroll) {
+            setTimeout(() => {
+                const targetId = team === 'visitor' ? 'team-grid-local' : 'team-grid-visitor';
+                const el = document.getElementById(targetId);
+                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 300);
+        }
+    };
+
+    const addInningColumn = (ingIdx: number) => {
+        updateState(prev => {
+            const currentLayout = prev.inningLayout || Array(9).fill(1);
+            const newLayout = [...currentLayout];
+            if (newLayout[ingIdx] < 4) newLayout[ingIdx]++; // Limit to 4 cols
+            return { ...prev, inningLayout: newLayout };
         });
     };
+
+    // Calculate current outs for display
+    const currentOuts = useMemo(() => {
+        if (!gameState) return 0;
+        for (let i = 0; i < 9; i++) { // Check all 9 possible innings
+            const countOuts = (t: TeamData) => {
+                let o = 0;
+                t.slots.forEach(s => {
+                    [s.starter, s.sub].forEach(p => {
+                        // Check all columns in this inning (flatten)
+                        const inningScores = p.scores?.[i] || [];
+                        inningScores.forEach(sc => {
+                            if (sc?.includes('X') || sc?.includes('K')) o++;
+                        });
+                    });
+                });
+                return o;
+            };
+
+            if (countOuts(gameState.visitorTeam) < 3) return countOuts(gameState.visitorTeam);
+            if (countOuts(gameState.localTeam) < 3) return countOuts(gameState.localTeam);
+        }
+        return 0;
+    }, [gameState]);
 
     if (loading || !gameState) return <div className="min-h-screen bg-[#0a0a0f] text-white flex items-center justify-center"><Loader2 className="animate-spin" /></div>;
 
     // Grid Renderer - Updated to Double Row with proper styling
     const renderTeamGrid = (teamKey: 'visitor' | 'local', teamData: TeamData, roster: RosterItem[], color: string) => (
-        <div className="bg-[#1e1e24] rounded-xl overflow-hidden border border-white/5 mb-8">
+        <div id={`team-grid-${teamKey}`} className="bg-[#1e1e24] rounded-xl overflow-hidden border border-white/5 mb-8 scroll-mt-24">
             <div className={`p-3 ${color} text-black font-bold flex justify-between items-center`}>
                 <div className="flex items-center gap-4">
                     <span className="bg-black/20 px-3 py-1 rounded text-xs font-black uppercase tracking-widest">Alineación {gameState.gameInfo[teamKey === 'visitor' ? 'visitor' : 'home']}</span>
@@ -575,12 +683,36 @@ export const OfficialScoreSheetPage: React.FC = () => {
                     <thead>
                         <tr className="bg-[#2A2A35] text-[10px] text-white/50 uppercase font-black tracking-wider">
                             <th className="p-3 text-center w-10 border-r border-white/5">#</th>
+                            <th className="p-3 text-center w-10 border-r border-white/5">NO.</th>
                             <th className="p-3 text-left min-w-[200px] border-r border-white/5">Jugador</th>
                             <th className="p-3 w-10 border-r border-white/5">Sex</th>
                             <th className="p-3 w-12 border-r border-white/5">Pos</th>
-                            {Array.from({ length: 9 }).map((_, i) => (
-                                <th key={i} className="p-3 min-w-[50px] border-l border-white/5 text-center">{i + 1}</th>
-                            ))}
+                            {Array.from({ length: visibleInnings }).map((_, i) => {
+                                const colCount = (gameState.inningLayout || Array(9).fill(1))[i];
+                                return (
+                                    <th key={i} colSpan={colCount} className="p-1 min-w-[60px] border-l border-white/5 text-center align-bottom pb-2 relative group">
+                                        <div className="flex items-center justify-center gap-1">
+                                            <span>{i + 1}</span>
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); addInningColumn(i); }}
+                                                className="w-4 h-4 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-[10px] text-white/50 hover:text-white transition-colors"
+                                                title="Añadir columna"
+                                            >
+                                                +
+                                            </button>
+                                        </div>
+                                    </th>
+                                );
+                            })}
+                            <th className="p-2 border-l border-white/5 w-12 text-center">
+                                <button
+                                    onClick={() => setVisibleInnings(p => Math.min(p + 1, 9))}
+                                    className="w-8 h-8 flex items-center justify-center bg-blue-600 hover:bg-blue-500 text-white rounded-full shadow-[0_0_10px_rgba(37,99,235,0.5)] transition-all active:scale-95 hover:scale-110"
+                                    title="Añadir Inning"
+                                >
+                                    <Plus size={18} strokeWidth={3} />
+                                </button>
+                            </th>
                         </tr>
                     </thead>
                     <tbody>
@@ -590,6 +722,7 @@ export const OfficialScoreSheetPage: React.FC = () => {
                                 <React.Fragment key={idx}>
                                     <tr className="bg-[#1e1e24] border-b border-white/5 text-sm hover:bg-white/5 transition-colors">
                                         <td className="p-0 border-r border-white/5 font-black text-xl text-white/30">{idx + 1}</td>
+                                        <td className="p-0 border-r border-white/5 font-bold text-white/70">{slot.starter.number}</td>
 
                                         <td className="p-2 text-left cursor-pointer border-r border-white/5 relative group"
                                             onClick={() => setRosterModalOpen({ isOpen: true, team: teamKey, slotIdx: idx, type: 'starter' })}
@@ -607,21 +740,27 @@ export const OfficialScoreSheetPage: React.FC = () => {
                                         <td className="p-0 border-r border-white/5 text-xs text-white/40">-</td>
                                         <td className="p-0 border-r border-white/5 text-xs font-bold text-white/80">{slot.starter.pos || '-'}</td>
 
-                                        {Array.from({ length: 9 }).map((_, innIdx) => (
-                                            <td key={`st-${innIdx}`} className="p-0 border-l border-white/10 h-10 w-12 relative">
-                                                <ScoreCell
-                                                    value={slot.starter.scores[innIdx]?.[0] || ''}
-                                                    onOpenModal={(e) => setScoringModal({
-                                                        isOpen: true, pos: { x: e.clientX, y: e.clientY },
-                                                        team: teamKey, slotIdx: idx, type: 'starter', inningIdx: innIdx, scoreIdx: 0
-                                                    })}
-                                                />
-                                            </td>
-                                        ))}
+                                        {Array.from({ length: visibleInnings }).map((_, innIdx) => {
+                                            const cols = (gameState.inningLayout || Array(9).fill(1))[innIdx];
+                                            return Array.from({ length: cols }).map((_, colIdx) => (
+                                                <td key={`st-${innIdx}-${colIdx}`} className={`p-0 border-l ${colIdx === 0 ? 'border-white/10' : 'border-white/5'} h-10 w-12 relative`}>
+                                                    <ScoreCell
+                                                        value={slot.starter.scores[innIdx]?.[colIdx] || ''}
+                                                        onOpenModal={(e) => setScoringModal({
+                                                            isOpen: true, pos: { x: e.clientX, y: e.clientY },
+                                                            team: teamKey, slotIdx: idx, type: 'starter', inningIdx: innIdx, scoreIdx: colIdx
+                                                        })}
+                                                    />
+                                                </td>
+                                            ));
+                                        })}
+                                        {/* Filler for Button Column */}
+                                        <td className="border-l border-white/5 bg-[#1e1e24]"></td>
                                     </tr>
 
                                     <tr className="bg-[#18181b] border-b border-white/10 text-xs">
                                         <td className="p-1 border-r border-white/5 text-[9px] font-bold text-white/30 uppercase tracking-widest">SUB</td>
+                                        <td className="p-0 border-r border-white/5 font-bold text-white/50">{slot.sub.number}</td>
 
                                         <td className="p-2 text-left cursor-pointer border-r border-white/5 relative group"
                                             onClick={() => setRosterModalOpen({ isOpen: true, team: teamKey, slotIdx: idx, type: 'sub' })}
@@ -639,17 +778,22 @@ export const OfficialScoreSheetPage: React.FC = () => {
                                         <td className="p-0 border-r border-white/5 text-white/20">-</td>
                                         <td className="p-0 border-r border-white/5 text-white/40">{slot.sub.pos || '-'}</td>
 
-                                        {Array.from({ length: 9 }).map((_, innIdx) => (
-                                            <td key={`sub-${innIdx}`} className="p-0 border-l border-white/10 h-8 w-12 relative bg-black/20">
-                                                <ScoreCell
-                                                    value={slot.sub.scores[innIdx]?.[0] || ''}
-                                                    onOpenModal={(e) => setScoringModal({
-                                                        isOpen: true, pos: { x: e.clientX, y: e.clientY },
-                                                        team: teamKey, slotIdx: idx, type: 'sub', inningIdx: innIdx, scoreIdx: 0
-                                                    })}
-                                                />
-                                            </td>
-                                        ))}
+                                        {Array.from({ length: visibleInnings }).map((_, innIdx) => {
+                                            const cols = (gameState.inningLayout || Array(9).fill(1))[innIdx];
+                                            return Array.from({ length: cols }).map((_, colIdx) => (
+                                                <td key={`sub-${innIdx}-${colIdx}`} className={`p-0 border-l ${colIdx === 0 ? 'border-white/10' : 'border-white/5'} h-8 w-12 relative bg-black/20`}>
+                                                    <ScoreCell
+                                                        value={slot.sub.scores[innIdx]?.[colIdx] || ''}
+                                                        onOpenModal={(e) => setScoringModal({
+                                                            isOpen: true, pos: { x: e.clientX, y: e.clientY },
+                                                            team: teamKey, slotIdx: idx, type: 'sub', inningIdx: innIdx, scoreIdx: colIdx
+                                                        })}
+                                                    />
+                                                </td>
+                                            ));
+                                        })}
+                                        {/* Filler for Button Column */}
+                                        <td className="border-l border-white/5 bg-[#18181b]"></td>
                                     </tr>
                                 </React.Fragment>
                             );
@@ -710,8 +854,13 @@ export const OfficialScoreSheetPage: React.FC = () => {
 
                     {/* VS / Score */}
                     <div className="flex flex-col items-center gap-1">
-                        <div className="text-3xl font-black tracking-widest bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-600">
+                        <div className="text-6xl font-black tracking-widest bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-600 drop-shadow-[0_0_15px_rgba(236,72,153,0.5)]">
                             {gameState.totals.visitor} - {gameState.totals.local}
+                        </div>
+                        <div className="flex gap-2 mb-2">
+                            {[1, 2, 3].map(i => (
+                                <div key={i} className={`w-4 h-4 rounded-full border-2 border-red-500/50 ${i <= currentOuts ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]' : 'bg-transparent'}`} />
+                            ))}
                         </div>
                         <div className="flex gap-4 text-[10px] text-white/40 font-mono uppercase tracking-widest">
                             <span>H: {gameState.gameInfo.visitor} ERR: {gameState.errors.visitor}</span>

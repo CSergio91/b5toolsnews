@@ -402,7 +402,7 @@ export const TournamentStartDashboard: React.FC = () => {
                                         initial={{ opacity: 0, y: 10, scale: 0.95 }}
                                         animate={{ opacity: 1, y: 0, scale: 1 }}
                                         exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                                        className="absolute top-full right-0 mt-4 w-72 bg-[#1a1a2e] border border-white/10 rounded-2xl shadow-xl p-4 flex flex-col gap-3 backdrop-blur-xl"
+                                        className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90vw] max-w-sm md:absolute md:top-full md:right-0 md:left-auto md:translate-x-0 md:translate-y-0 md:mt-4 md:w-72 z-[100] bg-[#1a1a2e] border border-white/10 rounded-2xl shadow-xl p-4 flex flex-col gap-3 backdrop-blur-xl"
                                     >
                                         <div className="flex items-center justify-between">
                                             <h3 className="text-sm font-bold text-white">Configurar Página Pública</h3>
