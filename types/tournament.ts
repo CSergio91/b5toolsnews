@@ -24,6 +24,7 @@ export interface Tournament {
     tiebreaker_rules?: TieBreakerRule[];
     structure?: any;
     fields_config?: any;
+    activity_log?: any[];
 }
 
 export type TieBreakerType = 'direct_match' | 'run_diff' | 'runs_scored' | 'random';
@@ -125,6 +126,8 @@ export interface TournamentSet {
     local_errors?: number;
     data?: any; // detailed stats
     status?: string;
+    start_time?: string;
+    end_time?: string;
     // Extended Score Columns
     vis_inn1?: number; vis_inn2?: number; vis_inn3?: number; vis_inn4?: number; vis_inn5?: number;
     vis_ex6?: number; vis_ex7?: number; vis_ex8?: number; vis_ex9?: number; vis_ex10?: number;

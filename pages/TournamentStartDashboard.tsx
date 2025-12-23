@@ -1,9 +1,10 @@
+
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { UserNavbar } from '../components/UserNavbar';
 import { ParticlesBackground } from '../components/ParticlesBackground';
-import { ArrowLeft, Award, Calendar, ChevronDown, Info, MapPin, Play, RefreshCcw, Search, Trophy, Users, BookOpen, Clock, Notebook, Loader2, Layout, CheckCircle, Check, X, Download } from 'lucide-react';
+import { ArrowLeft, Award, Calendar, ChevronDown, Info, MapPin, Play, RefreshCcw, Search, Trophy, Users, BookOpen, Clock, Notebook, Loader2, Layout, CheckCircle, Check, X, Download, Flag } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Tournament, TournamentTeam, TournamentMatch, TournamentSet, TournamentStage } from '../types/tournament';
 import { ConfirmationModal } from '../components/ConfirmationModal';
@@ -188,7 +189,7 @@ export const TournamentStartDashboard: React.FC = () => {
     useEffect(() => {
         if (!id) return;
 
-        const channel = supabase.channel(`tournament_${id}`)
+        const channel = supabase.channel(`tournament_${id} `)
             .on('postgres_changes', {
                 event: '*',
                 schema: 'public',
@@ -399,13 +400,30 @@ export const TournamentStartDashboard: React.FC = () => {
 
                     <div className="flex items-center gap-2">
                         <button
+                            onClick={async () => {
+                                if (!confirm("¿ESTÁS SEGURO DE FINALIZAR EL TORNEO?\n\nEsto marcará el torneo como completado. Esta acción no se puede deshacer.")) return;
+                                try {
+                                    const { error } = await supabase.from('tournaments').update({ status: 'finished' }).eq('id', id);
+                                    if (error) throw error;
+                                    alert("Torneo finalizado con éxito.");
+                                    fetchTournamentData();
+                                } catch (e) {
+                                    console.error("Error ending tournament:", e);
+                                    alert("Error al finalizar el torneo.");
+                                }
+                            }}
+                            className="px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 rounded-xl text-sm font-bold transition-all flex items-center gap-2 mr-2"
+                        >
+                            <Flag size={16} /> Finalizar Torneo
+                        </button>
+                        <button
                             onClick={() => navigate('/dashboard/torneos')}
                             className="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-sm font-bold transition-all flex items-center gap-2"
                         >
                             <ArrowLeft size={16} /> Volver
                         </button>
                         <div className="relative z-50 flex flex-col items-center">
-                            <span className={`absolute -top-4 text-[10px] font-black uppercase tracking-widest transition-colors duration-300 ${isPublicLive ? 'text-green-400 drop-shadow-[0_0_8px_rgba(74,222,128,0.6)]' : 'text-white/10'}`}>
+                            <span className={`absolute - top - 4 text - [10px] font - black uppercase tracking - widest transition - colors duration - 300 ${isPublicLive ? 'text-green-400 drop-shadow-[0_0_8px_rgba(74,222,128,0.6)]' : 'text-white/10'} `}>
                                 LIVE
                             </span>
                             <B5BallToggle
@@ -456,7 +474,6 @@ export const TournamentStartDashboard: React.FC = () => {
                 {/* Main Tabs Navigation */}
                 <div className="flex items-center gap-1 bg-white/5 p-1 rounded-2xl w-fit mb-8 border border-white/5 backdrop-blur-md">
                     <TabButton active={activeTab === 'matches'} onClick={() => setActiveTab('matches')} icon={Calendar} label="Partidos" />
-                    <TabButton active={activeTab === 'standings'} onClick={() => setActiveTab('standings')} icon={Award} label="Clasificación" />
                     <TabButton active={activeTab === 'teams'} onClick={() => setActiveTab('teams')} icon={Users} label="Equipos" />
                 </div>
 
@@ -473,10 +490,10 @@ export const TournamentStartDashboard: React.FC = () => {
                                         <button
                                             key={stage.id}
                                             onClick={() => setActiveStageId(stage.id)}
-                                            className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all whitespace-nowrap border ${activeStageId === stage.id
+                                            className={`px - 5 py - 2.5 rounded - xl text - sm font - bold transition - all whitespace - nowrap border ${activeStageId === stage.id
                                                 ? 'bg-blue-600 border-blue-400 text-white shadow-lg shadow-blue-600/20 scale-105'
                                                 : 'bg-white/5 border-white/10 text-white/50 hover:bg-white/10 hover:text-white'
-                                                }`}
+                                                } `}
                                         >
                                             {stage.name}
                                         </button>
@@ -507,56 +524,6 @@ export const TournamentStartDashboard: React.FC = () => {
                                     )}
                                 </div>
                             </>
-                        )}
-
-                        {activeTab === 'standings' && (
-                            <div className="bg-white/5 border border-white/10 rounded-3xl overflow-hidden backdrop-blur-md">
-                                <div className="p-6 border-b border-white/5 flex items-center justify-between">
-                                    <h2 className="text-xl font-bold flex items-center gap-2">
-                                        <Award className="text-yellow-500" /> Tabla de Clasificación
-                                    </h2>
-                                    <span className="text-xs text-white/40 uppercase tracking-widest">{activeStage?.name || 'General'}</span>
-                                </div>
-                                <div className="overflow-x-auto">
-                                    <table className="w-full text-left">
-                                        <thead>
-                                            <tr className="bg-white/5 text-[10px] uppercase tracking-widest text-white/40">
-                                                <th className="px-6 py-4">P</th>
-                                                <th className="px-6 py-4">Equipo</th>
-                                                <th className="px-3 py-4 text-center">GP</th>
-                                                <th className="px-3 py-4 text-center">W</th>
-                                                <th className="px-3 py-4 text-center">L</th>
-                                                <th className="px-3 py-4 text-center">PTS</th>
-                                                <th className="px-6 py-4 text-right">RC / RP</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-white/5">
-                                            {calculateStandings().map((team, idx) => (
-                                                <tr key={team.id} className="hover:bg-white/5 transition-colors group">
-                                                    <td className="px-6 py-4 font-black text-white/20 text-lg">{idx + 1}</td>
-                                                    <td className="px-6 py-4">
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="w-10 h-10 rounded-full bg-black/40 flex items-center justify-center border-2 border-white/10 shadow-lg overflow-hidden group-hover:border-blue-500/30 transition-all">
-                                                                {team.logo_url ? <img src={team.logo_url} className="w-full h-full object-cover" /> : <Trophy size={16} className="text-white/20" />}
-                                                            </div>
-                                                            <span className="font-bold group-hover:text-blue-400 transition-colors">{team.name}</span>
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-3 py-4 text-center font-bold text-white/60">{team.gp || 0}</td>
-                                                    <td className="px-3 py-4 text-center font-bold text-green-400">{team.wins || 0}</td>
-                                                    <td className="px-3 py-4 text-center font-bold text-red-400">{team.losses || 0}</td>
-                                                    <td className="px-3 py-4 text-center">
-                                                        <span className="bg-blue-600/20 text-blue-400 px-2.5 py-1 rounded-lg font-bold border border-blue-600/30">{team.pts || 0}</span>
-                                                    </td>
-                                                    <td className="px-6 py-4 text-right">
-                                                        <span className="text-xs text-white/40">{team.runs_scored}/{team.runs_allowed}</span>
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
                         )}
 
                         {activeTab === 'teams' && (
@@ -642,9 +609,9 @@ export const TournamentStartDashboard: React.FC = () => {
                                                                 { l: 'E', v: team.stats_e_def },
                                                                 { l: 'AVG', v: (team.stats_h && team.stats_ab) ? (team.stats_h / team.stats_ab).toFixed(3) : '.000', w: 'w-14', c: 'text-yellow-400' }
                                                             ].map((s, idx) => (
-                                                                <div key={idx} className={`flex flex-col items-center bg-black/20 rounded px-1.5 py-0.5 border border-white/5 ${s.w || 'w-10'}`}>
+                                                                <div key={idx} className={`flex flex - col items - center bg - black / 20 rounded px - 1.5 py - 0.5 border border - white / 5 ${s.w || 'w-10'} `}>
                                                                     <span className="text-[8px] font-bold text-white/30 uppercase">{s.l}</span>
-                                                                    <span className={`text-[10px] font-mono font-bold ${s.c || 'text-white/80'}`}>{s.v || 0}</span>
+                                                                    <span className={`text - [10px] font - mono font - bold ${s.c || 'text-white/80'} `}>{s.v || 0}</span>
                                                                 </div>
                                                             ))}
                                                         </div>
@@ -653,7 +620,7 @@ export const TournamentStartDashboard: React.FC = () => {
 
                                                 <button
                                                     onClick={() => toggleTeamExpansion(team.id)}
-                                                    className={`p-2 rounded-lg bg-white/5 border border-white/10 transition-transform ${expandedTeams.includes(team.id) ? 'rotate-180' : ''}`}
+                                                    className={`p - 2 rounded - lg bg - white / 5 border border - white / 10 transition - transform ${expandedTeams.includes(team.id) ? 'rotate-180' : ''} `}
                                                 >
                                                     <ChevronDown size={20} />
                                                 </button>
@@ -697,9 +664,9 @@ export const TournamentStartDashboard: React.FC = () => {
                                                                             { l: 'E(O)', v: player.stats_e_of },
                                                                             { l: 'AVE', v: player.stats_ab ? (player.stats_h / player.stats_ab).toFixed(3) : '.000', c: 'text-yellow-400 col-span-1' }
                                                                         ].map((s, idx) => (
-                                                                            <div key={idx} className={`flex flex-col items-center bg-black/20 rounded py-0.5 ${s.c ? '' : ''}`}>
+                                                                            <div key={idx} className={`flex flex - col items - center bg - black / 20 rounded py - 0.5 ${s.c ? '' : ''} `}>
                                                                                 <span className="text-[7px] font-bold text-white/30 uppercase">{s.l}</span>
-                                                                                <span className={`text-[9px] font-mono font-bold ${s.c ? 'text-yellow-400' : 'text-white/80'}`}>{s.v || 0}</span>
+                                                                                <span className={`text - [9px] font - mono font - bold ${s.c ? 'text-yellow-400' : 'text-white/80'} `}>{s.v || 0}</span>
                                                                             </div>
                                                                         ))}
                                                                     </div>
@@ -844,11 +811,11 @@ export const TournamentStartDashboard: React.FC = () => {
                                     color="text-cyan-400"
                                 />
                                 <MiniStatCard icon={Users} label="Equipos" value={teams.length} color="text-purple-400" />
-                            </div>
-                        </div>
+                            </div >
+                        </div >
 
                         {/* Leaderboard Section (Replaces Recent Activity) */}
-                        <div className="bg-white/5 border border-white/10 rounded-3xl overflow-hidden backdrop-blur-md">
+                        < div className="bg-white/5 border border-white/10 rounded-3xl overflow-hidden backdrop-blur-md" >
                             <div className="p-6 border-b border-white/5 flex items-center justify-between">
                                 <h2 className="text-sm font-black uppercase tracking-[0.2em] text-white/40 flex items-center gap-2">
                                     <Award size={16} className="text-yellow-500" /> Tabla de Clasificación
@@ -904,10 +871,10 @@ export const TournamentStartDashboard: React.FC = () => {
                                     </div>
                                 )}
                             </div>
-                        </div>
-                    </div>
-                </div>
-            </main>
+                        </div >
+                    </div >
+                </div >
+            </main >
 
             <ConfirmationModal
                 isOpen={!!startMatchModal}
@@ -918,7 +885,7 @@ export const TournamentStartDashboard: React.FC = () => {
                 confirmText="Empezar Anotación"
                 variant="info"
             />
-        </div>
+        </div >
     );
 };
 

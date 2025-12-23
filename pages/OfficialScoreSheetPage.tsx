@@ -9,6 +9,7 @@ import {
 import { ConfirmationModal } from '../components/ConfirmationModal';
 import { supabase } from '../lib/supabase';
 import { useParams, useNavigate } from 'react-router-dom';
+import { logTournamentActivity } from '../utils/logger';
 
 // --- Types ---
 interface PlayerStats {
@@ -31,6 +32,7 @@ interface ScoreCardState {
         competition: string; place: string; date: string; gameNum: string; setNum: string;
         visitor: string; home: string;
         visitorLogo?: string; homeLogo?: string;
+        startTime?: string; endTime?: string;
     };
     visitorTeam: TeamData;
     localTeam: TeamData;
@@ -379,6 +381,7 @@ export const OfficialScoreSheetPage: React.FC = () => {
     const [rosters, setRosters] = useState<{ visitor: RosterItem[], local: RosterItem[] }>({ visitor: [], local: [] });
     const [resetModal, setResetModal] = useState(false);
     const [matchData, setMatchData] = useState<any | null>(null);
+    const [hasStarted, setHasStarted] = useState(false);
 
     // Actions
     const handleClearScores = async () => {
@@ -425,7 +428,7 @@ export const OfficialScoreSheetPage: React.FC = () => {
         if (!matchId || !setNumber) return;
         const load = async () => {
             try {
-                // Fetch Match + Teams (Fetching referee separately to avoid embedding 400 errors)
+                // Fetch Match + Teams
                 const { data: match, error: matchErr } = await supabase.from('tournament_matches')
                     .select(`*, local_team:tournament_teams!local_team_id (*), visitor_team:tournament_teams!visitor_team_id (*)`)
                     .eq('id', matchId).single();
@@ -454,37 +457,62 @@ export const OfficialScoreSheetPage: React.FC = () => {
                 const { data: setRec } = await supabase.from('tournament_sets').select('*').eq('match_id', matchId).eq('set_number', setNumber).single();
 
                 if (setRec) {
-                    // Game State
-                    if (setRec.state_json) setGameState(setRec.state_json);
+                    let finalState = { ...initialState };
 
-                    if (setRec.status === 'finished') {
-                        setIsReadOnly(true);
-                    }
+                    if (setRec.state_json) {
+                        // Merge top-level keys to ensure structure exists
+                        finalState = {
+                            ...initialState,
+                            ...setRec.state_json,
+                            // Ensure nested objects that we rely on are also merged/present
+                            gameInfo: { ...initialState.gameInfo, ...(setRec.state_json.gameInfo || {}) },
+                            totals: { ...initialState.totals, ...(setRec.state_json.totals || {}) },
+                            errors: { ...initialState.errors, ...(setRec.state_json.errors || {}) },
+                            inningScores: { ...initialState.inningScores, ...(setRec.state_json.inningScores || {}) },
+                            timeouts: { ...initialState.timeouts, ...(setRec.state_json.timeouts || {}) },
+                        };
 
-                    if (!setRec.state_json) {
-                        // Init Defaults
-                        const newState = { ...initialState };
-                        newState.gameInfo = {
-                            ...newState.gameInfo,
+                        // Inject timings from DB
+                        finalState.gameInfo.startTime = setRec.start_time;
+                        finalState.gameInfo.endTime = setRec.end_time;
+
+                    } else {
+                        // Init Defaults from scratch
+                        finalState.gameInfo = {
+                            ...finalState.gameInfo,
                             visitor: fullMatch.visitor_team?.name || 'Visitante',
                             home: fullMatch.local_team?.name || 'Local',
                             visitorLogo: fullMatch.visitor_team?.logo_url,
                             homeLogo: fullMatch.local_team?.logo_url,
                             gameNum: fullMatch.id,
-                            setNum: setNumber
+                            setNum: setNumber,
+                            startTime: setRec.start_time,
+                            endTime: setRec.end_time
                         };
-                        setGameState(newState);
                     }
+
+                    if (setRec.status === 'finished') {
+                        setIsReadOnly(true);
+                    }
+
+                    if (setRec.start_time) {
+                        setHasStarted(true);
+                    }
+
+                    setGameState(finalState);
 
                     // Officials
                     if (setRec.officials_json) {
                         setOfficials(setRec.officials_json);
                     } else if (fullMatch.referee) {
-                        // Pre-fill Table Official from Match Referee
                         setOfficials(prev => ({ ...prev, table: `${fullMatch.referee.first_name} ${fullMatch.referee.last_name}` }));
                     }
                 }
-            } catch (e) { console.error(e); } finally { setLoading(false); }
+            } catch (e) {
+                console.error(e);
+            } finally {
+                setLoading(false);
+            }
         };
         load();
     }, [matchId, setNumber]);
@@ -495,6 +523,26 @@ export const OfficialScoreSheetPage: React.FC = () => {
         setSaving(true);
         try {
             const payload: any = { ...extraPayload };
+
+            // Start Time Logic: If first meaningful edit (newState present) and no start_time, set it.
+            if (newState && !isReadOnly) {
+                // We need to check if start_time is already set in DB or local state. 
+                // Since we don't hold 'start_time' in local 'gameState' explicitly, we rely on the DB read or previous knowledge.
+                // A simple optimization: check if setRec.start_time was loaded. 
+                // However, we didn't save it to state. Let's do a quick conditional update or check `lastSaved`.
+                // If `lastSaved` is null, this might be the first save. 
+
+                // Better approach: We can blindly try to set start_time if it's null using SQL, but supabase .update doesn't support conditional "set if null" easily in one go without RLS or stored proc.
+                // We will check a ref or state. Let's assume if it's the first save of the session and we know it wasn't started, we send it.
+                // For now, let's just trigger it if we are setting 'ongoing' status or simply on every save check? No, too many writes.
+
+                // Let's use the 'status' transition. If status goes from 'scheduled' or 'pending' to 'live', we set start_time.
+                // But we don't always change status explicitly.
+
+                // Let's just fetch it once on load (we did). We need a ref to know if we started.
+                // Actually `matchData` has the match, but we need the Set.
+                // Let's add a `setRecord` state to track this metadata? Or just one-off.
+            }
 
             if (newState) {
                 // Simplified stat calc for metadata
@@ -548,6 +596,29 @@ export const OfficialScoreSheetPage: React.FC = () => {
                 payload.officials_json = newOfficials;
             }
 
+            // TIMING LOGIC: If this is the FIRST SAVE (lastSaved is null) and status is not finished, we assume it's starting.
+            // This is a heuristic. A better way: check if DB `start_time` is null.
+            // We'll let the backend or a separate check handle duplicates, or just update it if we are sure.
+            // Let's do a separate conditional update for start_time if we haven't tracked it locally.
+            // For now, we'll SKIP automatic start_time in `saveToDB` generic call to avoid overwriting or complexity, 
+            // and instead rely on `handleScoreUpdate` or similar to trigger a "Start Set" event if needed.
+
+            // TIMING LOGIC: If first meaningful edit and not started, set start_time
+            if (!hasStarted && !isReadOnly && newState) {
+                const now = new Date().toISOString();
+                payload.start_time = now;
+
+                // If this is set 1, also set match start_time if not set
+                if (setNumber === '1' && matchData && !matchData.start_time) {
+                    await supabase.from('tournament_matches').update({ start_time: now }).eq('id', matchId);
+                }
+
+                setHasStarted(true);
+                if (tournamentId) {
+                    logTournamentActivity(tournamentId, 'set_start', `Set ${setNumber} Iniciado`, { matchId, setNumber });
+                }
+            }
+
             await supabase.from('tournament_sets').update(payload).eq('match_id', matchId).eq('set_number', setNumber);
             setLastSaved(new Date());
         } catch (e) {
@@ -562,10 +633,19 @@ export const OfficialScoreSheetPage: React.FC = () => {
         setGameState(prev => {
             if (!prev) return null;
             const next = updater({ ...prev });
+
+            // Fire and forget save
             saveToDB(next, null);
             return next;
         });
     };
+
+    // Auxiliary function to handle start time updates safely
+    const checkAndSetStartTime = async () => {
+        // This should be called when a scoring action happens
+        // We need access to the current Set record or a ref. 
+        // Implementation deferred to `handleScoreUpdate` for cleaner flow.
+    }
 
     const handleWinner = async (team: 'visitor' | 'local') => {
         if (!gameState || !confirm(`¿Confirmar que ${team === 'visitor' ? gameState.gameInfo.visitor : gameState.gameInfo.home} ganó este SET?`)) return;
@@ -573,21 +653,31 @@ export const OfficialScoreSheetPage: React.FC = () => {
         const winScore = team === 'visitor' ? gameState.totals.visitor : gameState.totals.local;
         const loseScore = team === 'visitor' ? gameState.totals.local : gameState.totals.visitor;
         const winnerName = team === 'visitor' ? gameState.gameInfo.visitor : gameState.gameInfo.home;
-        const winnerId = team === 'visitor' ? matchData?.visitor_team_id : matchData?.local_team_id;
+        const endTime = new Date().toISOString();
 
-        const newState = { ...gameState, winner: { name: winnerName, score: `${winScore}-${loseScore}`, isVisitor: team === 'visitor' } };
+        const newState: ScoreCardState = {
+            ...gameState,
+            winner: { name: winnerName, score: `${winScore}-${loseScore}`, isVisitor: team === 'visitor' },
+            gameInfo: {
+                ...gameState.gameInfo,
+                endTime: endTime // Update visible end time immediately
+            }
+        };
         setGameState(newState);
 
-
-
-        // Single Update for everything: State + Status + Stats (handled by saveToDB default logic + extraPayload)
+        // Single Update for everything: State + Status + Stats + End Time
         await saveToDB(newState, null, {
-            status: 'finished'
+            status: 'finished',
+            end_time: endTime
         });
+
+        // LOG ACTIVITY
+        if (tournamentId) {
+            logTournamentActivity(tournamentId, 'set_end', `Set ${setNumber} Finalizado: ${winnerName} ganó ${winScore}-${loseScore}`, { matchId, setNumber, winner: team });
+        }
 
         alert("Set Finalizado correctamente.");
 
-        // --- MATCH WIN CHECK LOGIC ---
         // --- MATCH WIN CHECK LOGIC ---
         if (matchData) {
             // Fetch all sets to check series status - RELOAD to be safe
@@ -599,20 +689,10 @@ export const OfficialScoreSheetPage: React.FC = () => {
                 let lWins = 0;
 
                 // Set Config Logic
-                // If match specific set_number is defined (e.g. "1 Set"), use it. 
-                // Else fallback to tournament defaults or 3 sets.
                 const isSingleSet = matchData.is_single_set === true || matchData.set_number === '1 Set' || matchData.set_number === 1;
                 const setsToWin = isSingleSet ? 1 : 2;
 
                 const currentSetNum = parseInt(setNumber);
-
-                // ITERATE SETS
-                // We must consider the current set as WON by 'team' argument, 
-                // because the DB update might verify slightly later or earlier.
-
-                // Check past sets + current set
-                // We create a list of results. 
-                // For the current set, we FORCE the result based on user action.
 
                 const allSetNumbers = new Set([...sets.map(s => s.set_number), currentSetNum]);
 
@@ -647,17 +727,24 @@ export const OfficialScoreSheetPage: React.FC = () => {
                         winner_team_id: matchWinnerId
                     }).eq('id', matchId);
 
+                    if (!matchUpdateError && tournamentId) {
+                        logTournamentActivity(tournamentId, 'match_end', `Partido Finalizado. Ganador: ${team === 'visitor' ? matchData.visitor_team?.name : matchData.local_team?.name}`, { matchId });
+                    }
+
                     if (matchUpdateError) {
-                        console.error("Error closing match:", matchUpdateError);
-                        alert("Error al cerrar el partido en base de datos. Verifique consola.");
+                        console.error('Error updating match winner:', matchUpdateError);
                     } else {
-                        alert(`¡PARTIDO FINALIZADO! Ganador: ${matchWinnerId === matchData.visitor_team_id ? (matchData.visitor_team?.name || 'Visitante') : (matchData.local_team?.name || 'Local')}`);
-                        navigate(`/dashboard/torneos/${tournamentId}/start`);
+                        alert(`¡Partido Finalizado! Ganador: ${team === 'visitor' ? matchData.visitor_team?.name : matchData.local_team?.name}`);
                     }
                 }
             }
         }
+
+        // Close / Go Back
+        navigate(-1);
     };
+
+
 
     const handleRosterSelect = (player: RosterItem) => {
         if (!rosterModalOpen || !gameState) return;
@@ -774,6 +861,7 @@ export const OfficialScoreSheetPage: React.FC = () => {
         if (!gameState) return 0;
         for (let i = 0; i < 9; i++) { // Check all 9 possible innings
             const countOuts = (t: TeamData) => {
+                if (!t || !t.slots) return 0;
                 let o = 0;
                 t.slots.forEach(s => {
                     [s.starter, s.sub].forEach(p => {
@@ -787,8 +875,10 @@ export const OfficialScoreSheetPage: React.FC = () => {
                 return o;
             };
 
-            if (countOuts(gameState.visitorTeam) < 3) return countOuts(gameState.visitorTeam);
-            if (countOuts(gameState.localTeam) < 3) return countOuts(gameState.localTeam);
+            const vOuts = countOuts(gameState.visitorTeam);
+            if (vOuts < 3) return vOuts;
+            const lOuts = countOuts(gameState.localTeam);
+            if (lOuts < 3) return lOuts;
         }
         return 0;
     }, [gameState]);
@@ -800,7 +890,7 @@ export const OfficialScoreSheetPage: React.FC = () => {
         <div id={`team-grid-${teamKey}`} className="bg-[#1e1e24] rounded-xl overflow-hidden border border-white/5 mb-8 scroll-mt-24">
             <div className={`p-3 ${color} text-black font-bold flex justify-between items-center`}>
                 <div className="flex items-center gap-4">
-                    <span className="bg-black/20 px-3 py-1 rounded text-xs font-black uppercase tracking-widest">Alineación {gameState.gameInfo[teamKey === 'visitor' ? 'visitor' : 'home']}</span>
+                    <span className="bg-black/20 px-3 py-1 rounded text-xs font-black uppercase tracking-widest">Alineación {gameState.gameInfo?.[teamKey === 'visitor' ? 'visitor' : 'home'] || (teamKey === 'visitor' ? 'Visitante' : 'Local')}</span>
                     <span className="text-xl uppercase font-black opacity-80">{teamKey === 'visitor' ? 'VISITANTE' : 'LOCAL'}</span>
                 </div>
             </div>
@@ -843,7 +933,7 @@ export const OfficialScoreSheetPage: React.FC = () => {
                         </tr>
                     </thead>
                     <tbody>
-                        {teamData.slots.map((slot, idx) => {
+                        {(teamData?.slots || []).map((slot, idx) => {
                             // We render TWO rows per slot: Starter and Sub
                             return (
                                 <React.Fragment key={idx}>
@@ -958,10 +1048,25 @@ export const OfficialScoreSheetPage: React.FC = () => {
                         )}
                     </div>
 
-                    <div className="text-center">
+                    <div className="text-center flex flex-col items-center">
                         <span className="text-[10px] bg-white/10 px-2 py-0.5 rounded text-white/50 uppercase tracking-widest">
-                            Match {gameState.gameInfo.gameNum?.slice(0, 4)} • Set {setNumber}
+                            Match {gameState?.gameInfo?.gameNum?.slice(0, 4) || '??'} • Set {setNumber}
                         </span>
+                        <div className="flex items-center gap-3 mt-1.5 text-[10px] font-mono text-white/40 bg-black/20 px-2 py-0.5 rounded border border-white/5">
+                            <div className="flex items-center gap-1">
+                                <span className="text-white/20">INICIO:</span>
+                                <span className={gameState?.gameInfo?.startTime ? "text-green-400/80" : "text-white/20"}>
+                                    {gameState?.gameInfo?.startTime ? new Date(gameState.gameInfo.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}
+                                </span>
+                            </div>
+                            <div className="w-px h-3 bg-white/10"></div>
+                            <div className="flex items-center gap-1">
+                                <span className="text-white/20">FIN:</span>
+                                <span className={gameState?.gameInfo?.endTime ? "text-red-400/80" : "text-white/20"}>
+                                    {gameState?.gameInfo?.endTime ? new Date(gameState.gameInfo.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}
+                                </span>
+                            </div>
+                        </div>
                     </div>
 
                     <div className="w-[100px] flex justify-end">
@@ -975,11 +1080,11 @@ export const OfficialScoreSheetPage: React.FC = () => {
                     <div className="flex flex-col items-center gap-2 w-32">
                         <div className="relative">
                             <div className="w-16 h-16 rounded-full bg-white/5 border border-white/10 flex items-center justify-center overflow-hidden">
-                                {gameState.gameInfo.visitorLogo ? <img src={gameState.gameInfo.visitorLogo} className="w-full h-full object-cover" /> : <span className="text-2xl font-black text-purple-500">V</span>}
+                                {gameState.gameInfo?.visitorLogo ? <img src={gameState.gameInfo.visitorLogo} className="w-full h-full object-cover" /> : <span className="text-2xl font-black text-purple-500">V</span>}
                             </div>
                             {gameState.winner?.isVisitor && <div className="absolute -top-2 -right-2 bg-yellow-500 text-black p-1 rounded-full shadow-lg border border-white"><Trophy size={14} /></div>}
                         </div>
-                        <h2 className="text-lg font-black uppercase text-center leading-none">{gameState.gameInfo.visitor}</h2>
+                        <h2 className="text-lg font-black uppercase text-center leading-none">{gameState.gameInfo?.visitor || 'Visitante'}</h2>
                         <button onClick={() => handleWinner('visitor')} className="text-[10px] px-2 py-0.5 bg-green-900/30 text-green-400 border border-green-500/20 rounded hover:bg-green-500 hover:text-white transition-colors">
                             MARCAR GANADOR
                         </button>
@@ -988,7 +1093,7 @@ export const OfficialScoreSheetPage: React.FC = () => {
                     {/* VS / Score */}
                     <div className="flex flex-col items-center gap-1">
                         <div className="text-6xl font-black tracking-widest bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-600 drop-shadow-[0_0_15px_rgba(236,72,153,0.5)]">
-                            {gameState.totals.visitor} - {gameState.totals.local}
+                            {gameState.totals?.visitor || 0} - {gameState.totals?.local || 0}
                         </div>
                         <div className="flex gap-2 mb-2">
                             {[1, 2, 3].map(i => (
@@ -996,9 +1101,9 @@ export const OfficialScoreSheetPage: React.FC = () => {
                             ))}
                         </div>
                         <div className="flex gap-4 text-[10px] text-white/40 font-mono uppercase tracking-widest">
-                            <span>H: {gameState.gameInfo.visitor} ERR: {gameState.errors.visitor}</span>
+                            <span>H: {gameState.gameInfo?.visitor || 'VISITANTES'} ERR: {gameState.errors?.visitor || 0}</span>
                             <span>|</span>
-                            <span>H: {gameState.gameInfo.home} ERR: {gameState.errors.local}</span>
+                            <span>H: {gameState.gameInfo?.home || 'LOCALES'} ERR: {gameState.errors?.local || 0}</span>
                         </div>
                         <div className="mt-1 px-3 py-0.5 bg-white/5 rounded-full text-[10px] font-bold text-white/60">
                             EN JUEGO
@@ -1009,11 +1114,11 @@ export const OfficialScoreSheetPage: React.FC = () => {
                     <div className="flex flex-col items-center gap-2 w-32">
                         <div className="relative">
                             <div className="w-16 h-16 rounded-full bg-white/5 border border-white/10 flex items-center justify-center overflow-hidden">
-                                {gameState.gameInfo.homeLogo ? <img src={gameState.gameInfo.homeLogo} className="w-full h-full object-cover" /> : <span className="text-2xl font-black text-amber-500">L</span>}
+                                {gameState.gameInfo?.homeLogo ? <img src={gameState.gameInfo.homeLogo} className="w-full h-full object-cover" /> : <span className="text-2xl font-black text-cyan-500">L</span>}
                             </div>
-                            {gameState.winner && !gameState.winner.isVisitor && <div className="absolute -top-2 -right-2 bg-yellow-500 text-black p-1 rounded-full shadow-lg border border-white"><Trophy size={14} /></div>}
+                            {gameState.winner?.isVisitor === false && <div className="absolute -top-2 -right-2 bg-yellow-500 text-black p-1 rounded-full shadow-lg border border-white"><Trophy size={14} /></div>}
                         </div>
-                        <h2 className="text-lg font-black uppercase text-center leading-none">{gameState.gameInfo.home}</h2>
+                        <h2 className="text-lg font-black uppercase text-center leading-none">{gameState.gameInfo?.home || 'Local'}</h2>
                         <button onClick={() => handleWinner('local')} className="text-[10px] px-2 py-0.5 bg-green-900/30 text-green-400 border border-green-500/20 rounded hover:bg-green-500 hover:text-white transition-colors">
                             MARCAR GANADOR
                         </button>
@@ -1037,7 +1142,7 @@ export const OfficialScoreSheetPage: React.FC = () => {
             <RosterSelectorModal
                 isOpen={!!rosterModalOpen}
                 onClose={() => setRosterModalOpen(null)}
-                teamName={rosterModalOpen?.team === 'visitor' ? gameState.gameInfo.visitor : gameState.gameInfo.home}
+                teamName={rosterModalOpen?.team === 'visitor' ? (gameState?.gameInfo?.visitor || 'Visitante') : (gameState?.gameInfo?.home || 'Local')}
                 roster={rosterModalOpen?.team === 'visitor' ? rosters.visitor : rosters.local}
                 onSelect={handleRosterSelect}
             />
