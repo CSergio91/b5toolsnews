@@ -19,6 +19,8 @@ export const TournamentStartDashboard: React.FC = () => {
     const [matches, setMatches] = useState<TournamentMatch[]>([]);
     const [sets, setSets] = useState<TournamentSet[]>([]);
     const [rosters, setRosters] = useState<any[]>([]);
+    const [fields, setFields] = useState<any[]>([]);
+    const [referees, setReferees] = useState<any[]>([]);
 
     // UI State
     const [activeTab, setActiveTab] = useState<'matches' | 'standings' | 'teams'>('matches');
@@ -69,6 +71,24 @@ export const TournamentStartDashboard: React.FC = () => {
                 }));
             }
             setTeams(finalTeams);
+
+            // Fetch Fields
+            const { data: fData } = await supabase.from('tournament_fields').select('*').eq('tournament_id', id);
+            setFields(fData || []);
+
+            // Fetch Referees
+            const { data: rData } = await supabase.from('tournament_referees').select('*').eq('tournament_id', id);
+            if (rData && rData.length > 0) {
+                const refIds = rData.map(r => r.referee_id);
+                const { data: profiles } = await supabase.from('referee_profiles').select('*').in('id', refIds);
+                const mergedRefs = rData.map(r => {
+                    const profile = profiles?.find(p => p.id === r.referee_id);
+                    return { ...r, ...profile };
+                });
+                setReferees(mergedRefs);
+            } else {
+                setReferees([]);
+            }
 
             // Fetch Matches (NEW Normalized)
             const { data: mRelData } = await supabase.from('tournament_matches').select('*').eq('tournament_id', id);
@@ -384,6 +404,8 @@ export const TournamentStartDashboard: React.FC = () => {
                                                 sets={sets.filter(s => s.match_id === match.id)}
                                                 onStartSet={handleStartSet}
                                                 tournament={tournament}
+                                                fields={fields}
+                                                referees={referees}
                                             />
                                         ))
                                     ) : (
@@ -662,9 +684,17 @@ const SmallTeamInfo = ({ team, align = 'left' }: any) => (
     </div>
 );
 
-const MatchCard = ({ match, teams, sets, onStartSet, tournament }: any) => {
+const MatchCard = ({ match, teams, sets, onStartSet, tournament, fields, referees }: any) => {
     const localTeam = teams.find((t: any) => t.id === match.local_team_id);
     const visitorTeam = teams.find((t: any) => t.id === match.visitor_team_id);
+
+    // Resolve Field Name
+    const fieldObj = fields?.find((f: any) => f.id === match.field);
+    const fieldName = fieldObj ? fieldObj.name : (match.field || 'Cancha');
+
+    // Resolve Scorer (Referee)
+    const scorer = referees?.find((r: any) => r.id === match.referee_id || r.referee_id === match.referee_id);
+    const scorerName = scorer ? `${scorer.first_name} ${scorer.last_name}` : 'Oficial de Mesa';
 
     // Calculate Set Wins for specific score "Local X - Y Visitor"
     let localSetWins = 0;
@@ -683,112 +713,129 @@ const MatchCard = ({ match, teams, sets, onStartSet, tournament }: any) => {
     const matchIdent = match.global_id || match.globalId || match.name || '???';
 
     return (
-        <div className="bg-white/5 border border-white/10 rounded-3xl overflow-hidden hover:border-blue-500/30 transition-all backdrop-blur-sm group">
-            {/* Header info */}
-            <div className="px-5 py-3 border-b border-white/5 flex items-center justify-between bg-white/5">
-                <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-1.5 text-blue-400">
-                        <Clock size={12} />
-                        <span className="text-[10px] font-black tracking-widest">{match.start_time?.substring(0, 5) || 'HH:MM'}</span>
+        <div className="bg-white/5 border border-white/10 rounded-3xl overflow-hidden hover:border-blue-500/30 transition-all backdrop-blur-sm group flex flex-col justify-between h-full">
+            <div>
+                {/* Header info */}
+                <div className="px-5 py-3 border-b border-white/5 flex items-center justify-between bg-white/5">
+                    <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-1.5 text-blue-400">
+                            <Clock size={12} />
+                            <span className="text-[10px] font-black tracking-widest">{match.start_time?.substring(11, 16) || match.start_time?.substring(0, 5) || 'HH:MM'}</span>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-1.5 text-white/30 truncate max-w-[150px]">
+                            <MapPin size={12} />
+                            <span className="text-[10px] font-bold uppercase tracking-wider truncate">{fieldName}</span>
+                        </div>
+                        {/* Sets Config Display */}
+                        <div className="flex items-center gap-1.5 text-orange-400/80">
+                            <Notebook size={12} />
+                            <span className="text-[10px] font-bold uppercase tracking-wider">{match.set_number || (isSingleSet ? '1 Set' : '3 Sets')}</span>
+                        </div>
                     </div>
                 </div>
-                <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-1.5 text-white/30 truncate max-w-[150px]">
-                        <MapPin size={12} />
-                        <span className="text-[10px] font-bold uppercase tracking-wider truncate">{match.field || 'Cancha'}</span>
+
+                {/* Teams display */}
+                <div className="p-6">
+                    <div className="flex items-center justify-between gap-2 overflow-hidden">
+                        {/* Local */}
+                        <div className="flex flex-col items-center gap-2 flex-1 text-center">
+                            <div className="w-16 h-16 rounded-2xl bg-black/40 border border-white/5 flex items-center justify-center shadow-inner group-hover:scale-110 transition-transform">
+                                {localTeam?.logo_url ? <img src={localTeam.logo_url} className="w-10 h-10 object-contain" /> : <Trophy size={32} className="text-white/10" />}
+                            </div>
+                            <p className="text-sm font-black truncate w-full">{localTeam?.name || 'Por asignar'}</p>
+                        </div>
+
+                        {/* VS / Score */}
+                        <div className="flex flex-col items-center gap-1 min-w-[80px]">
+                            {match.status === 'scheduled' ? (
+                                <>
+                                    <span className="text-[10px] font-black italic text-white/10 uppercase tracking-[0.3em]">VS</span>
+                                    <div className="px-3 py-1 bg-white/5 rounded-full border border-white/5 text-[10px] font-black text-white/40">
+                                        #{matchIdent}
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <div className="text-2xl font-black text-white tracking-widest">
+                                        {localSetWins} - {visitorSetWins}
+                                    </div>
+                                    <div className="px-2 py-0.5 bg-white/5 rounded text-[8px] font-bold text-white/30 uppercase">
+                                        SETS
+                                    </div>
+                                    <div className="text-[10px] font-bold text-white/20">#{matchIdent}</div>
+                                </>
+                            )}
+                        </div>
+
+                        {/* Visitor */}
+                        <div className="flex flex-col items-center gap-2 flex-1 text-center">
+                            <div className="w-16 h-16 rounded-2xl bg-black/40 border border-white/5 flex items-center justify-center shadow-inner group-hover:scale-110 transition-transform">
+                                {visitorTeam?.logo_url ? <img src={visitorTeam.logo_url} className="w-10 h-10 object-contain" /> : <Trophy size={32} className="text-white/10" />}
+                            </div>
+                            <p className="text-sm font-black truncate w-full">{visitorTeam?.name || 'Por asignar'}</p>
+                        </div>
                     </div>
-                    {/* Sets Config Display */}
-                    <div className="flex items-center gap-1.5 text-orange-400/80">
-                        <Notebook size={12} />
-                        <span className="text-[10px] font-bold uppercase tracking-wider">{match.set_number || (isSingleSet ? '1 Set' : '3 Sets')}</span>
+
+                    {/* Sets Section */}
+                    <div className="mt-8 space-y-2">
+                        {/* Render 1 or 3 sets based on config */}
+                        {Array.from({ length: isSingleSet ? 1 : 3 }).map((_, i) => {
+                            const num = i + 1;
+                            const set = sets.find((s: any) => s.set_number === num);
+                            const isFinished = set?.status === 'finished';
+                            const isLive = set?.status === 'live';
+
+                            return (
+                                <div key={num} className="bg-black/40 border border-white/5 rounded-2xl p-3 flex items-center justify-between group/set hover:bg-black/60 transition-colors">
+                                    <div className="flex items-center gap-3">
+                                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs ${isFinished ? 'bg-green-500/20 text-green-400' : isLive ? 'bg-orange-500/20 text-orange-400' : 'bg-white/5 text-white/30'
+                                            }`}>
+                                            S{num}
+                                        </div>
+                                        {isFinished ? (
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-sm font-black">{set.local_runs} - {set.visitor_runs}</span>
+                                                <span className="text-[8px] font-bold uppercase py-0.5 px-1 bg-green-500/10 text-green-400 rounded">Final</span>
+                                            </div>
+                                        ) : (
+                                            <span className="text-[10px] font-bold text-white/40 uppercase tracking-widest">{isLive ? 'En Juego' : 'Pendiente'}</span>
+                                        )}
+                                    </div>
+
+                                    {!isFinished && (
+                                        <button
+                                            onClick={() => {
+                                                // Construct Full URL for ScoreSheet
+                                                const params = new URLSearchParams();
+                                                params.append('matchId', match.id);
+                                                params.append('setNumber', num.toString());
+                                                params.append('gameNumber', matchIdent.toString());
+                                                params.append('local', localTeam?.name || 'Local');
+                                                params.append('visitor', visitorTeam?.name || 'Visitante');
+                                                params.append('startTime', match.start_time || '');
+                                                params.append('scorerName', scorerName);
+
+                                                window.open(`/dashboard/game?${params.toString()}`, '_blank');
+                                            }}
+                                            className="p-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl shadow-lg shadow-blue-600/10 active:scale-95 transition-all group-hover/set:rotate-[15deg]"
+                                            title="Llevar Agenda (Nueva Ventana)"
+                                        >
+                                            <BookOpen size={16} />
+                                        </button>
+                                    )}
+                                </div>
+                            );
+                        })}
                     </div>
                 </div>
             </div>
 
-            {/* Teams display */}
-            <div className="p-6">
-                <div className="flex items-center justify-between gap-2 overflow-hidden">
-                    {/* Local */}
-                    <div className="flex flex-col items-center gap-2 flex-1 text-center">
-                        <div className="w-16 h-16 rounded-2xl bg-black/40 border border-white/5 flex items-center justify-center shadow-inner group-hover:scale-110 transition-transform">
-                            {localTeam?.logo_url ? <img src={localTeam.logo_url} className="w-10 h-10 object-contain" /> : <Trophy size={32} className="text-white/10" />}
-                        </div>
-                        <p className="text-sm font-black truncate w-full">{localTeam?.name || 'Por asignar'}</p>
-                    </div>
-
-                    {/* VS / Score */}
-                    <div className="flex flex-col items-center gap-1 min-w-[80px]">
-                        {match.status === 'scheduled' ? (
-                            <>
-                                <span className="text-[10px] font-black italic text-white/10 uppercase tracking-[0.3em]">VS</span>
-                                <div className="px-3 py-1 bg-white/5 rounded-full border border-white/5 text-[10px] font-black text-white/40">
-                                    #{matchIdent}
-                                </div>
-                            </>
-                        ) : (
-                            <>
-                                <div className="text-2xl font-black text-white tracking-widest">
-                                    {localSetWins} - {visitorSetWins}
-                                </div>
-                                <div className="px-2 py-0.5 bg-white/5 rounded text-[8px] font-bold text-white/30 uppercase">
-                                    SETS
-                                </div>
-                                <div className="text-[10px] font-bold text-white/20">#{matchIdent}</div>
-                            </>
-                        )}
-                    </div>
-
-                    {/* Visitor */}
-                    <div className="flex flex-col items-center gap-2 flex-1 text-center">
-                        <div className="w-16 h-16 rounded-2xl bg-black/40 border border-white/5 flex items-center justify-center shadow-inner group-hover:scale-110 transition-transform">
-                            {visitorTeam?.logo_url ? <img src={visitorTeam.logo_url} className="w-10 h-10 object-contain" /> : <Trophy size={32} className="text-white/10" />}
-                        </div>
-                        <p className="text-sm font-black truncate w-full">{visitorTeam?.name || 'Por asignar'}</p>
-                    </div>
-                </div>
-
-                {/* Sets Section */}
-                <div className="mt-8 space-y-2">
-                    {/* Render 1 or 3 sets based on config */}
-                    {Array.from({ length: isSingleSet ? 1 : 3 }).map((_, i) => {
-                        const num = i + 1;
-                        const set = sets.find((s: any) => s.set_number === num);
-                        const isFinished = set?.status === 'finished';
-                        const isLive = set?.status === 'live';
-
-                        return (
-                            <div key={num} className="bg-black/40 border border-white/5 rounded-2xl p-3 flex items-center justify-between group/set hover:bg-black/60 transition-colors">
-                                <div className="flex items-center gap-3">
-                                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs ${isFinished ? 'bg-green-500/20 text-green-400' : isLive ? 'bg-orange-500/20 text-orange-400' : 'bg-white/5 text-white/30'
-                                        }`}>
-                                        S{num}
-                                    </div>
-                                    {isFinished ? (
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-sm font-black">{set.local_runs} - {set.visitor_runs}</span>
-                                            <span className="text-[8px] font-bold uppercase py-0.5 px-1 bg-green-500/10 text-green-400 rounded">Final</span>
-                                        </div>
-                                    ) : (
-                                        <span className="text-[10px] font-bold text-white/40 uppercase tracking-widest">{isLive ? 'En Juego' : 'Pendiente'}</span>
-                                    )}
-                                </div>
-
-                                {!isFinished && (
-                                    <button
-                                        onClick={() => {
-                                            // Open New Window directly
-                                            window.open(`/dashboard/game?matchId=${match.id}&setNumber=${num}`, '_blank');
-                                        }}
-                                        className="p-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl shadow-lg shadow-blue-600/10 active:scale-95 transition-all group-hover/set:rotate-[15deg]"
-                                        title="Llevar Agenda (Nueva Ventana)"
-                                    >
-                                        <BookOpen size={16} />
-                                    </button>
-                                )}
-                            </div>
-                        );
-                    })}
-                </div>
+            {/* Scorer Footer */}
+            <div className="px-5 py-2 bg-white/5 border-t border-white/10 flex items-center justify-center gap-2 text-white/30 text-[10px]">
+                <Users size={12} />
+                <span className="uppercase font-bold tracking-wider">{scorerName}</span>
             </div>
         </div>
     );

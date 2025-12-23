@@ -710,6 +710,10 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
                         const mId = m.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(m.id) ? m.id : undefined;
                         if (!mId) return null;
 
+                        // Find which field contains this match in items
+                        const fieldConfig = (state.config as any).fields || state.config.fields_config || [];
+                        const parentField = fieldConfig.find((f: any) => f.items && f.items.some((i: any) => i.matchId === mId));
+
                         matchesToSaveRelational.push({
                             id: mId,
                             tournament_id: tournament.id,
@@ -730,7 +734,7 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
                             referee_id: m.refereeId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(m.refereeId) ? m.refereeId : null,
                             status: m.status || 'scheduled',
                             start_time: m.startTime && m.date ? `${m.date}T${m.startTime}:00` : m.start_time,
-                            field: m.court || m.field
+                            field: parentField ? parentField.id : (m.court || m.field) // Prefer resolved Field ID
                         });
 
                         if (m.sets) {
