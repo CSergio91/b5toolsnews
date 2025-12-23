@@ -515,23 +515,45 @@ export const TournamentStartDashboard: React.FC = () => {
                             <div className="space-y-4">
                                 {teams.map(team => (
                                     <div key={team.id} className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden backdrop-blur-md transition-all">
-                                        <button
-                                            onClick={() => toggleTeamExpansion(team.id)}
-                                            className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors"
-                                        >
-                                            <div className="flex items-center gap-4">
+                                        <div className="w-full flex flex-col md:flex-row items-center justify-between p-4 hover:bg-white/5 transition-colors gap-4">
+                                            {/* Team Info */}
+                                            <div
+                                                onClick={() => toggleTeamExpansion(team.id)}
+                                                className="flex flex-1 items-center gap-4 cursor-pointer w-full"
+                                            >
                                                 <div className="w-14 h-14 rounded-full bg-black/40 flex items-center justify-center border-2 border-white/10 shadow-lg overflow-hidden group-hover:border-white/20 transition-all">
                                                     {team.logo_url ? <img src={team.logo_url} className="w-full h-full object-cover" /> : <Users size={24} className="text-white/20" />}
                                                 </div>
-                                                <div className="text-left">
+                                                <div className="text-left flex-1">
                                                     <h3 className="font-black text-lg leading-tight">{team.name}</h3>
-                                                    <p className="text-xs text-white/40 uppercase tracking-widest">{rosters.filter(r => r.team_id === team.id).length} Integrantes registrados</p>
+                                                    <p className="text-xs text-white/40 uppercase tracking-widest mb-2">{rosters.filter(r => r.team_id === team.id).length} Integrantes</p>
+
+                                                    {/* TEAM STATS ROW */}
+                                                    <div className="flex items-center gap-3 overflow-x-auto pb-1">
+                                                        {[
+                                                            { l: 'AB', v: team.stats_ab },
+                                                            { l: 'H', v: team.stats_h },
+                                                            { l: 'R', v: team.stats_r },
+                                                            { l: 'E(Def)', v: team.stats_e_def },
+                                                            { l: 'E(Of)', v: team.stats_e_of },
+                                                            { l: 'AVE', v: team.stats_ab ? (team.stats_h / team.stats_ab).toFixed(3) : '.000', w: 'w-12', c: 'text-yellow-400' }
+                                                        ].map((s, idx) => (
+                                                            <div key={idx} className={`flex flex-col items-center bg-black/20 rounded px-1.5 py-0.5 border border-white/5 ${s.w || 'w-10'}`}>
+                                                                <span className="text-[8px] font-bold text-white/30 uppercase">{s.l}</span>
+                                                                <span className={`text-[10px] font-mono font-bold ${s.c || 'text-white/80'}`}>{s.v || 0}</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
                                                 </div>
                                             </div>
-                                            <div className={`p-2 rounded-lg bg-white/5 border border-white/10 transition-transform ${expandedTeams.includes(team.id) ? 'rotate-180' : ''}`}>
+
+                                            <button
+                                                onClick={() => toggleTeamExpansion(team.id)}
+                                                className={`p-2 rounded-lg bg-white/5 border border-white/10 transition-transform ${expandedTeams.includes(team.id) ? 'rotate-180' : ''}`}
+                                            >
                                                 <ChevronDown size={20} />
-                                            </div>
-                                        </button>
+                                            </button>
+                                        </div>
 
                                         <AnimatePresence>
                                             {expandedTeams.includes(team.id) && (
@@ -543,20 +565,39 @@ export const TournamentStartDashboard: React.FC = () => {
                                                 >
                                                     <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                                                         {rosters.filter(r => r.team_id === team.id).map(player => (
-                                                            <div key={player.id} className="flex items-center gap-3 p-3 bg-white/5 border border-white/5 rounded-xl">
-                                                                <div className="w-12 h-12 rounded-lg bg-white/5 border border-white/5 overflow-hidden flex items-center justify-center">
-                                                                    {player.photo_url ? (
-                                                                        <img src={player.photo_url} className="w-full h-full object-cover" />
-                                                                    ) : (
-                                                                        <span className="text-lg font-black text-white/10">#{player.number || '00'}</span>
-                                                                    )}
-                                                                </div>
-                                                                <div>
-                                                                    <p className="font-bold text-sm leading-tight">{player.first_name} {player.last_name}</p>
-                                                                    <div className="flex items-center gap-2 mt-1">
-                                                                        <span className="text-[10px] font-bold text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded border border-blue-500/20 uppercase">#{player.number || '00'}</span>
-                                                                        <span className="text-[10px] text-white/40 uppercase tracking-widest">{player.role || 'Jugador'}</span>
+                                                            <div key={player.id} className="flex flex-col gap-3 p-3 bg-white/5 border border-white/5 rounded-xl hover:bg-white/10 transition-colors">
+                                                                <div className="flex items-center gap-3">
+                                                                    <div className="w-10 h-10 rounded-lg bg-white/5 border border-white/5 overflow-hidden flex items-center justify-center">
+                                                                        {player.photo_url ? (
+                                                                            <img src={player.photo_url} className="w-full h-full object-cover" />
+                                                                        ) : (
+                                                                            <span className="text-sm font-black text-white/10">#{player.number || '00'}</span>
+                                                                        )}
                                                                     </div>
+                                                                    <div>
+                                                                        <p className="font-bold text-sm leading-tight">{player.first_name} {player.last_name}</p>
+                                                                        <div className="flex items-center gap-2 mt-1">
+                                                                            <span className="text-[10px] font-bold text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded border border-blue-500/20 uppercase">#{player.number || '00'}</span>
+                                                                            <span className="text-[10px] text-white/40 uppercase tracking-widest">{player.role || 'Jugador'}</span>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+
+                                                                {/* PLAYER STATS ROW */}
+                                                                <div className="grid grid-cols-6 gap-1 border-t border-white/5 pt-2">
+                                                                    {[
+                                                                        { l: 'AB', v: player.stats_ab },
+                                                                        { l: 'H', v: player.stats_h },
+                                                                        { l: 'R', v: player.stats_r },
+                                                                        { l: 'E(D)', v: player.stats_e_def },
+                                                                        { l: 'E(O)', v: player.stats_e_of },
+                                                                        { l: 'AVE', v: player.stats_ab ? (player.stats_h / player.stats_ab).toFixed(3) : '.000', c: 'text-yellow-400 col-span-1' }
+                                                                    ].map((s, idx) => (
+                                                                        <div key={idx} className={`flex flex-col items-center bg-black/20 rounded py-0.5 ${s.c ? '' : ''}`}>
+                                                                            <span className="text-[7px] font-bold text-white/30 uppercase">{s.l}</span>
+                                                                            <span className={`text-[9px] font-mono font-bold ${s.c ? 'text-yellow-400' : 'text-white/80'}`}>{s.v || 0}</span>
+                                                                        </div>
+                                                                    ))}
                                                                 </div>
                                                             </div>
                                                         ))}
@@ -909,35 +950,39 @@ const MatchCard = ({ match, teams, sets, onStartSet, tournament, fields, referee
                     </div>
 
                     {/* Sets Section */}
-                    <div className="mt-8 space-y-2">
-                        {/* Render 1 or 3 sets based on config */}
+                    <div className="mt-8 space-y-4">
+                        {/* Render sets based on config and win condition */}
                         {Array.from({ length: isSingleSet ? 1 : 3 }).map((_, i) => {
                             const num = i + 1;
+                            // Check if game is already won (Best of 3)
+                            const leaderWins = Math.max(localSetWins, visitorSetWins);
+                            if (!isSingleSet && num === 3 && leaderWins >= 2) return null;
+
                             const set = sets.find((s: any) => s.set_number === num);
                             const isFinished = set?.status === 'finished';
                             const isLive = set?.status === 'live';
+                            const hasData = set?.state_json;
+
+                            // Extract data for scoreboard
+                            const innings = hasData ? (set.state_json.inningScores || { local: [], visitor: [] }) : { local: [], visitor: [] };
+                            const maxInnings = Math.max(5, innings.local.length, innings.visitor.length); // Min 5 cols
 
                             return (
-                                <div key={num} className="bg-black/40 border border-white/5 rounded-2xl p-3 flex items-center justify-between group/set hover:bg-black/60 transition-colors">
-                                    <div className="flex items-center gap-3">
-                                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs ${isFinished ? 'bg-green-500/20 text-green-400' : isLive ? 'bg-orange-500/20 text-orange-400' : 'bg-white/5 text-white/30'
-                                            }`}>
-                                            S{num}
-                                        </div>
-                                        {isFinished ? (
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-sm font-black">{set.local_runs} - {set.visitor_runs}</span>
-                                                <span className="text-[8px] font-bold uppercase py-0.5 px-1 bg-green-500/10 text-green-400 rounded">Final</span>
+                                <div key={num} className="bg-black/40 border border-white/5 rounded-2xl overflow-hidden group/set transition-colors hover:border-white/10">
+                                    <div className="p-2 flex items-center justify-between bg-white/5 border-b border-white/5">
+                                        <div className="flex items-center gap-2">
+                                            <div className={`w-6 h-6 rounded flex items-center justify-center font-bold text-[10px] ${isFinished ? 'bg-green-500/20 text-green-400' : isLive ? 'bg-orange-500/20 text-orange-400' : 'bg-white/5 text-white/30'}`}>
+                                                S{num}
                                             </div>
-                                        ) : (
-                                            <span className="text-[10px] font-bold text-white/40 uppercase tracking-widest">{isLive ? 'En Juego' : 'Pendiente'}</span>
-                                        )}
-                                    </div>
+                                            <span className="text-[10px] font-bold text-white/40 uppercase items-center flex gap-1">
+                                                {isLive && <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />}
+                                                {isLive ? 'En Juego' : isFinished ? 'Finalizado' : 'Pendiente'}
+                                            </span>
+                                        </div>
 
-                                    {!isFinished && (
+                                        {/* Action Button */}
                                         <button
                                             onClick={() => {
-                                                // Construct Full URL for ScoreSheet
                                                 const params = new URLSearchParams();
                                                 params.append('matchId', match.id);
                                                 params.append('setNumber', num.toString());
@@ -946,14 +991,60 @@ const MatchCard = ({ match, teams, sets, onStartSet, tournament, fields, referee
                                                 params.append('visitor', visitorTeam?.name || 'Visitante');
                                                 params.append('startTime', match.start_time || '');
                                                 params.append('scorerName', scorerName);
-
                                                 window.open(`/dashboard/game?${params.toString()}`, '_blank');
                                             }}
-                                            className="p-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl shadow-lg shadow-blue-600/10 active:scale-95 transition-all group-hover/set:rotate-[15deg]"
-                                            title="Llevar Agenda (Nueva Ventana)"
+                                            className="p-1.5 bg-blue-600/20 hover:bg-blue-600 text-blue-400 hover:text-white rounded-lg transition-all"
+                                            title={isFinished ? "Ver Anotación" : "Anotar"}
                                         >
-                                            <BookOpen size={16} />
+                                            <BookOpen size={14} />
                                         </button>
+                                    </div>
+
+                                    {/* Mini Scoreboard Table */}
+                                    {(isLive || isFinished || hasData) ? (
+                                        <div className="text-[10px] w-full overflow-x-auto">
+                                            <table className="w-full text-center">
+                                                <thead>
+                                                    <tr className="bg-white/5 text-white/30">
+                                                        <th className="p-1 text-left pl-3 font-normal w-24">Equipo</th>
+                                                        {Array.from({ length: maxInnings }).map((_, idx) => (
+                                                            <th key={idx} className="p-1 font-normal w-6">{idx + 1}</th>
+                                                        ))}
+                                                        <th className="p-1 font-bold text-white/60 w-8 border-l border-white/5">R</th>
+                                                        <th className="p-1 font-bold text-white/60 w-8">H</th>
+                                                        <th className="p-1 font-bold text-white/60 w-8">E</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="text-white/80 font-mono">
+                                                    {/* Visitor Row */}
+                                                    <tr className="border-b border-white/5">
+                                                        <td className="p-1 pl-3 text-left truncate max-w-[80px] font-sans font-bold text-white/60">{visitorTeam?.name}</td>
+                                                        {Array.from({ length: maxInnings }).map((_, idx) => (
+                                                            <td key={idx} className="p-1 text-white/40">{innings.visitor[idx] || '-'}</td>
+                                                        ))}
+                                                        <td className="p-1 font-bold text-white border-l border-white/10 bg-white/5">{set.visitor_runs || 0}</td>
+                                                        <td className="p-1 text-white/60">{set.away_hits || 0}</td>
+                                                        <td className="p-1 text-white/60">{set.away_errors || 0}</td>
+                                                    </tr>
+                                                    {/* Local Row */}
+                                                    <tr>
+                                                        <td className="p-1 pl-3 text-left truncate max-w-[80px] font-sans font-bold text-white/60">{localTeam?.name}</td>
+                                                        {Array.from({ length: maxInnings }).map((_, idx) => (
+                                                            <td key={idx} className="p-1 text-white/40">{innings.local[idx] || '-'}</td>
+                                                        ))}
+                                                        <td className="p-1 font-bold text-white border-l border-white/10 bg-white/5">{set.local_runs || 0}</td>
+                                                        <td className="p-1 text-white/60">{set.home_hits || 0}</td>
+                                                        <td className="p-1 text-white/60">{set.home_errors || 0}</td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    ) : (
+                                        // Empty Placeholder for Pending Sets
+                                        <div className="p-4 flex flex-col items-center justify-center opacity-30 gap-1">
+                                            <div className="w-full h-1 bg-white/10 rounded-full" />
+                                            <div className="w-2/3 h-1 bg-white/10 rounded-full" />
+                                        </div>
                                     )}
                                 </div>
                             );

@@ -4422,29 +4422,182 @@ export const ScoreCard: React.FC<{ matchId: string | null; setNumber: number | n
   // For now, I'll add a placeholder state as per the instruction's snippet.
   const [gameState, setGameState] = useState<ScoreCardState>(initialState);
 
-  // Initial Data Effect [NEW]
+  // DB Sync Effect [NEW]
   useEffect(() => {
-    if (initialData) {
-      setGameState(prev => ({
-        ...prev,
-        gameInfo: {
-          ...prev.gameInfo,
-          gameNum: initialData.gameNum || (prev.gameInfo ? prev.gameInfo.gameNum : undefined),
-          setNum: initialData.setNum || (prev.gameInfo ? prev.gameInfo.setNum : undefined),
-          visitor: initialData.visitor || (prev.gameInfo ? prev.gameInfo.visitor : undefined),
-          home: initialData.home || (prev.gameInfo ? prev.gameInfo.home : undefined),
-          officials: {
-            ...(prev.gameInfo && prev.gameInfo.officials),
-            table: initialData.scorer || (prev.gameInfo && prev.gameInfo.officials ? prev.gameInfo.officials.table : undefined)
-          },
-          times: {
-            ...(prev.gameInfo && prev.gameInfo.times),
-            start: initialData.startTime || (prev.gameInfo && prev.gameInfo.times ? prev.gameInfo.times.start : undefined)
-          }
+    const loadGameData = async () => {
+      // Prioritize matchId/setNumber provided via props or initialData
+      const mId = matchId || (initialData?.matchId);
+      const sNum = setNumber || (initialData?.setNumber ? parseInt(initialData.setNumber) : 1);
+
+      if (!mId) return;
+
+      setLoading(true);
+      try {
+        // 1. Try to load existing state from tournament_sets
+        // Note: Using maybeSingle() because the row might not exist if data is inconsistent
+        const { data: setData } = await supabase
+          .from('tournament_sets')
+          .select('state_json, id')
+          .eq('match_id', mId)
+          .eq('set_number', sNum)
+          .maybeSingle();
+
+        if (setData?.state_json) {
+          console.log("Restoring saved game state from DB");
+          setGameState(setData.state_json);
+          setLoading(false);
+          return;
         }
-      }));
-    }
-  }, [initialData]);
+
+        // 2. If no state, Fetch Match & Rosters to Initialize
+        console.log("Fetching fresh match data for initialization");
+        const { data: matchData, error: matchError } = await supabase
+          .from('tournament_matches')
+          .select(`
+            *,
+            local_team:tournament_teams!local_team_id (*),
+            visitor_team:tournament_teams!visitor_team_id (*)
+          `)
+          .eq('id', mId)
+          .single();
+
+        if (matchData) {
+          // Fetch Rosters
+          const { data: localRoster } = await supabase
+            .from('tournament_rosters')
+            .select('*')
+            .eq('team_id', matchData.local_team_id)
+            .order('number', { ascending: true }); // Heuristic sorting
+
+          const { data: visitorRoster } = await supabase
+            .from('tournament_rosters')
+            .select('*')
+            .eq('team_id', matchData.visitor_team_id)
+            .order('number', { ascending: true });
+
+          // Helper to map roster to slots
+          const mapRosterToSlots = (roster: any[]): TeamData => {
+            const teamData = createEmptyTeam();
+            // Fill first 5 slots with first 5 players
+            roster?.slice(0, 5).forEach((player, idx) => {
+              teamData.slots[idx].starter = {
+                ...createEmptyPlayer(),
+                name: `${player.first_name} ${player.last_name}`,
+                number: player.number.toString(),
+                gender: player.gender || 'M',
+                pos: '' // Position usually decided at game time
+              };
+            });
+            // Put remaining players as potential subs? 
+            // Currently the UI doesn't have a "Bench" list, only Subs in slots.
+            // We'll leave subs empty for manual entry for now.
+            return teamData;
+          };
+
+          // Populate Game State
+          setGameState(prev => ({
+            ...prev,
+            gameInfo: {
+              ...prev.gameInfo,
+              competition: initialData?.competition || prev.gameInfo.competition,
+              place: matchData.field || prev.gameInfo.place, // Should resolve field name if possible, for now ID or whatever is stored
+              date: matchData.date || new Date().toISOString().split('T')[0],
+              gameNum: initialData?.gameNum || matchData.id.slice(0, 4), // Fallback
+              setNum: sNum.toString(),
+              visitor: matchData.visitor_team?.name || 'Visitante',
+              home: matchData.local_team?.name || 'Local',
+              officials: {
+                ...prev.gameInfo.officials,
+                table: initialData?.scorer || prev.gameInfo.officials.table
+              },
+              times: {
+                ...prev.gameInfo.times,
+                start: matchData.start_time || prev.gameInfo.times.start
+              },
+              visitorLogo: matchData.visitor_team?.logo_url,
+              homeLogo: matchData.local_team?.logo_url
+            },
+            visitorTeam: visitorRoster ? mapRosterToSlots(visitorRoster) : prev.visitorTeam,
+            localTeam: localRoster ? mapRosterToSlots(localRoster) : prev.localTeam
+          }));
+        }
+
+      } catch (e) {
+        console.error("Error synchronizing game data:", e);
+      }
+      setLoading(false);
+    };
+
+    loadGameData();
+  }, [matchId, setNumber, initialData]); // Depend on initialData too for fallback
+
+  // Auto-Save Effect
+  useEffect(() => {
+    // Don't save if loading or empty initial state
+    if (loading) return;
+
+    const mId = matchId || (initialData?.matchId);
+    const sNum = setNumber || (initialData?.setNumber ? parseInt(initialData.setNumber) : 1);
+
+    if (!mId) return;
+
+    const saveState = async () => {
+      try {
+        // Calculate Stats for Dashboard Mini-Scoreboard
+        const getHits = (team: TeamData) => {
+          let hits = 0;
+          team.slots.forEach(slot => {
+            // Check starter and sub scores for 'H'
+            [slot.starter, slot.sub].forEach(player => {
+              player.scores.forEach(inning => {
+                // Assuming inning is array of box codes. If contains 'H' (Hit)
+                // Note: Implementation depends on scoring codes. 'H' or '1B', '2B', '3B', 'HR'?
+                // For now, looking for explicit 'H' or numbers indicating hits if stored differently.
+                // Simplistic approach: If string contains "H"
+                inning.forEach(code => {
+                  if (code && (code === 'H' || code.includes('1B') || code.includes('2B') || code.includes('3B') || code.includes('HR'))) {
+                    hits++;
+                  }
+                });
+              });
+            });
+          });
+          return hits;
+        };
+
+        const localRuns = parseInt(gameState.totals.local || '0');
+        const visitorRuns = parseInt(gameState.totals.visitor || '0');
+        const localErrors = parseInt(gameState.errors.local || '0');
+        const visitorErrors = parseInt(gameState.errors.visitor || '0');
+        const localHits = getHits(gameState.localTeam);
+        const visitorHits = getHits(gameState.visitorTeam);
+
+        const updateData = {
+          state_json: gameState,
+          local_runs: localRuns,
+          visitor_runs: visitorRuns,
+          home_hits: localHits,
+          away_hits: visitorHits,
+          home_errors: localErrors,
+          away_errors: visitorErrors
+        };
+
+        // Update DB
+        const { error } = await supabase
+          .from('tournament_sets')
+          .update(updateData)
+          .eq('match_id', mId)
+          .eq('set_number', sNum);
+
+        if (error) console.error("Error auto-saving game state:", error);
+      } catch (e) {
+        console.error("Exception auto-saving:", e);
+      }
+    };
+
+    const timer = setTimeout(saveState, 5000); // 5s debounce
+    return () => clearTimeout(timer);
+  }, [gameState, matchId, setNumber, initialData, loading]);
   const [currentSet, setCurrentSet] = useState(setNumber || 1);
   const [setWinners, setSetWinners] = useState<({ name: string; score: string; isVisitor: boolean } | null)[]>([null, null, null]);
   const [matchWinner, setMatchWinner] = useState<{ name: string; score: string; setsWon: number } | null>(null);
