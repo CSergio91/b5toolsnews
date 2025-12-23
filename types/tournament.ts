@@ -88,7 +88,7 @@ export interface TournamentMatch {
     visitor_source_match_id?: string; // "Winner of Match X"
     local_source_match_id?: string;
     start_time?: string;
-    location?: string;
+    set_number?: string;
     field?: string;
     status: 'scheduled' | 'live' | 'finished' | 'suspended';
     winner_team_id?: string;

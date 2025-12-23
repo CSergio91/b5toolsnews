@@ -716,7 +716,7 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
                             phase_id: phaseId,
                             stage_id: phaseId, // Legacy compatibility
                             name: m.name,
-                            location: m.location,
+                            set_number: m.location, // Renamed from location. Holds "1 Set" / "3 Sets" string from Builder
                             round_index: m.roundIndex,
                             global_id: m.globalId,
                             source_home_id: m.sourceHome?.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(m.sourceHome.id) ? m.sourceHome.id : null,

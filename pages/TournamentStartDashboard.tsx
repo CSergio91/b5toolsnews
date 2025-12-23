@@ -3,12 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { UserNavbar } from '../components/UserNavbar';
 import { ParticlesBackground } from '../components/ParticlesBackground';
-import {
-    Trophy, Users, Calendar, Clock, MapPin,
-    ChevronRight, ChevronDown, Play, Layout,
-    Info, Star, Award, Search, Menu, X, BookOpen,
-    ArrowLeft, Loader2, PlayCircle
-} from 'lucide-react';
+import { ArrowLeft, Award, Calendar, ChevronDown, Info, MapPin, Play, RefreshCcw, Search, Trophy, Users, BookOpen, Clock, Notebook, Loader2, Layout } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Tournament, TournamentTeam, TournamentMatch, TournamentSet, TournamentStage } from '../types/tournament';
 import { ConfirmationModal } from '../components/ConfirmationModal';
@@ -26,7 +21,7 @@ export const TournamentStartDashboard: React.FC = () => {
     const [rosters, setRosters] = useState<any[]>([]);
 
     // UI State
-    const [activeTab, setActiveTab] = useState<'matches' | 'standings' | 'teams' | 'fields'>('matches');
+    const [activeTab, setActiveTab] = useState<'matches' | 'standings' | 'teams'>('matches');
     const [expandedTeams, setExpandedTeams] = useState<string[]>([]);
     const [startMatchModal, setStartMatchModal] = useState<{ isOpen: boolean, match: any, setNumber: number } | null>(null);
 
@@ -353,7 +348,6 @@ export const TournamentStartDashboard: React.FC = () => {
                     <TabButton active={activeTab === 'matches'} onClick={() => setActiveTab('matches')} icon={Calendar} label="Partidos" />
                     <TabButton active={activeTab === 'standings'} onClick={() => setActiveTab('standings')} icon={Award} label="Clasificación" />
                     <TabButton active={activeTab === 'teams'} onClick={() => setActiveTab('teams')} icon={Users} label="Equipos" />
-                    <TabButton active={activeTab === 'fields'} onClick={() => setActiveTab('fields')} icon={MapPin} label="Canchas" />
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -389,6 +383,7 @@ export const TournamentStartDashboard: React.FC = () => {
                                                 teams={teams}
                                                 sets={sets.filter(s => s.match_id === match.id)}
                                                 onStartSet={handleStartSet}
+                                                tournament={tournament}
                                             />
                                         ))
                                     ) : (
@@ -667,9 +662,25 @@ const SmallTeamInfo = ({ team, align = 'left' }: any) => (
     </div>
 );
 
-const MatchCard = ({ match, teams, sets, onStartSet }: any) => {
+const MatchCard = ({ match, teams, sets, onStartSet, tournament }: any) => {
     const localTeam = teams.find((t: any) => t.id === match.local_team_id);
     const visitorTeam = teams.find((t: any) => t.id === match.visitor_team_id);
+
+    // Calculate Set Wins for specific score "Local X - Y Visitor"
+    let localSetWins = 0;
+    let visitorSetWins = 0;
+    sets.forEach((s: any) => {
+        if (s.status === 'finished') {
+            if (s.local_runs > s.visitor_runs) localSetWins++;
+            else if (s.visitor_runs > s.local_runs) visitorSetWins++;
+        }
+    });
+
+    // Check if Single Set mode
+    const isSingleSet = match.is_single_set === true || tournament?.sets_per_match === 1;
+
+    // Determine Match Ident
+    const matchIdent = match.global_id || match.globalId || match.name || '???';
 
     return (
         <div className="bg-white/5 border border-white/10 rounded-3xl overflow-hidden hover:border-blue-500/30 transition-all backdrop-blur-sm group">
@@ -681,15 +692,23 @@ const MatchCard = ({ match, teams, sets, onStartSet }: any) => {
                         <span className="text-[10px] font-black tracking-widest">{match.start_time?.substring(0, 5) || 'HH:MM'}</span>
                     </div>
                 </div>
-                <div className="flex items-center gap-1.5 text-white/30">
-                    <MapPin size={12} />
-                    <span className="text-[10px] font-bold uppercase tracking-wider">{match.field || 'Cancha'}</span>
+                <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-1.5 text-white/30 truncate max-w-[150px]">
+                        <MapPin size={12} />
+                        <span className="text-[10px] font-bold uppercase tracking-wider truncate">{match.field || 'Cancha'}</span>
+                    </div>
+                    {/* Sets Config Display */}
+                    <div className="flex items-center gap-1.5 text-orange-400/80">
+                        <Notebook size={12} />
+                        <span className="text-[10px] font-bold uppercase tracking-wider">{match.set_number || (isSingleSet ? '1 Set' : '3 Sets')}</span>
+                    </div>
                 </div>
             </div>
 
             {/* Teams display */}
             <div className="p-6">
                 <div className="flex items-center justify-between gap-2 overflow-hidden">
+                    {/* Local */}
                     <div className="flex flex-col items-center gap-2 flex-1 text-center">
                         <div className="w-16 h-16 rounded-2xl bg-black/40 border border-white/5 flex items-center justify-center shadow-inner group-hover:scale-110 transition-transform">
                             {localTeam?.logo_url ? <img src={localTeam.logo_url} className="w-10 h-10 object-contain" /> : <Trophy size={32} className="text-white/10" />}
@@ -697,13 +716,29 @@ const MatchCard = ({ match, teams, sets, onStartSet }: any) => {
                         <p className="text-sm font-black truncate w-full">{localTeam?.name || 'Por asignar'}</p>
                     </div>
 
-                    <div className="flex flex-col items-center gap-1">
-                        <span className="text-[10px] font-black italic text-white/10 uppercase tracking-[0.3em]">VS</span>
-                        <div className="px-3 py-1 bg-white/5 rounded-full border border-white/5 text-[10px] font-black text-white/40">
-                            Match #{typeof match.id === 'string' ? match.id.substring(0, 4).toUpperCase() : match.id}
-                        </div>
+                    {/* VS / Score */}
+                    <div className="flex flex-col items-center gap-1 min-w-[80px]">
+                        {match.status === 'scheduled' ? (
+                            <>
+                                <span className="text-[10px] font-black italic text-white/10 uppercase tracking-[0.3em]">VS</span>
+                                <div className="px-3 py-1 bg-white/5 rounded-full border border-white/5 text-[10px] font-black text-white/40">
+                                    #{matchIdent}
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                <div className="text-2xl font-black text-white tracking-widest">
+                                    {localSetWins} - {visitorSetWins}
+                                </div>
+                                <div className="px-2 py-0.5 bg-white/5 rounded text-[8px] font-bold text-white/30 uppercase">
+                                    SETS
+                                </div>
+                                <div className="text-[10px] font-bold text-white/20">#{matchIdent}</div>
+                            </>
+                        )}
                     </div>
 
+                    {/* Visitor */}
                     <div className="flex flex-col items-center gap-2 flex-1 text-center">
                         <div className="w-16 h-16 rounded-2xl bg-black/40 border border-white/5 flex items-center justify-center shadow-inner group-hover:scale-110 transition-transform">
                             {visitorTeam?.logo_url ? <img src={visitorTeam.logo_url} className="w-10 h-10 object-contain" /> : <Trophy size={32} className="text-white/10" />}
@@ -714,7 +749,9 @@ const MatchCard = ({ match, teams, sets, onStartSet }: any) => {
 
                 {/* Sets Section */}
                 <div className="mt-8 space-y-2">
-                    {[1, 2, 3].map(num => {
+                    {/* Render 1 or 3 sets based on config */}
+                    {Array.from({ length: isSingleSet ? 1 : 3 }).map((_, i) => {
+                        const num = i + 1;
                         const set = sets.find((s: any) => s.set_number === num);
                         const isFinished = set?.status === 'finished';
                         const isLive = set?.status === 'live';
@@ -738,9 +775,12 @@ const MatchCard = ({ match, teams, sets, onStartSet }: any) => {
 
                                 {!isFinished && (
                                     <button
-                                        onClick={() => onStartSet(match, num)}
+                                        onClick={() => {
+                                            // Open New Window directly
+                                            window.open(`/dashboard/game?matchId=${match.id}&setNumber=${num}`, '_blank');
+                                        }}
                                         className="p-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl shadow-lg shadow-blue-600/10 active:scale-95 transition-all group-hover/set:rotate-[15deg]"
-                                        title="Llevar Agenda"
+                                        title="Llevar Agenda (Nueva Ventana)"
                                     >
                                         <BookOpen size={16} />
                                     </button>
