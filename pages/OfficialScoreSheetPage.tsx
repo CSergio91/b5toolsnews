@@ -4,7 +4,7 @@ import {
     Clock, ArrowRightLeft, Square, X, Plus, Printer, RotateCcw,
     Trophy, CheckCircle2, AlertCircle, AlertTriangle, Trash2,
     Circle, Pencil, Share2, Download, Users, Save, Loader2,
-    UserCircle2, Camera, User, ClipboardList, Flag
+    UserCircle2, Camera, User, ClipboardList, Flag, Info, RefreshCcw
 } from 'lucide-react';
 import { ConfirmationModal } from '../components/ConfirmationModal';
 import { supabase } from '../lib/supabase';
@@ -684,23 +684,24 @@ export const OfficialScoreSheetPage: React.FC = () => {
             const { data: sets } = await supabase.from('tournament_sets').select('*').eq('match_id', matchId);
 
             if (sets) {
-                // Calculate series Wins
-                let vWins = 0;
-                let lWins = 0;
-
-                // Set Config Logic
+                // Determine Set Mode
                 const isSingleSet = matchData.is_single_set === true || matchData.set_number === '1 Set' || matchData.set_number === 1;
                 const setsToWin = isSingleSet ? 1 : 2;
 
+                let vWins = 0;
+                let lWins = 0;
+
+                // Explicitly count wins from specific sets (1, 2, 3)
+                // We must account for the CURRENT set which we just finished locally but might not be reflected if replication is slow
+                // So we iterate 1..N and check.
+                const possibleSets = [1, 2, 3];
                 const currentSetNum = parseInt(setNumber);
 
-                const allSetNumbers = new Set([...sets.map(s => s.set_number), currentSetNum]);
-
-                allSetNumbers.forEach(num => {
+                possibleSets.forEach(num => {
                     let setWinner = '';
 
                     if (num === currentSetNum) {
-                        setWinner = team; // The user just clicked "Winner Visitor/Local"
+                        setWinner = team; // Current set winner
                     } else {
                         const s = sets.find(sx => sx.set_number === num);
                         if (s && s.status === 'finished') {
@@ -718,24 +719,21 @@ export const OfficialScoreSheetPage: React.FC = () => {
                 console.log(`Match Win Check: V=${vWins}, L=${lWins}, Goal=${setsToWin}`);
 
                 let matchWinnerId = null;
+                // Check if threshold reached
                 if (vWins >= setsToWin) matchWinnerId = matchData.visitor_team_id;
-                if (lWins >= setsToWin) matchWinnerId = matchData.local_team_id;
+                else if (lWins >= setsToWin) matchWinnerId = matchData.local_team_id;
 
                 if (matchWinnerId) {
-                    const { error: matchUpdateError } = await supabase.from('tournament_matches').update({
+                    await supabase.from('tournament_matches').update({
                         status: 'finished',
-                        winner_team_id: matchWinnerId
+                        winner_team_id: matchWinnerId,
+                        end_time: endTime // Mark match as ended
                     }).eq('id', matchId);
 
-                    if (!matchUpdateError && tournamentId) {
-                        logTournamentActivity(tournamentId, 'match_end', `Partido Finalizado. Ganador: ${team === 'visitor' ? matchData.visitor_team?.name : matchData.local_team?.name}`, { matchId });
+                    if (tournamentId) {
+                        logTournamentActivity(tournamentId, 'match_end', `Partido Finalizado. Ganador: ${matchWinnerId === matchData.visitor_team_id ? matchData.visitor_team?.name : matchData.local_team?.name}`, { matchId });
                     }
-
-                    if (matchUpdateError) {
-                        console.error('Error updating match winner:', matchUpdateError);
-                    } else {
-                        alert(`¡Partido Finalizado! Ganador: ${team === 'visitor' ? matchData.visitor_team?.name : matchData.local_team?.name}`);
-                    }
+                    alert(`¡Partido Finalizado! Ganador: ${matchWinnerId === matchData.visitor_team_id ? matchData.visitor_team?.name : matchData.local_team?.name}`);
                 }
             }
         }
@@ -1021,6 +1019,47 @@ export const OfficialScoreSheetPage: React.FC = () => {
         </div>
     );
 
+    const NomenclatureLegend = () => (
+        <div className="relative group z-50">
+            <button className="flex items-center gap-2 px-3 py-2 bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 rounded-lg text-purple-400 text-[10px] font-bold transition-all" title="Ver Nomenclatura">
+                <Info size={16} />
+                <span className="hidden md:inline">NOMENCLATURA</span>
+            </button>
+            <div className="hidden group-hover:block absolute top-full left-0 mt-2 w-64 bg-[#2a1b3d] border border-white/10 rounded-xl shadow-2xl p-4 backdrop-blur-xl z-[100]">
+                <h4 className="text-white font-black text-xs uppercase tracking-widest mb-3 border-b border-white/10 pb-2 flex items-center gap-2">
+                    <span className="text-purple-400">#</span> NOMENCLATURA
+                </h4>
+
+                <div className="grid grid-cols-2 gap-y-2 gap-x-4 mb-3 text-[10px] font-bold text-white/80">
+                    <div className="flex items-center gap-2">
+                        <span className="text-red-500 font-mono text-lg leading-none">×</span> Out
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <span className="text-green-500 font-mono text-lg leading-none">H</span> Hit
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <span className="text-yellow-500 font-mono text-lg leading-none">E</span> Error
+                    </div>
+                </div>
+
+                <div className="space-y-2 border-t border-white/10 pt-3 text-[10px] font-bold text-white/80">
+                    <div className="flex items-center gap-2">
+                        <RefreshCcw size={12} className="text-white/60" /> Sustitución
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 bg-orange-500 rounded-sm" /> Fin de la entrada
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 bg-red-500 rounded-full" /> Carrera Anotada
+                    </div>
+                </div>
+                <div className="mt-3 border-t border-white/10 pt-3 text-[10px] font-bold text-blue-300">
+                    <span className="font-mono">EX(1-3)B</span> <span className="text-white/60">Corredor en Base (Extrainning)</span>
+                </div>
+            </div>
+        </div>
+    );
+
     return (
         <div className="min-h-screen bg-[#0a0a0f] text-white font-sans selection:bg-purple-500/30">
             {/* --- TOP HEADER --- */}
@@ -1028,6 +1067,7 @@ export const OfficialScoreSheetPage: React.FC = () => {
                 {/* 1. Navbar Actions */}
                 <div className="flex items-center justify-between px-4 py-2 mb-2">
                     <div className="flex gap-2 items-center">
+                        <NomenclatureLegend />
                         <button onClick={handleClearScores} className={`p-2 bg-red-900/20 hover:bg-red-900/40 border border-red-500/20 rounded-lg text-red-400 transition-colors ${isReadOnly ? 'animate-pulse' : ''}`} title={isReadOnly ? "Reiniciar Set" : "Limpiar Planilla"}>
                             <RotateCcw size={20} />
                         </button>

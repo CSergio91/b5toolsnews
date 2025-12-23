@@ -268,13 +268,13 @@ export const TournamentStartDashboard: React.FC = () => {
                     if (localSetWins > visitorSetWins) {
                         localTeam.wins++;
                         visitorTeam.losses++;
-                        localTeam.pts += (tournament?.points_for_win || 2);
-                        visitorTeam.pts += (tournament?.points_for_loss || 1);
+                        localTeam.pts += (tournament?.points_for_win || 1);
+                        visitorTeam.pts += (tournament?.points_for_loss || 0);
                     } else if (visitorSetWins > localSetWins) {
                         visitorTeam.wins++;
                         localTeam.losses++;
-                        visitorTeam.pts += (tournament?.points_for_win || 2);
-                        localTeam.pts += (tournament?.points_for_loss || 1);
+                        visitorTeam.pts += (tournament?.points_for_win || 1);
+                        localTeam.pts += (tournament?.points_for_loss || 0);
                     }
                 }
             }
@@ -356,7 +356,7 @@ export const TournamentStartDashboard: React.FC = () => {
     const activeStage = stages.find(s => s.id === activeStageId);
 
     return (
-        <div className="min-h-screen w-full bg-[#0a0a0f] text-white flex flex-col relative overflow-hidden">
+        <div className="min-h-screen w-full bg-[#0a0a0f] text-white flex flex-col relative overflow-x-hidden">
             <ParticlesBackground />
             <UserNavbar />
 
@@ -815,7 +815,7 @@ export const TournamentStartDashboard: React.FC = () => {
                         </div >
 
                         {/* Leaderboard Section (Replaces Recent Activity) */}
-                        < div className="bg-white/5 border border-white/10 rounded-3xl overflow-hidden backdrop-blur-md" >
+                        <div className="bg-white/5 border border-white/10 rounded-3xl overflow-hidden backdrop-blur-md sticky top-24 z-30 h-fit">
                             <div className="p-6 border-b border-white/5 flex items-center justify-between">
                                 <h2 className="text-sm font-black uppercase tracking-[0.2em] text-white/40 flex items-center gap-2">
                                     <Award size={16} className="text-yellow-500" /> Tabla de Clasificación
@@ -1063,25 +1063,30 @@ const MatchCard = ({ match, teams, sets, onStartSet, tournament, fields, referee
                             <span className="text-[10px] font-bold uppercase tracking-wider">{match.set_number || (isSingleSet ? '1 Set' : '3 Sets')}</span>
                         </div>
                         {/* PDF Download Button (Only if all sets finished) */}
-                        {sets.length > 0 && sets.every((s: any) => s.status === 'finished') && (
-                            <button
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    generateMatchReport(match, sets, {
-                                        tournamentName: tournament?.name,
-                                        tournamentLogo: tournament?.logo_url,
-                                        fieldName: fieldName,
-                                        localTeam: localTeam,
-                                        visitorTeam: visitorTeam,
-                                        scorerName: scorerName
-                                    });
-                                }}
-                                className="p-1 hover:bg-white/10 rounded-full text-green-400 hover:text-green-300 transition-colors animate-pulse"
-                                title="Descargar Reporte PDF"
-                            >
-                                <Download size={12} />
-                            </button>
-                        )}
+                        {/* PDF Download Button (If match is finished or decisive result reached) */}
+                        {((sets.length > 0 && sets.every((s: any) => s.status === 'finished')) ||
+                            match.status === 'finished' ||
+                            (localSetWins >= 2 || visitorSetWins >= 2) ||
+                            (isSingleSet && sets[0]?.status === 'finished')
+                        ) && (
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        generateMatchReport(match, sets, {
+                                            tournamentName: tournament?.name,
+                                            tournamentLogo: tournament?.logo_url,
+                                            fieldName: fieldName,
+                                            localTeam: localTeam,
+                                            visitorTeam: visitorTeam,
+                                            scorerName: scorerName
+                                        });
+                                    }}
+                                    className="p-1 hover:bg-white/10 rounded-full text-green-400 hover:text-green-300 transition-colors animate-pulse"
+                                    title="Descargar Reporte PDF"
+                                >
+                                    <Download size={12} />
+                                </button>
+                            )}
                     </div>
                 </div>
 
