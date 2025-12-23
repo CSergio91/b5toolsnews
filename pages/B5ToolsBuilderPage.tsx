@@ -113,6 +113,24 @@ const BuilderWizard = () => {
 
     const closeConfirmation = () => setConfirmation(prev => ({ ...prev, isOpen: false }));
 
+    // Ref for Menu Click Outside detection
+    const navRef = React.useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (navRef.current && !navRef.current.contains(event.target as Node)) {
+                // Clicked outside the Nav container
+                if (isMobileMoreMenuOpen) setIsMobileMoreMenuOpen(false);
+                if (activeSubMenu !== null) setActiveSubMenu(null);
+            }
+        };
+
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [isMobileMoreMenuOpen, activeSubMenu]);
+
     useEffect(() => {
         // Fetch User
         supabase.auth.getUser().then(({ data }) => {
@@ -351,7 +369,7 @@ const BuilderWizard = () => {
                 <div className="flex-1 flex flex-col overflow-hidden relative">
 
                     {/* Mobile/Desktop Navigation Bar */}
-                    <nav className="fixed lg:static bottom-0 left-0 right-0 h-16 bg-[#111] border-t lg:border-t-0 lg:border-b border-white/10 z-50 flex items-center justify-around px-2 pb-safe-area lg:pb-0 shrink-0 lg:order-first">
+                    <nav ref={navRef} className="fixed lg:static bottom-0 left-0 right-0 h-16 bg-[#111] border-t lg:border-t-0 lg:border-b border-white/10 z-50 flex items-center justify-around px-2 pb-safe-area lg:pb-0 shrink-0 lg:order-first">
                         {steps.map(step => {
                             const isActive = state.currentStep === step.id || (step.subItems && step.subItems.some(s => s.id === state.currentStep));
                             return (
@@ -441,10 +459,25 @@ const BuilderWizard = () => {
                                 onClick={toggleMobileMoreMenu}
                                 className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-all ${isMobileMoreMenuOpen ? 'text-blue-400' : 'text-white/40 hover:text-white'}`}
                             >
-                                <div className={`p-1.5 rounded-full ${isMobileMoreMenuOpen ? 'bg-blue-500/10' : ''}`}>
-                                    <Menu size={20} />
+                                {/* Desktop: User Profile Trigger */}
+                                <div className="hidden lg:flex flex-col items-center gap-1">
+                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center overflow-hidden border ${isMobileMoreMenuOpen ? 'border-blue-500' : 'border-white/10'}`}>
+                                        {user?.user_metadata?.avatar_url ? (
+                                            <img src={user.user_metadata.avatar_url} alt="User" className="w-full h-full object-cover" />
+                                        ) : (
+                                            <User size={16} className={isMobileMoreMenuOpen ? 'text-blue-400' : 'text-white'} />
+                                        )}
+                                    </div>
+                                    <span className="text-[10px] font-bold">Perfil</span>
                                 </div>
-                                <span className="text-[10px] font-bold">Menú</span>
+
+                                {/* Mobile: Hamburger Trigger */}
+                                <div className="lg:hidden flex flex-col items-center gap-1">
+                                    <div className={`p-1.5 rounded-full ${isMobileMoreMenuOpen ? 'bg-blue-500/10' : ''}`}>
+                                        <Menu size={20} />
+                                    </div>
+                                    <span className="text-[10px] font-bold">Menú</span>
+                                </div>
                             </button>
                         </div>
                     </nav>
