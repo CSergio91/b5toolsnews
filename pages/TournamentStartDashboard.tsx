@@ -426,7 +426,7 @@ export const TournamentStartDashboard: React.FC = () => {
                                         initial={{ opacity: 0, y: 10, scale: 0.95 }}
                                         animate={{ opacity: 1, y: 0, scale: 1 }}
                                         exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                                        className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90vw] max-w-sm md:absolute md:top-full md:right-0 md:left-auto md:translate-x-0 md:translate-y-0 md:mt-4 md:w-72 z-[100] bg-[#1a1a2e] border border-white/10 rounded-2xl shadow-xl p-4 flex flex-col gap-3 backdrop-blur-xl"
+                                        className="fixed top-32 left-1/2 -translate-x-1/2 w-[90vw] max-w-sm md:absolute md:top-full md:right-0 md:left-auto md:translate-x-0 md:translate-y-0 md:mt-4 md:w-72 z-[100] bg-[#1a1a2e] border border-white/10 rounded-2xl shadow-xl p-4 flex flex-col gap-3 backdrop-blur-xl"
                                     >
                                         <div className="flex items-center justify-between">
                                             <h3 className="text-sm font-bold text-white">Configurar Página Pública</h3>
@@ -847,21 +847,61 @@ export const TournamentStartDashboard: React.FC = () => {
                             </div>
                         </div>
 
-                        {/* Recent Activity Mini-Feed */}
-                        <div className="bg-white/5 border border-white/10 rounded-3xl p-6 backdrop-blur-md">
-                            <h3 className="text-sm font-black mb-4 uppercase tracking-[0.2em] text-white/40">Ultimos Resultados</h3>
-                            <div className="space-y-4">
-                                {matches.filter(m => m.status === 'finished').slice(0, 5).map(match => (
-                                    <div key={match.id} className="flex flex-col gap-2 p-3 bg-white/5 rounded-xl border border-white/5">
-                                        <div className="flex items-center justify-between gap-4">
-                                            <SmallTeamInfo team={teams.find(t => t.id === match.local_team_id)} align="left" />
-                                            <span className="text-xs font-black text-blue-400">{match.score_text || '0 - 0'}</span>
-                                            <SmallTeamInfo team={teams.find(t => t.id === match.visitor_team_id)} align="right" />
-                                        </div>
+                        {/* Leaderboard Section (Replaces Recent Activity) */}
+                        <div className="bg-white/5 border border-white/10 rounded-3xl overflow-hidden backdrop-blur-md">
+                            <div className="p-6 border-b border-white/5 flex items-center justify-between">
+                                <h2 className="text-sm font-black uppercase tracking-[0.2em] text-white/40 flex items-center gap-2">
+                                    <Award size={16} className="text-yellow-500" /> Tabla de Clasificación
+                                </h2>
+                                <span className="text-[10px] text-white/30 uppercase tracking-widest">{activeStage?.name || 'General'}</span>
+                            </div>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left">
+                                    <thead>
+                                        <tr className="bg-white/5 text-[10px] uppercase tracking-widest text-white/40">
+                                            <th className="px-1 py-3 w-6 text-center">P</th>
+                                            <th className="px-2 py-3 w-auto text-left">Equipo</th>
+                                            <th className="px-1 py-3 text-center w-8">GP</th>
+                                            <th className="px-1 py-3 text-center w-8">W</th>
+                                            <th className="px-1 py-3 text-center w-8">L</th>
+                                            <th className="px-1 py-3 text-center w-8">PTS</th>
+                                            <th className="px-1 py-3 text-center group/header relative cursor-help w-12">
+                                                <span className="border-b border-dotted border-white/20">RC/RP</span>
+                                                <div className="absolute right-0 top-full mt-1 w-48 p-2 bg-black/90 border border-white/10 rounded-lg text-[9px] text-white/80 normal-case tracking-normal shadow-xl opacity-0 group-hover/header:opacity-100 transition-opacity z-50 pointer-events-none mb-2">
+                                                    Carreras Anotadas / Carreras Permitidas (Usado para desempate)
+                                                </div>
+                                            </th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-white/5">
+                                        {calculateStandings().slice(0, 10).map((team, idx) => (
+                                            <tr key={team.id} className="hover:bg-white/5 transition-colors group">
+                                                <td className="px-1 py-3 font-black text-white/20 text-sm text-center">{idx + 1}</td>
+                                                <td className="px-2 py-3">
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="w-6 h-6 rounded-full bg-black/40 flex items-center justify-center border border-white/10 shadow-sm overflow-hidden group-hover:border-blue-500/30 transition-all flex-shrink-0">
+                                                            {team.logo_url ? <img src={team.logo_url} className="w-full h-full object-cover" /> : <Trophy size={10} className="text-white/20" />}
+                                                        </div>
+                                                        <span className="font-bold text-[10px] md:text-xs group-hover:text-blue-400 transition-colors truncate max-w-[100px] block">{team.name}</span>
+                                                    </div>
+                                                </td>
+                                                <td className="px-1 py-3 text-center font-bold text-[10px] text-white/60">{team.gp || 0}</td>
+                                                <td className="px-1 py-3 text-center font-bold text-[10px] text-green-400">{team.wins || 0}</td>
+                                                <td className="px-1 py-3 text-center font-bold text-[10px] text-red-400">{team.losses || 0}</td>
+                                                <td className="px-1 py-3 text-center">
+                                                    <span className="bg-blue-600/20 text-blue-400 px-1.5 py-0.5 rounded text-[10px] font-bold border border-blue-600/30">{team.pts || 0}</span>
+                                                </td>
+                                                <td className="px-1 py-3 text-center">
+                                                    <span className="text-[10px] text-white/40 font-mono tracking-tight">{team.runs_scored}/{team.runs_allowed}</span>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                                {calculateStandings().length === 0 && (
+                                    <div className="p-6 text-center text-white/20 italic text-xs">
+                                        No hay datos de clasificación aún.
                                     </div>
-                                ))}
-                                {matches.filter(m => m.status === 'finished').length === 0 && (
-                                    <p className="text-xs text-white/20 italic text-center py-4">No hay resultados registrados aún.</p>
                                 )}
                             </div>
                         </div>
