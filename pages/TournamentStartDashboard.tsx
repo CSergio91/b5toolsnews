@@ -4,10 +4,11 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { UserNavbar } from '../components/UserNavbar';
 import { ParticlesBackground } from '../components/ParticlesBackground';
-import { ArrowLeft, Award, Calendar, ChevronDown, Info, MapPin, Play, RefreshCcw, Search, Trophy, Users, BookOpen, Clock, Notebook, Loader2, Layout, CheckCircle, Check, X, Download, Flag, RefreshCw, GitBranch } from 'lucide-react';
+import { ArrowLeft, Award, Calendar, ChevronDown, Info, MapPin, Play, RefreshCcw, Search, Trophy, Users, BookOpen, Clock, Notebook, Loader2, Layout, CheckCircle, Check, X, Download, Flag, RefreshCw, GitBranch, AlertTriangle, List } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Tournament, TournamentTeam, TournamentMatch, TournamentSet, TournamentStage } from '../types/tournament';
 import { ConfirmationModal } from '../components/ConfirmationModal';
+import { TiebreakerModal } from '../components/TiebreakerModal';
 import { OfficialScoreKeeper } from '../components/OfficialScoreKeeper';
 import { generateMatchReport } from '../utils/pdfGenerator';
 
@@ -34,6 +35,11 @@ export const TournamentStartDashboard: React.FC = () => {
     const [publicPageName, setPublicPageName] = useState('');
     const [isUpdating, setIsUpdating] = useState(false);
 
+    // Tiebreaker State
+    const [showTiebreakerModal, setShowTiebreakerModal] = useState(false);
+    const [tiedGroups, setTiedGroups] = useState<{ points: number; teams: TournamentTeam[] }[]>([]);
+    const [isPhaseFinished, setIsPhaseFinished] = useState(false);
+
     useEffect(() => {
         if (id) {
             fetchTournamentData();
@@ -44,6 +50,39 @@ export const TournamentStartDashboard: React.FC = () => {
             return () => clearInterval(interval);
         }
     }, [id]);
+
+    // Check for phase completion logic WHENEVER matches change (Event-driven, not constant loop)
+    useEffect(() => {
+        if (matches.length > 0 && activeStageId) {
+            // Logic: All matches in current phase are finished?
+            const phaseMatches = matches.filter(m => m.stage_id === activeStageId);
+            if (phaseMatches.length > 0) {
+                const allFinished = phaseMatches.every(m => m.status === 'finished');
+                setIsPhaseFinished(allFinished);
+
+                if (allFinished) {
+                    // Check for ties
+                    const standings = calculateStandings();
+                    // Group by Points
+                    const grouped: { [key: number]: TournamentTeam[] } = {};
+                    standings.forEach(t => {
+                        const pts = t.pts || 0;
+                        if (!grouped[pts]) grouped[pts] = [];
+                        grouped[pts].push(t);
+                    });
+
+                    // Filter groups with > 1 team
+                    const ties = Object.entries(grouped)
+                        .filter(([_, group]) => group.length > 1)
+                        .map(([pts, group]) => ({ points: parseInt(pts), teams: group }));
+
+                    setTiedGroups(ties);
+                } else {
+                    setTiedGroups([]);
+                }
+            }
+        }
+    }, [matches, activeStageId, sets]); // Recalculate when matches/sets update
 
     const fetchTournamentData = async (silent = false) => {
         if (!silent) setLoading(true);
@@ -205,13 +244,7 @@ export const TournamentStartDashboard: React.FC = () => {
             }, () => {
                 fetchTournamentData();
             })
-            .on('postgres_changes', {
-                event: '*',
-                schema: 'public',
-                table: 'tournament_sets',
-            }, () => {
-                fetchTournamentData();
-            })
+
             .subscribe();
 
         return () => {
@@ -478,6 +511,8 @@ export const TournamentStartDashboard: React.FC = () => {
                     </div>
                 </div>
 
+
+
                 {/* Main Tabs Navigation */}
                 <div className="flex items-center gap-1 bg-white/5 p-1 rounded-2xl w-fit mb-8 border border-white/5 backdrop-blur-md">
                     <TabButton active={activeTab === 'matches'} onClick={() => setActiveTab('matches')} icon={Calendar} label="Partidos" />
@@ -508,8 +543,27 @@ export const TournamentStartDashboard: React.FC = () => {
 
                                     {/* Bracket Update Button (Inline) */}
                                     <div className="w-px h-6 bg-white/10 mx-2" />
+
+                                    {/* TIEBREAKER BUTTON */}
+                                    {isPhaseFinished && tiedGroups.length > 0 && (
+                                        <button
+                                            onClick={() => setShowTiebreakerModal(true)}
+                                            className="px-3 py-1.5 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-500 border border-yellow-500/30 rounded-lg transition-all flex items-center gap-2 animate-pulse mr-2"
+                                            title="Resolver Desempates"
+                                        >
+                                            <AlertTriangle size={14} />
+                                            <span className="text-xs font-bold uppercase">Desempates</span>
+                                        </button>
+                                    )}
+
                                     <button
                                         onClick={async () => {
+                                            // Enhanced Logic check
+                                            if (tiedGroups.length > 0) {
+                                                setShowTiebreakerModal(true);
+                                                return; // Stop auto-progression if ties exist
+                                            }
+
                                             setIsUpdating(true);
                                             try {
                                                 const { updateBracketProgression } = await import('../utils/bracketLogic');
@@ -529,7 +583,7 @@ export const TournamentStartDashboard: React.FC = () => {
                                         }}
                                         disabled={isUpdating}
                                         className={`p-1.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-lg transition-all flex items-center justify-center ${isUpdating ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                        title="Actualizar Llaves (Progreso del Torneo)"
+                                        title={tiedGroups.length > 0 ? "Resolver Desempates primero" : "Actualizar Llaves (Progreso del Torneo)"}
                                     >
                                         <GitBranch size={16} className={isUpdating ? 'animate-pulse' : ''} />
                                     </button>
@@ -786,67 +840,156 @@ export const TournamentStartDashboard: React.FC = () => {
 
                     {/* Right Column: Status Summary */}
                     <div className="lg:col-span-4 space-y-6">
-                        <div className="bg-gradient-to-br from-blue-600/10 via-purple-900/40 to-blue-900/20 border border-white/10 rounded-3xl p-6 backdrop-blur-md relative overflow-hidden">
+                        <div className="bg-gradient-to-br from-blue-600/10 via-purple-900/40 to-blue-900/20 border border-white/10 rounded-3xl p-6 backdrop-blur-md relative overflow-hidden h-[500px] flex flex-col">
                             <div className="absolute top-0 right-0 p-4 opacity-10">
                                 <Info size={120} className="text-white transform rotate-12" />
                             </div>
 
-                            <h2 className="text-xl font-black mb-6 flex items-center gap-2 relative z-10">
+                            <h2 className="text-xl font-black mb-4 flex items-center gap-2 relative z-10">
                                 <Info className="text-blue-400" /> Resumen Torneo
                             </h2>
 
-                            <div className="flex flex-col items-center mb-6 relative z-10">
-                                {(() => {
-                                    // Calculate Sets Progress manually
-                                    // Total Sets = Sum of sets_per_match for all matches (or default 1/3)
-                                    // Finished Sets = Count of sets with status 'finished'
-                                    const totalSetsExpected = matches.reduce((acc, m) => {
-                                        const setNum = m.is_single_set ? 1 : (tournament?.sets_per_match || 1);
-                                        // If set_number is explicitly providing the "Best Of" count? 
-                                        // Usually sets_per_match is 3 (Best of 3) or 1.
-                                        // Let's assume max possible sets (3) or 1.
-                                        return acc + (m.set_number ? parseInt(m.set_number.split(' ')[0]) || (m.is_single_set ? 1 : 3) : (m.is_single_set ? 1 : 3));
-                                    }, 0);
+                            <style>
+                                {/* 
+                                   Mask Logic for Tighter 2x2 Grid:
+                                   - Cards are larger and closer.
+                                   - Cutout radius matches the central hole.
+                                */}
+                                {`
+                                    .mask-corner-br { mask-image: radial-gradient(circle at 100% 100%, transparent 64px, black 65px); -webkit-mask-image: radial-gradient(circle at 100% 100%, transparent 64px, black 65px); }
+                                    .mask-corner-bl { mask-image: radial-gradient(circle at 0% 100%, transparent 64px, black 65px); -webkit-mask-image: radial-gradient(circle at 0% 100%, transparent 64px, black 65px); }
+                                    .mask-corner-tr { mask-image: radial-gradient(circle at 100% 0%, transparent 64px, black 65px); -webkit-mask-image: radial-gradient(circle at 100% 0%, transparent 64px, black 65px); }
+                                    .mask-corner-tl { mask-image: radial-gradient(circle at 0% 0%, transparent 64px, black 65px); -webkit-mask-image: radial-gradient(circle at 0% 0%, transparent 64px, black 65px); }
+                                    
+                                    @keyframes pulse-center {
+                                        0%, 100% { box-shadow: 0 0 20px rgba(59, 130, 246, 0.2); border-color: rgba(30, 41, 59, 1); }
+                                        50% { box-shadow: 0 0 40px rgba(139, 92, 246, 0.4); border-color: rgba(139, 92, 246, 0.5); }
+                                    }
+                                    .animate-pulse-center {
+                                        animation: pulse-center 3s infinite ease-in-out;
+                                    }
 
-                                    // Actually a better metric for "Sets Completed" is literally just the sets rows in DB that are finished.
-                                    // But we need a denominator. 
-                                    // Denominator: Matches * (Sets Per Match). 
-                                    // If Best of 3, do we count 3? Or 2-3?
-                                    // For progress bar, usually we plan for Max Sets. 
-                                    // Let's iterate matches. 
+                                    @keyframes glow-pulse {
+                                        0%, 100% { opacity: 0; }
+                                        20% { opacity: 0.15; } /* Flash */
+                                        40% { opacity: 0; }
+                                    }
+                                `}
+                            </style>
 
-                                    let calcTotalSets = 0;
-                                    matches.forEach(m => {
-                                        calcTotalSets += (m.is_single_set || tournament?.sets_per_match === 1) ? 1 : 3;
-                                    });
+                            <div className="relative flex-1 w-full h-[400px] flex items-center justify-center">
 
-                                    const finishedSetsCount = sets.filter(s => s.status === 'finished').length;
-                                    const progressVal = calcTotalSets > 0 ? (finishedSetsCount / calcTotalSets) * 100 : 0;
+                                {/* 1. Central Progress Circle */}
+                                <div className="absolute z-30 w-32 h-32 flex items-center justify-center">
+                                    <div className="absolute inset-0 rounded-full bg-[#0f172a] shadow-xl border-4 border-[#1e293b] animate-pulse-center"></div>
+                                    <svg className="w-full h-full -rotate-90 relative z-10" viewBox="0 0 100 100">
+                                        <circle cx="50" cy="50" r="42" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="6" />
+                                        {(() => {
+                                            const totalMatches = matches.length;
+                                            const finishedMatches = matches.filter(m => m.status === 'finished').length;
+                                            const percentage = totalMatches > 0 ? (finishedMatches / totalMatches) * 100 : 0;
+                                            const strokeDasharray = 2 * Math.PI * 42;
+                                            const strokeDashoffset = strokeDasharray - (percentage / 100) * strokeDasharray;
+                                            return (
+                                                <>
+                                                    <circle
+                                                        cx="50" cy="50" r="42"
+                                                        fill="none"
+                                                        stroke="url(#gradient-progress-sidebar)"
+                                                        strokeWidth="6"
+                                                        strokeDasharray={strokeDasharray}
+                                                        strokeDashoffset={strokeDashoffset}
+                                                        strokeLinecap="round"
+                                                        className="transition-all duration-1000 ease-out"
+                                                    />
+                                                    <defs>
+                                                        <linearGradient id="gradient-progress-sidebar" x1="0%" y1="0%" x2="100%" y2="0%">
+                                                            <stop offset="0%" stopColor="#3b82f6" />
+                                                            <stop offset="100%" stopColor="#8b5cf6" />
+                                                        </linearGradient>
+                                                    </defs>
+                                                </>
+                                            );
+                                        })()}
+                                    </svg>
+                                    <div className="absolute inset-0 flex flex-col items-center justify-center z-20">
+                                        {(() => {
+                                            const totalMatches = matches.length;
+                                            const finishedMatches = matches.filter(m => m.status === 'finished').length;
+                                            const percentage = totalMatches > 0 ? Math.round((finishedMatches / totalMatches) * 100) : 0;
+                                            return (
+                                                <>
+                                                    <span className="text-2xl font-black text-white">{percentage}%</span>
+                                                    <span className="text-[8px] uppercase font-bold text-white/40 tracking-widest">Progreso</span>
+                                                </>
+                                            )
+                                        })()}
+                                    </div>
+                                </div>
 
-                                    return (
-                                        <>
-                                            <CircularProgress
-                                                value={progressVal}
-                                                size={160}
-                                                color="text-blue-400"
-                                            />
-                                            {/* Hidden data for layout if needed */}
-                                        </>
-                                    );
-                                })()}
+                                {/* 2. Quadrant Layout (Larger & Tighter) */}
+
+                                {/* Top-Left Card: Matches Played (Cutout BR -> Align content to TL) */}
+                                <div className="absolute bottom-1/2 right-1/2 w-40 h-32 z-20 pb-1 pr-1">
+                                    <MiniStatCard
+                                        icon={Calendar}
+                                        label="Jugados"
+                                        value={`${matches.filter(m => m.status === 'finished').length}/${matches.length}`}
+                                        color="text-amber-400"
+                                        className="w-full h-full rounded-tl-2xl rounded-tr-lg rounded-bl-lg mask-corner-br items-start pl-4 pt-3"
+                                        glowDelay="0s"
+                                    />
+                                </div>
+
+                                {/* Top-Right Card: Phase (Cutout BL -> Align content to TR) */}
+                                <div className="absolute bottom-1/2 left-1/2 w-40 h-32 z-20 pb-1 pl-1">
+                                    <div className={`bg-white/5 border border-white/5 w-full h-full rounded-tr-2xl rounded-tl-lg rounded-br-lg mask-corner-bl flex flex-col items-end pt-3 pr-4 hover:bg-white/10 transition-colors group relative overflow-hidden`} >
+                                        <div className={`absolute inset-0 opacity-0 transition-opacity bg-blue-400 z-0`} style={{ animation: `glow-pulse 4s infinite 1s ease-in-out` }} />
+                                        <div className={`absolute inset-0 opacity-0 group-hover:opacity-10 transition-opacity bg-blue-400 z-0`} />
+                                        <div className={`p-1.5 rounded-full bg-white/5 text-blue-400 shadow-lg ring-1 ring-white/10 mb-1 z-20`}>
+                                            <Award size={16} />
+                                        </div>
+                                        <div className="text-right z-10 w-full relative">
+                                            <div className="text-xl font-black text-white leading-none mb-0.5 shadow-black drop-shadow-md truncate">
+                                                {matches.filter(m => m.stage_id === activeStageId && m.status === 'finished').length}/{matches.filter(m => m.stage_id === activeStageId).length}
+                                            </div>
+                                            <div className="text-[9px] uppercase font-bold text-white/30 tracking-wider leading-tight w-full truncate">
+                                                {stages.find(s => s.id === activeStageId)?.name || 'General'}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Bottom-Left Card: Live (Cutout TR -> Align content to BL) */}
+                                <div className="absolute top-1/2 right-1/2 w-40 h-32 z-10 pt-1 pr-1">
+                                    <MiniStatCard
+                                        icon={List}
+                                        label="Sets Jugados"
+                                        value={(() => {
+                                            const finishedSets = (sets || []).filter(s => s.status === 'finished').length;
+                                            const totalSets = matches.length * (tournament?.sets_per_match || 3);
+                                            return `${finishedSets}/${totalSets}`;
+                                        })()}
+                                        color="text-green-400"
+                                        className="w-full h-full rounded-bl-2xl rounded-tl-lg rounded-br-lg mask-corner-tr items-start pl-4 justify-end pb-3"
+                                        glowDelay="2s"
+                                    />
+                                </div>
+
+                                {/* Bottom-Right Card: Teams (Cutout TL -> Align content to BR) */}
+                                <div className="absolute top-1/2 left-1/2 w-40 h-32 z-10 pt-1 pl-1">
+                                    <MiniStatCard
+                                        icon={Users}
+                                        label="Equipos"
+                                        value={teams.length}
+                                        color="text-purple-400"
+                                        className="w-full h-full rounded-br-2xl rounded-tr-lg rounded-bl-lg mask-corner-tl items-end pr-4 justify-end pb-3 text-right"
+                                        glowDelay="3s"
+                                    />
+                                </div>
+
                             </div>
 
-                            <div className="grid grid-cols-2 gap-3 relative z-10">
-                                <MiniStatCard icon={Calendar} label="Total Partidos" value={matches.length} color="text-amber-400" />
-                                <MiniStatCard icon={CheckCircle} label="Finalizados" value={matches.filter(m => m.status === 'finished').length} color="text-green-400" />
-                                <MiniStatCard
-                                    icon={Notebook}
-                                    label="Sets"
-                                    value={`${sets.filter(s => s.status === 'finished').length} / ${matches.reduce((acc, m) => acc + ((m.is_single_set || m.set_number === '1 Set') ? 1 : 3), 0)}`}
-                                    color="text-cyan-400"
-                                />
-                                <MiniStatCard icon={Users} label="Equipos" value={teams.length} color="text-purple-400" />
-                            </div >
                         </div >
 
                         {/* Leaderboard Section (Replaces Recent Activity) */}
@@ -911,6 +1054,14 @@ export const TournamentStartDashboard: React.FC = () => {
                 </div >
             </main >
 
+            {/* Tiebreaker Modal */}
+            <TiebreakerModal
+                isOpen={showTiebreakerModal}
+                onClose={() => setShowTiebreakerModal(false)}
+                tiedGroups={tiedGroups}
+                rules={tournament?.tiebreaker_rules || []}
+            />
+
             <ConfirmationModal
                 isOpen={!!startMatchModal}
                 onClose={() => setStartMatchModal(null)}
@@ -964,15 +1115,22 @@ const B5BallToggle = ({ isActive, onToggle }: any) => (
     </div>
 );
 
-const MiniStatCard = ({ icon: Icon, label, value, color }: any) => (
-    <div className="bg-white/5 border border-white/5 rounded-2xl p-3 flex flex-col items-center justify-center gap-2 hover:bg-white/10 transition-colors group relative overflow-hidden">
-        <div className={`absolute inset-0 opacity-0 group-hover:opacity-10 transition-opacity ${color.replace('text-', 'bg-')}`} />
-        <div className={`p-2 rounded-full bg-white/5 ${color} shadow-lg ring-1 ring-white/10`}>
+const MiniStatCard = ({ icon: Icon, label, value, color, className, style, glowDelay }: any) => (
+    <div className={`bg-white/5 border border-white/5 p-3 flex flex-col items-center justify-center gap-1 hover:bg-white/10 transition-colors group relative overflow-hidden ${className}`} style={style}>
+        {/* Active Glow Animation */}
+        <div
+            className={`absolute inset-0 opacity-0 transition-opacity ${color.replace('text-', 'bg-')} z-0`}
+            style={{ animation: `glow-pulse 4s infinite ${glowDelay} ease-in-out` }}
+        />
+
+        <div className={`absolute inset-0 opacity-0 group-hover:opacity-10 transition-opacity ${color.replace('text-', 'bg-')} z-0`} />
+
+        <div className={`p-1.5 rounded-full bg-white/5 ${color} shadow-lg ring-1 ring-white/10 mb-1 z-20`}>
             <Icon size={16} />
         </div>
-        <div className="text-center z-10">
-            <div className="text-xl font-black text-white leading-none mb-1 shadow-black drop-shadow-md">{value}</div>
-            <div className="text-[8px] uppercase font-bold text-white/30 tracking-wider leading-tight">{label}</div>
+        <div className="z-10 w-full relative">
+            <div className="text-xl font-black text-white leading-none mb-0.5 shadow-black drop-shadow-md truncate">{value}</div>
+            <div className="text-[9px] uppercase font-bold text-white/30 tracking-wider leading-tight w-full truncate">{label}</div>
         </div>
     </div>
 );
@@ -1344,3 +1502,5 @@ const MatchCard = ({ match, teams, sets, onStartSet, tournament, fields, referee
         </div>
     );
 };
+
+
