@@ -237,17 +237,21 @@ export const TournamentStartDashboard: React.FC = () => {
             if (matchSets.length === 0) return;
 
             // Calculate runs regardless of match status
+            // Calculate runs regardless of match status
             matchSets.forEach(set => {
                 const localTeam = stageStandings.find(t => t.id === match.local_team_id);
                 const visitorTeam = stageStandings.find(t => t.id === match.visitor_team_id);
 
+                const sLR = set.home_score ?? set.local_runs ?? 0;
+                const sVR = set.away_score ?? set.visitor_runs ?? 0;
+
                 if (localTeam) {
-                    localTeam.runs_scored += set.local_runs;
-                    localTeam.runs_allowed += set.visitor_runs;
+                    localTeam.runs_scored += sLR;
+                    localTeam.runs_allowed += sVR;
                 }
                 if (visitorTeam) {
-                    visitorTeam.runs_scored += set.visitor_runs;
-                    visitorTeam.runs_allowed += set.local_runs;
+                    visitorTeam.runs_scored += sVR;
+                    visitorTeam.runs_allowed += sLR;
                 }
             });
 
@@ -256,8 +260,10 @@ export const TournamentStartDashboard: React.FC = () => {
                 let localSetWins = 0;
                 let visitorSetWins = 0;
                 matchSets.forEach(set => {
-                    if (set.local_runs > set.visitor_runs) localSetWins++;
-                    else if (set.visitor_runs > set.local_runs) visitorSetWins++;
+                    const sLR = set.home_score ?? set.local_runs ?? 0;
+                    const sVR = set.away_score ?? set.visitor_runs ?? 0;
+                    if (sLR > sVR) localSetWins++;
+                    else if (sVR > sLR) visitorSetWins++;
                 });
 
                 const localTeam = stageStandings.find(t => t.id === match.local_team_id);

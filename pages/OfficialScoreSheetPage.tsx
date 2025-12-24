@@ -368,6 +368,9 @@ export const OfficialScoreSheetPage: React.FC = () => {
     const [gameState, setGameState] = useState<ScoreCardState | null>(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
+    const [finishingTeam, setFinishingTeam] = useState<'visitor' | 'local' | null>(null);
+    const [finishModalOpen, setFinishModalOpen] = useState(false);
+    const [toastMessage, setToastMessage] = useState<string | null>(null);
     const [lastSaved, setLastSaved] = useState<Date | null>(null);
     const [officials, setOfficials] = useState<OfficialsData>({ plate: '', field1: '', field2: '', field3: '', table: '' });
     const [isReadOnly, setIsReadOnly] = useState(false);
@@ -647,6 +650,95 @@ export const OfficialScoreSheetPage: React.FC = () => {
         // Implementation deferred to `handleScoreUpdate` for cleaner flow.
     }
 
+    const handleFinishRequest = (team: 'visitor' | 'local') => {
+        setFinishingTeam(team);
+        setFinishModalOpen(true);
+    };
+
+    const executeFinishWinner = async () => {
+        const team = finishingTeam;
+        if (!gameState || !team) return;
+
+        const winScore = team === 'visitor' ? gameState.totals.visitor : gameState.totals.local;
+        const loseScore = team === 'visitor' ? gameState.totals.local : gameState.totals.visitor;
+        const winnerName = team === 'visitor' ? gameState.gameInfo.visitor : gameState.gameInfo.home;
+        const endTime = new Date().toISOString();
+
+        const newState: ScoreCardState = {
+            ...gameState,
+            winner: { name: winnerName, score: `${winScore}-${loseScore}`, isVisitor: team === 'visitor' },
+            gameInfo: {
+                ...gameState.gameInfo,
+                endTime: endTime
+            }
+        };
+        setGameState(newState);
+
+        // 1. SAVE SET FIRST
+        await saveToDB(newState, null, {
+            status: 'finished',
+            end_time: endTime
+        });
+
+        // LOG ACTIVITY
+        if (tournamentId) {
+            logTournamentActivity(tournamentId, 'set_end', `Set ${setNumber} Finalizado: ${winnerName} ganó ${winScore}-${loseScore}`, { matchId, setNumber, winner: team });
+        }
+
+        // 2. CHECK MATCH STATUS (Optimistic)
+        const { data: dbSets } = await supabase.from('tournament_sets').select('*').eq('match_id', matchId);
+        const { data: dbMatch } = await supabase.from('tournament_matches').select('*').eq('id', matchId).single();
+
+        if (dbSets && dbMatch) {
+            let setsToWin = 2;
+            if (dbMatch.is_single_set) setsToWin = 1;
+
+            const currentSetInt = parseInt(setNumber);
+            let vWins = 0;
+            let lWins = 0;
+
+            dbSets.forEach(s => {
+                if (s.set_number !== currentSetInt && s.status === 'finished') {
+                    const sVR = s.away_score ?? s.visitor_runs ?? 0;
+                    const sLR = s.home_score ?? s.local_runs ?? 0;
+                    if (sVR > sLR) vWins++;
+                    else if (sLR > sVR) lWins++;
+                }
+            });
+
+            if (team === 'visitor') vWins++;
+            else lWins++;
+
+            console.log(`Match Win Check: V=${vWins}, L=${lWins}, Goal=${setsToWin}`);
+
+            let matchWinnerId = null;
+            if (vWins >= setsToWin) matchWinnerId = dbMatch.visitor_team_id;
+            else if (lWins >= setsToWin) matchWinnerId = dbMatch.local_team_id;
+
+            if (matchWinnerId) {
+                const { error: matchUpdateError } = await supabase.from('tournament_matches').update({
+                    status: 'finished',
+                    winner_team_id: matchWinnerId,
+                    end_time: endTime
+                }).eq('id', matchId);
+
+                if (!matchUpdateError) {
+                    if (tournamentId) {
+                        logTournamentActivity(tournamentId, 'match_end', `Partido Finalizado (Auto). Ganador: ${matchWinnerId === dbMatch.visitor_team_id ? 'Visitante' : 'Local'}`, { matchId });
+                    }
+                } else {
+                    console.error("Match Update Error:", matchUpdateError);
+                }
+            }
+        }
+
+        setIsReadOnly(true);
+        setToastMessage("¡Set Finalizado y Guardado Correctamente!");
+        setTimeout(() => {
+            navigate(-1);
+        }, 2000);
+    };
+
     const handleWinner = async (team: 'visitor' | 'local') => {
         if (!gameState || !confirm(`¿Confirmar que ${team === 'visitor' ? gameState.gameInfo.visitor : gameState.gameInfo.home} ganó este SET?`)) return;
 
@@ -660,12 +752,12 @@ export const OfficialScoreSheetPage: React.FC = () => {
             winner: { name: winnerName, score: `${winScore}-${loseScore}`, isVisitor: team === 'visitor' },
             gameInfo: {
                 ...gameState.gameInfo,
-                endTime: endTime // Update visible end time immediately
+                endTime: endTime
             }
         };
         setGameState(newState);
 
-        // Single Update for everything: State + Status + Stats + End Time
+        // 1. SAVE SET FIRST
         await saveToDB(newState, null, {
             status: 'finished',
             end_time: endTime
@@ -678,67 +770,74 @@ export const OfficialScoreSheetPage: React.FC = () => {
 
         alert("Set Finalizado correctamente.");
 
-        // --- MATCH WIN CHECK LOGIC ---
-        if (matchData) {
-            // Fetch all sets to check series status - RELOAD to be safe
-            const { data: sets } = await supabase.from('tournament_sets').select('*').eq('match_id', matchId);
+        // 2. CHECK MATCH STATUS
+        // Reload sets to ensure we have the DB state of PREVIOUS sets
+        const { data: dbSets } = await supabase.from('tournament_sets').select('*').eq('match_id', matchId);
 
-            if (sets) {
-                // Determine Set Mode
-                const isSingleSet = matchData.is_single_set === true || matchData.set_number === '1 Set' || matchData.set_number === 1;
-                const setsToWin = isSingleSet ? 1 : 2;
+        // Reload Match to ensure we have correct rules (best of 3/5/1)
+        const { data: dbMatch } = await supabase.from('tournament_matches').select('*').eq('id', matchId).single();
 
-                let vWins = 0;
-                let lWins = 0;
+        if (dbSets && dbMatch) {
+            // Determine Sets To Win
+            // Logic: If 'sets_per_match' exists use it, or 'is_single_set', or default to Best of 3 (needs 2 wins)
+            let setsToWin = 2;
+            if (dbMatch.is_single_set) setsToWin = 1;
 
-                // Explicitly count wins from specific sets (1, 2, 3)
-                // We must account for the CURRENT set which we just finished locally but might not be reflected if replication is slow
-                // So we iterate 1..N and check.
-                const possibleSets = [1, 2, 3];
-                const currentSetNum = parseInt(setNumber);
+            // Count Wins
+            let vWins = 0;
+            let lWins = 0;
 
-                possibleSets.forEach(num => {
-                    let setWinner = '';
+            // We iterate through all DB sets.
+            // IMPORTANT: The current set might ALREADY be "finished" in DB because we just saved it above.
+            // But due to race conditions/latency, it might not be.
+            // TRUST THE LOCAL DECISION FOR THE CURRENT SET NUMBER.
 
-                    if (num === currentSetNum) {
-                        setWinner = team; // Current set winner
-                    } else {
-                        const s = sets.find(sx => sx.set_number === num);
-                        if (s && s.status === 'finished') {
-                            const vR = s.away_score ?? s.visitor_runs ?? 0;
-                            const lR = s.home_score ?? s.local_runs ?? 0;
-                            if (vR > lR) setWinner = 'visitor';
-                            else if (lR > vR) setWinner = 'local';
-                        }
-                    }
+            const currentSetInt = parseInt(setNumber);
 
-                    if (setWinner === 'visitor') vWins++;
-                    if (setWinner === 'local') lWins++;
-                });
+            // Iterate known set numbers 1..3 (or 1..5)
+            // Just assume sets 1, 2, 3...
+            // Count Previous Wins from DB (excluding current set)
+            // vWins and lWins are already declared above at 695
 
-                console.log(`Match Win Check: V=${vWins}, L=${lWins}, Goal=${setsToWin}`);
+            dbSets.forEach(s => {
+                if (s.set_number !== currentSetInt && s.status === 'finished') {
+                    const sVR = s.away_score ?? s.visitor_runs ?? 0;
+                    const sLR = s.home_score ?? s.local_runs ?? 0;
+                    if (sVR > sLR) vWins++;
+                    else if (sLR > sVR) lWins++;
+                }
+            });
 
-                let matchWinnerId = null;
-                // Check if threshold reached
-                if (vWins >= setsToWin) matchWinnerId = matchData.visitor_team_id;
-                else if (lWins >= setsToWin) matchWinnerId = matchData.local_team_id;
+            // Add CURRENT Win (Optimistic)
+            // Add CURRENT Win (Optimistic)
+            if (team === 'visitor') vWins++;
+            else lWins++;
 
-                if (matchWinnerId) {
-                    await supabase.from('tournament_matches').update({
-                        status: 'finished',
-                        winner_team_id: matchWinnerId,
-                        end_time: endTime // Mark match as ended
-                    }).eq('id', matchId);
+            console.log(`Match Win Check: V=${vWins}, L=${lWins}, Goal=${setsToWin}`);
 
+            let matchWinnerId = null;
+            if (vWins >= setsToWin) matchWinnerId = dbMatch.visitor_team_id;
+            else if (lWins >= setsToWin) matchWinnerId = dbMatch.local_team_id;
+
+            // Update Match if we have a winner (Allow re-finishing to repair stats)
+            if (matchWinnerId) {
+                const { error: matchUpdateError } = await supabase.from('tournament_matches').update({
+                    status: 'finished',
+                    winner_team_id: matchWinnerId,
+                    end_time: endTime
+                }).eq('id', matchId);
+
+                if (!matchUpdateError) {
                     if (tournamentId) {
-                        logTournamentActivity(tournamentId, 'match_end', `Partido Finalizado. Ganador: ${matchWinnerId === matchData.visitor_team_id ? matchData.visitor_team?.name : matchData.local_team?.name}`, { matchId });
+                        logTournamentActivity(tournamentId, 'match_end', `Partido Finalizado (Auto). Ganador: ${matchWinnerId === dbMatch.visitor_team_id ? 'Visitante' : 'Local'}`, { matchId });
                     }
-                    alert(`¡Partido Finalizado! Ganador: ${matchWinnerId === matchData.visitor_team_id ? matchData.visitor_team?.name : matchData.local_team?.name}`);
+                    alert(`¡MARCADOR GLOBAL FINALIZADO! Ganador: ${matchWinnerId === dbMatch.visitor_team_id ? 'Visitante' : 'Local'}`);
+                } else {
+                    console.error("Match Update Error:", matchUpdateError);
                 }
             }
         }
 
-        // Close / Go Back
         navigate(-1);
     };
 
@@ -1125,7 +1224,7 @@ export const OfficialScoreSheetPage: React.FC = () => {
                             {gameState.winner?.isVisitor && <div className="absolute -top-2 -right-2 bg-yellow-500 text-black p-1 rounded-full shadow-lg border border-white"><Trophy size={14} /></div>}
                         </div>
                         <h2 className="text-lg font-black uppercase text-center leading-none">{gameState.gameInfo?.visitor || 'Visitante'}</h2>
-                        <button onClick={() => handleWinner('visitor')} className="text-[10px] px-2 py-0.5 bg-green-900/30 text-green-400 border border-green-500/20 rounded hover:bg-green-500 hover:text-white transition-colors">
+                        <button onClick={() => handleFinishRequest('visitor')} className="text-[10px] px-2 py-0.5 bg-green-900/30 text-green-400 border border-green-500/20 rounded hover:bg-green-500 hover:text-white transition-colors">
                             MARCAR GANADOR
                         </button>
                     </div>
@@ -1159,7 +1258,7 @@ export const OfficialScoreSheetPage: React.FC = () => {
                             {gameState.winner?.isVisitor === false && <div className="absolute -top-2 -right-2 bg-yellow-500 text-black p-1 rounded-full shadow-lg border border-white"><Trophy size={14} /></div>}
                         </div>
                         <h2 className="text-lg font-black uppercase text-center leading-none">{gameState.gameInfo?.home || 'Local'}</h2>
-                        <button onClick={() => handleWinner('local')} className="text-[10px] px-2 py-0.5 bg-green-900/30 text-green-400 border border-green-500/20 rounded hover:bg-green-500 hover:text-white transition-colors">
+                        <button onClick={() => handleFinishRequest('local')} className="text-[10px] px-2 py-0.5 bg-green-900/30 text-green-400 border border-green-500/20 rounded hover:bg-green-500 hover:text-white transition-colors">
                             MARCAR GANADOR
                         </button>
                     </div>
@@ -1193,6 +1292,30 @@ export const OfficialScoreSheetPage: React.FC = () => {
                 onSelect={handleScoreUpdate}
                 position={scoringModal?.pos || null}
             />
+
+            {/* Custom UI: Finish Confirmation */}
+            <ConfirmationModal
+                isOpen={finishModalOpen}
+                onClose={() => setFinishModalOpen(false)}
+                onConfirm={executeFinishWinner}
+                title="¿Finalizar Set?"
+                message={`¿Estás seguro de que deseas marcar como ganador a ${finishingTeam === 'visitor' ? (gameState?.gameInfo?.visitor || 'Visitante') : (gameState?.gameInfo?.home || 'Local')}?\n\nEsta acción cerrará el set y actualizará el marcador global.`}
+                confirmText="Sí, Finalizar"
+                cancelText="Cancelar"
+                variant="warning"
+            />
+
+            {/* Custom Toast */}
+            {toastMessage && (
+                <div className="fixed bottom-6 right-6 bg-green-500 text-white px-6 py-4 rounded-xl shadow-2xl flex items-center gap-3 animate-in slide-in-from-bottom-5 fade-in duration-300 z-[200]">
+                    <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">
+                        <CheckCircle2 size={20} />
+                    </div>
+                    <span className="font-bold text-lg">{toastMessage}</span>
+                </div>
+            )}
+
+
         </div>
     );
 };
