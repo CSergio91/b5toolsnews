@@ -4,7 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { UserNavbar } from '../components/UserNavbar';
 import { ParticlesBackground } from '../components/ParticlesBackground';
-import { ArrowLeft, Award, Calendar, ChevronDown, Info, MapPin, Play, RefreshCcw, Search, Trophy, Users, BookOpen, Clock, Notebook, Loader2, Layout, CheckCircle, Check, X, Download, Flag } from 'lucide-react';
+import { ArrowLeft, Award, Calendar, ChevronDown, Info, MapPin, Play, RefreshCcw, Search, Trophy, Users, BookOpen, Clock, Notebook, Loader2, Layout, CheckCircle, Check, X, Download, Flag, RefreshCw, GitBranch } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Tournament, TournamentTeam, TournamentMatch, TournamentSet, TournamentStage } from '../types/tournament';
 import { ConfirmationModal } from '../components/ConfirmationModal';
@@ -32,6 +32,7 @@ export const TournamentStartDashboard: React.FC = () => {
     const [isPublicLive, setIsPublicLive] = useState(false);
     const [showPublicModal, setShowPublicModal] = useState(false);
     const [publicPageName, setPublicPageName] = useState('');
+    const [isUpdating, setIsUpdating] = useState(false);
 
     useEffect(() => {
         if (id) {
@@ -490,14 +491,42 @@ export const TournamentStartDashboard: React.FC = () => {
                                         <button
                                             key={stage.id}
                                             onClick={() => setActiveStageId(stage.id)}
-                                            className={`px - 5 py - 2.5 rounded - xl text - sm font - bold transition - all whitespace - nowrap border ${activeStageId === stage.id
-                                                ? 'bg-blue-600 border-blue-400 text-white shadow-lg shadow-blue-600/20 scale-105'
-                                                : 'bg-white/5 border-white/10 text-white/50 hover:bg-white/10 hover:text-white'
-                                                } `}
+                                            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap border ${activeStageId === stage.id
+                                                ? 'bg-blue-600 border-blue-400 text-white shadow-lg shadow-blue-600/20'
+                                                : 'bg-white/5 border-white/10 text-white/50 hover:bg-white/10 hover:text-white hover:border-white/20'
+                                                }`}
                                         >
                                             {stage.name}
                                         </button>
                                     ))}
+
+                                    {/* Bracket Update Button (Inline) */}
+                                    <div className="w-px h-6 bg-white/10 mx-2" />
+                                    <button
+                                        onClick={async () => {
+                                            setIsUpdating(true);
+                                            try {
+                                                const { updateBracketProgression } = await import('../utils/bracketLogic');
+                                                const res = await updateBracketProgression(supabase, id);
+                                                if (res.success) {
+                                                    alert(`Llaves actualizadas. ${res.updates} partidos modificados.`);
+                                                    fetchTournamentData();
+                                                } else {
+                                                    throw res.error;
+                                                }
+                                            } catch (e) {
+                                                console.error("Bracket update error:", e);
+                                                alert("Error al actualizar llaves.");
+                                            } finally {
+                                                setIsUpdating(false);
+                                            }
+                                        }}
+                                        disabled={isUpdating}
+                                        className={`p-1.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-lg transition-all flex items-center justify-center ${isUpdating ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                        title="Actualizar Llaves (Progreso del Torneo)"
+                                    >
+                                        <GitBranch size={16} className={isUpdating ? 'animate-pulse' : ''} />
+                                    </button>
                                 </div>
 
                                 {/* Matches Grid */}
