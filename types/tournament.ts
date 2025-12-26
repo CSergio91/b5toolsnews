@@ -59,6 +59,7 @@ export interface TournamentTeam {
     losses: number;
     runs_scored: number;
     runs_allowed: number;
+    tiebreaker_rank?: number;
     gp?: number;
     pts?: number;
     // Calculated Stats

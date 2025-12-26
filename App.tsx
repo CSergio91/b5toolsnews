@@ -16,6 +16,7 @@ import TournamentPreviewPage from './components/Builder/preview/previewpage';
 import { TournamentPreviewNewPage } from './components/Builder/preview/TournamentPreviewNewPage';
 import { TournamentStartDashboard } from './pages/TournamentStartDashboard';
 import { OfficialScoreSheetPage } from './pages/OfficialScoreSheetPage';
+import { ArchivedTournamentViewer } from './pages/ArchivedTournamentViewer';
 
 import { LanguageProvider } from './context/LanguageContext';
 import { ToastProvider } from './context/ToastContext';
@@ -45,6 +46,7 @@ const App: React.FC = () => {
                 {/* Official Game Routes */}
                 <Route path="/dashboard/official-game/:matchId/:setNumber" element={<OfficialScoreSheetPage />} />
                 <Route path="/dashboard/torneos/:tournamentId/Start/ScoreRegister/:teamNames/:matchId/:setNumber" element={<OfficialScoreSheetPage />} />
+                <Route path="/dashboard/torneos/archived/:id" element={<ArchivedTournamentViewer />} />
                 {/* Fallback Legacy Route - can be removed eventually or redirected */}
                 <Route path="/torneos" element={<Navigate to="/dashboard/torneos" replace />} />
                 <Route path="/torneosinvitados" element={<Navigate to="/dashboard/torneosinvitados" replace />} />

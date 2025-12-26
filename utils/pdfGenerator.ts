@@ -522,3 +522,129 @@ export const generateMatchReport = async (
   applyGlobalBranding(doc, logoBase64);
   doc.save(`B5Tools_Match_${match.id.slice(0, 6)}_${dateStr.replace(/\//g, '-')}.pdf`);
 };
+// --- NEW TOURNAMENT SUMMARY REPORT GENERATOR ---
+export const generateTournamentSummaryReport = async (
+  tournament: any,
+  teams: any[],
+  matches: any[],
+  sets: any[],
+  standings: any[]
+) => {
+  const doc = new jsPDF('p', 'mm', 'a4');
+  let logoBase64 = '';
+  try {
+    if (tournament.logo_url) logoBase64 = await getImageDataUrl(tournament.logo_url);
+    else logoBase64 = await getImageDataUrl('/logo.png');
+  } catch (e) { }
+
+  const dateStr = new Date().toLocaleDateString();
+
+  // Dummy ScoreCardState for the header
+  const headerState: ScoreCardState = {
+    gameInfo: {
+      competition: tournament.name || 'RESUMEN DE TORNEO',
+      place: tournament.location || 'N/A',
+      date: dateStr,
+      gameNum: 'RESUMEN',
+      setNum: 'FINAL',
+      visitor: '',
+      home: '',
+    } as any,
+    visitorTeam: { slots: [] }, localTeam: { slots: [] },
+    inningScores: { visitor: [], local: [] },
+    totals: { visitor: '0', local: '0' },
+    errors: { visitor: '0', local: '0' }
+  };
+
+  drawProfessionalHeader(doc, headerState, logoBase64, 'REPORTE FINAL Y RESUMEN DEL TORNEO');
+
+  let currentY = 55;
+
+  // 1. FINAL STANDINGS (Clasificación)
+  doc.setFillColor(30, 41, 59);
+  doc.roundedRect(15, currentY, 180, 8, 1, 1, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  doc.text('TABLA FINAL DE CLASIFICACIÓN', 20, currentY + 5.5);
+  currentY += 10;
+
+  autoTable(doc, {
+    startY: currentY,
+    head: [['POS', 'EQUIPO', 'JJ', 'JG', 'JP', 'PTS', 'AVE', 'R+', 'R-']],
+    body: standings.map((t, idx) => [
+      (idx + 1),
+      t.name.toUpperCase(),
+      t.gp || 0,
+      t.wins || 0,
+      t.losses || 0,
+      t.pts || 0,
+      t.gp > 0 ? (t.wins / t.gp).toFixed(3) : '.000',
+      t.runs_scored || 0,
+      t.runs_allowed || 0
+    ]),
+    theme: 'grid',
+    headStyles: { fillColor: [15, 23, 42], halign: 'center' },
+    styles: { fontSize: 8, halign: 'center' },
+    columnStyles: { 1: { halign: 'left', fontStyle: 'bold', cellWidth: 50 } }
+  });
+
+  currentY = (doc as any).lastAutoTable.finalY + 15;
+
+  // 2. CHRONOLOGICAL MATCH RESULTS
+  if (currentY > 250) { doc.addPage(); currentY = 20; }
+
+  doc.setFillColor(30, 41, 59);
+  doc.roundedRect(15, currentY, 180, 8, 1, 1, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.text('RESULTADOS CRONOLÓGICOS DE PARTIDOS', 20, currentY + 5.5);
+  currentY += 12;
+
+  // Sort matches by start_time
+  const sortedMatches = [...matches].sort((a, b) => {
+    const timeA = a.start_time ? new Date(a.start_time).getTime() : 0;
+    const timeB = b.start_time ? new Date(b.start_time).getTime() : 0;
+    return timeA - timeB;
+  });
+
+  for (const match of sortedMatches) {
+    if (currentY > 240) {
+      doc.addPage();
+      currentY = 20;
+    }
+
+    const vTeam = teams.find(t => t.id === match.visitor_team_id);
+    const lTeam = teams.find(t => t.id === match.local_team_id);
+    const matchSets = sets.filter(s => s.match_id === match.id).sort((a, b) => a.set_number - b.set_number);
+
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(226, 232, 240);
+    doc.roundedRect(15, currentY, 180, 25, 1, 1, 'FD');
+
+    doc.setTextColor(30, 41, 59);
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`${match.name || 'PARTIDO'} - ${new Date(match.start_time).toLocaleString()}`, 20, currentY + 6);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+
+    const vScore = matchSets.reduce((acc, s) => acc + ((s.away_score || s.visitor_runs) > (s.home_score || s.local_runs) ? 1 : 0), 0);
+    const lScore = matchSets.reduce((acc, s) => acc + ((s.home_score || s.local_runs) > (s.away_score || s.visitor_runs) ? 1 : 0), 0);
+
+    doc.text(`${vTeam?.name || 'VISITANTE'} (${vScore})`, 25, currentY + 16);
+    doc.text('vs', 85, currentY + 16, { align: 'center' });
+    doc.text(`${lTeam?.name || 'LOCAL'} (${lScore})`, 105, currentY + 16);
+
+    const winnerName = match.winner_team_id === vTeam?.id ? vTeam?.name : (match.winner_team_id === lTeam?.id ? lTeam?.name : 'PENDIENTE');
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(37, 99, 235);
+    doc.text(`GANADOR: ${winnerName}`, 190, currentY + 16, { align: 'right' });
+
+    currentY += 30;
+  }
+
+  applyGlobalBranding(doc, logoBase64);
+  doc.save(`Resumen_${tournament.name.replace(/\s+/g, '_')}_${dateStr.replace(/\//g, '-')}.pdf`);
+};

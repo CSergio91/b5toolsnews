@@ -4,13 +4,15 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { UserNavbar } from '../components/UserNavbar';
 import { ParticlesBackground } from '../components/ParticlesBackground';
-import { ArrowLeft, Award, Calendar, ChevronDown, Info, MapPin, Play, RefreshCcw, Search, Trophy, Users, BookOpen, Clock, Notebook, Loader2, Layout, CheckCircle, Check, X, Download, Flag, RefreshCw, GitBranch, AlertTriangle, List } from 'lucide-react';
+import { ArrowLeft, Award, Calendar, ChevronDown, Info, MapPin, Play, RefreshCcw, Search, Trophy, Users, BookOpen, Clock, Notebook, Loader2, Layout, CheckCircle, Check, X, Download, Flag, RefreshCw, GitBranch, AlertTriangle, List, ArrowRightLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import confetti from 'canvas-confetti';
 import { Tournament, TournamentTeam, TournamentMatch, TournamentSet, TournamentStage } from '../types/tournament';
 import { ConfirmationModal } from '../components/ConfirmationModal';
 import { TiebreakerModal } from '../components/TiebreakerModal';
 import { OfficialScoreKeeper } from '../components/OfficialScoreKeeper';
-import { generateMatchReport } from '../utils/pdfGenerator';
+import { generateMatchReport, generateTournamentSummaryReport } from '../utils/pdfGenerator';
+import { logTournamentActivity } from '../utils/logger';
 
 export const TournamentStartDashboard: React.FC = () => {
     const { id } = useParams<{ id: string }>();
@@ -39,6 +41,8 @@ export const TournamentStartDashboard: React.FC = () => {
     const [showTiebreakerModal, setShowTiebreakerModal] = useState(false);
     const [tiedGroups, setTiedGroups] = useState<{ points: number; teams: TournamentTeam[] }[]>([]);
     const [isPhaseFinished, setIsPhaseFinished] = useState(false);
+    const [showFinishModal, setShowFinishModal] = useState(false);
+    const [archiving, setArchiving] = useState(false);
 
     useEffect(() => {
         if (id) {
@@ -71,10 +75,25 @@ export const TournamentStartDashboard: React.FC = () => {
                         grouped[pts].push(t);
                     });
 
-                    // Filter groups with > 1 team
+                    // Filter groups with > 1 team and find their rank in standings
+                    // ONLY include groups where not all teams have a unique tiebreaker_rank
                     const ties = Object.entries(grouped)
-                        .filter(([_, group]) => group.length > 1)
-                        .map(([pts, group]) => ({ points: parseInt(pts), teams: group }));
+                        .filter(([_, group]) => {
+                            if (group.length <= 1) return false;
+
+                            // Check if already resolved: all have >0 rank AND they are unique
+                            const ranks = group.map(t => t.tiebreaker_rank || 0);
+                            const allHaveRank = ranks.every(r => r > 0);
+                            const uniqueRanks = new Set(ranks.filter(r => r > 0)).size;
+
+                            return !allHaveRank || uniqueRanks < group.length;
+                        })
+                        .map(([pts, group]) => {
+                            // Find the rank of the first team in this group within the full standings
+                            const firstTeamId = group[0].id;
+                            const rank = standings.findIndex(t => t.id === firstTeamId) + 1;
+                            return { points: parseInt(pts), teams: group, rank };
+                        });
 
                     setTiedGroups(ties);
                 } else {
@@ -109,7 +128,16 @@ export const TournamentStartDashboard: React.FC = () => {
             }
 
             setStages(finalStages);
-            if (finalStages.length > 0) setActiveStageId(finalStages[0].id);
+
+            // Initialize Active Stage based on status if available
+            if (!activeStageId && finalStages.length > 0) {
+                const active = pData?.find(p => p.status === 'active');
+                if (active) {
+                    setActiveStageId(active.phase_id);
+                } else {
+                    setActiveStageId(finalStages[0].id);
+                }
+            }
 
             // ... (Fetch Teams remains in public) ...
             const { data: tmData } = await supabase.from('tournament_teams').select('*').eq('tournament_id', id);
@@ -320,12 +348,24 @@ export const TournamentStartDashboard: React.FC = () => {
             }
         });
 
-        // Sort by Points, then Run Diff
+        // Sort by Points, then Tiebreaker Rank, then Run Diff, then Runs Scored
         return stageStandings.sort((a, b) => {
+            // 1. Primary sort: Points (Desc)
             if ((b.pts || 0) !== (a.pts || 0)) return (b.pts || 0) - (a.pts || 0);
-            const diffA = a.runs_scored - a.runs_allowed;
-            const diffB = b.runs_scored - b.runs_allowed;
-            return diffB - diffA;
+
+            // 2. Secondary: Tiebreaker Rank (Asc, 1 is better than 2)
+            // IMPORTANT: Only compare if BOTH have a rank > 0, otherwise standard tiebreakers apply
+            if ((a.tiebreaker_rank || 0) > 0 && (b.tiebreaker_rank || 0) > 0) {
+                return (a.tiebreaker_rank || 0) - (b.tiebreaker_rank || 0);
+            }
+
+            // 3. Tertiary: Run Difference (Desc)
+            const diffA = (a.runs_scored || 0) - (a.runs_allowed || 0);
+            const diffB = (b.runs_scored || 0) - (b.runs_allowed || 0);
+            if (diffA !== diffB) return diffB - diffA;
+
+            // 4. Quaternary: Runs Scored (Desc)
+            return (b.runs_scored || 0) - (a.runs_scored || 0);
         });
     };
 
@@ -375,6 +415,86 @@ export const TournamentStartDashboard: React.FC = () => {
 
             window.open(`/dashboard/torneos/${tournamentId}/Start/ScoreRegister/${teamsSlug}/${startMatchModal.match.id}/${startMatchModal.setNumber}`, '_blank');
             setStartMatchModal(null);
+        }
+    };
+
+    const handleArchiveTournament = async () => {
+        if (!tournament || archiving) return;
+        setArchiving(true);
+        try {
+            // 1. Build Snapshot
+            const snapshot = {
+                version: "1.0",
+                archived_at: new Date().toISOString(),
+                tournament_config: tournament,
+                teams: teams,
+                matches: matches,
+                sets: sets,
+                standings: calculateStandings()
+            };
+
+            // 2. Update Tournament
+            const { error: updateError } = await supabase
+                .from('tournaments')
+                .update({
+                    status: 'archived',
+                    archive_json: snapshot
+                })
+                .eq('id', id);
+
+            if (updateError) throw updateError;
+
+            // 3. Cleanup Relational Tables
+            // Use filtering for teams and rosters if needed, but deleting by tournament_id is cleaner where possible.
+            await Promise.all([
+                supabase.from('tournament_matches').delete().eq('tournament_id', id),
+                supabase.from('tournament_sets').delete().filter('match_id', 'in', `(${matches.map(m => m.id).join(',')})`),
+                supabase.from('tournament_teams').delete().eq('tournament_id', id),
+                supabase.from('tournament_rosters').delete().filter('team_id', 'in', `(${teams.map(t => t.id).join(',')})`)
+            ]);
+
+            logTournamentActivity(id!, 'tournament_archived', `Torneo Archivado y tablas limpiadas`, { id });
+
+            setShowFinishModal(false);
+            navigate('/dashboard/torneos');
+        } catch (e) {
+            console.error("Archival error:", e);
+            alert("Error al archivar el torneo. Los datos no se han borrado.");
+        } finally {
+            setArchiving(false);
+        }
+    };
+
+    const handleDownloadSummary = async () => {
+        if (!tournament) return;
+        const standings = calculateStandings();
+        await generateTournamentSummaryReport(tournament, teams, matches, sets, standings);
+    };
+
+    const handleApplyTiebreakers = async (rankings: { teamId: string, rank: number }[]) => {
+        if (!id || rankings.length === 0) return;
+
+        try {
+            // 1. Update each team with their resolved rank
+            const updates = rankings.map(r =>
+                supabase.from('tournament_teams').update({ tiebreaker_rank: r.rank }).eq('id', r.teamId)
+            );
+            await Promise.all(updates);
+
+            // 2. Trigger Bracket Progression
+            const { updateBracketProgression } = await import('../utils/bracketLogic');
+            const res = await updateBracketProgression(supabase, id);
+
+            if (res.success) {
+                alert("✓ Desempates aplicados y llaves actualizadas.");
+                setActiveStageId(null); // Reset to force auto-selection of active phase
+                fetchTournamentData();
+            } else {
+                alert("✓ Desempates guardados, pero hubo un problema al actualizar las llaves.");
+            }
+        } catch (e) {
+            console.error("Error applying tiebreakers:", e);
+            alert("Error al aplicar los desempates.");
         }
     };
 
@@ -439,23 +559,15 @@ export const TournamentStartDashboard: React.FC = () => {
                     </div>
 
                     <div className="flex items-center gap-2">
-                        <button
-                            onClick={async () => {
-                                if (!confirm("¿ESTÁS SEGURO DE FINALIZAR EL TORNEO?\n\nEsto marcará el torneo como completado. Esta acción no se puede deshacer.")) return;
-                                try {
-                                    const { error } = await supabase.from('tournaments').update({ status: 'finished' }).eq('id', id);
-                                    if (error) throw error;
-                                    alert("Torneo finalizado con éxito.");
-                                    fetchTournamentData();
-                                } catch (e) {
-                                    console.error("Error ending tournament:", e);
-                                    alert("Error al finalizar el torneo.");
-                                }
-                            }}
-                            className="px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 rounded-xl text-sm font-bold transition-all flex items-center gap-2 mr-2"
-                        >
-                            <Flag size={16} /> Finalizar Torneo
-                        </button>
+                        {tournament?.status === 'active' && (
+                            <button
+                                onClick={() => setShowFinishModal(true)}
+                                className="px-4 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded-xl border border-red-600/30 transition-all font-bold flex items-center gap-2 group shadow-lg shadow-red-900/10"
+                            >
+                                <Flag size={18} className="group-hover:scale-110 transition-transform" />
+                                <span>Finalizar Torneo</span>
+                            </button>
+                        )}
                         <button
                             onClick={() => navigate('/dashboard/torneos')}
                             className="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-sm font-bold transition-all flex items-center gap-2"
@@ -1058,19 +1170,145 @@ export const TournamentStartDashboard: React.FC = () => {
             <TiebreakerModal
                 isOpen={showTiebreakerModal}
                 onClose={() => setShowTiebreakerModal(false)}
+                tournament={tournament}
                 tiedGroups={tiedGroups}
-                rules={tournament?.tiebreaker_rules || []}
+                matches={matches}
+                sets={sets}
+                onApply={handleApplyTiebreakers}
             />
 
-            <ConfirmationModal
-                isOpen={!!startMatchModal}
-                onClose={() => setStartMatchModal(null)}
-                onConfirm={confirmStartSet}
-                title="Iniciar Partido"
-                message={`¿Deseas iniciar el Set #${startMatchModal?.setNumber} del partido entre ${teams.find(t => t.id === startMatchModal?.match.local_team_id)?.name} y ${teams.find(t => t.id === startMatchModal?.match.visitor_team_id)?.name}?`}
-                confirmText="Empezar Anotación"
-                variant="info"
-            />
+            {/* Finish Tournament Modal (B5Tools Style) */}
+            <AnimatePresence>
+                {showFinishModal && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            onClick={() => setShowFinishModal(false)}
+                            className="absolute inset-0 bg-black/80 backdrop-blur-md"
+                        />
+
+                        <motion.div
+                            initial={{ scale: 0.9, opacity: 0, y: 20 }}
+                            animate={{ scale: 1, opacity: 1, y: 0 }}
+                            exit={{ scale: 0.9, opacity: 0, y: 20 }}
+                            className="bg-[#1a1a2e] border border-white/10 w-full max-w-xl rounded-2xl overflow-hidden shadow-2xl relative z-10"
+                        >
+                            {/* Header */}
+                            <div className="bg-gradient-to-r from-red-600/20 to-transparent p-6 border-b border-white/5 relative">
+                                <div className="flex items-center gap-4">
+                                    <div className="w-12 h-12 rounded-xl bg-red-600/20 flex items-center justify-center border border-red-600/30">
+                                        <Flag className="text-red-400" size={24} />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-xl font-black tracking-tight text-white uppercase">Finalizar Torneo</h2>
+                                        <p className="text-sm text-white/40">Cierra oficialmente el evento y archiva los resultados</p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => setShowFinishModal(false)}
+                                    className="absolute top-6 right-6 p-2 text-white/20 hover:text-white hover:bg-white/5 rounded-lg transition-all"
+                                >
+                                    <X size={20} />
+                                </button>
+                            </div>
+
+                            {/* Body */}
+                            <div className="p-8">
+                                <div className="space-y-6">
+                                    <div className="p-6 bg-blue-500/10 border border-blue-500/20 rounded-2xl text-center flex flex-col items-center gap-3">
+                                        <div className="w-16 h-16 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400 group-hover:scale-110 transition-transform">
+                                            <Trophy size={32} />
+                                        </div>
+                                        <div>
+                                            <h3 className="text-xl font-bold text-white uppercase tracking-tight">¡Felicidades por tu Torneo!</h3>
+                                            <p className="text-sm text-white/50 mt-1">Has completado con éxito la gestión de <span className="text-blue-400 font-bold">{tournament?.name}</span>.</p>
+                                        </div>
+                                    </div>
+
+                                    {/* Match Completion Validation */}
+                                    {matches.filter(m => m.status !== 'finished').length > 0 ? (
+                                        <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex gap-4 items-center">
+                                            <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center flex-shrink-0">
+                                                <Flag className="text-red-400" size={18} />
+                                            </div>
+                                            <div>
+                                                <p className="text-xs text-red-200 font-bold uppercase tracking-wider">Partidos Pendientes</p>
+                                                <p className="text-sm text-red-300/80">
+                                                    Aún faltan <span className="font-black text-white">{matches.filter(m => m.status !== 'finished').length}</span> partidos por finalizar. Finaliza todos los encuentros para poder archivar.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="p-4 bg-purple-500/5 border border-purple-500/20 rounded-xl flex gap-4 items-center">
+                                            <div className="w-10 h-10 rounded-full bg-purple-500/10 flex items-center justify-center flex-shrink-0">
+                                                <Info className="text-purple-400" size={18} />
+                                            </div>
+                                            <p className="text-xs text-purple-200/60 leading-relaxed font-medium">
+                                                Todo está listo. Al archivar, podrás consultar los resultados finales en la pestaña de <span className="text-purple-400 font-bold">"Archivados"</span> dentro de tu lista de torneos.
+                                            </p>
+                                        </div>
+                                    )}
+
+                                    <div className="grid grid-cols-1 gap-4">
+                                        <button
+                                            onClick={handleDownloadSummary}
+                                            className="w-full p-6 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl transition-all flex items-center justify-between group"
+                                        >
+                                            <div className="flex items-center gap-4 text-left">
+                                                <div className="w-12 h-12 rounded-xl bg-blue-600/10 flex items-center justify-center border border-blue-600/30 group-hover:bg-blue-600/20 transition-all">
+                                                    <Download className="text-blue-400" size={22} />
+                                                </div>
+                                                <div>
+                                                    <h3 className="font-bold text-white text-lg group-hover:text-blue-400">Ver Resumen Torneo</h3>
+                                                    <p className="text-xs text-white/30 uppercase tracking-widest mt-0.5">Reporte Final PDF Cronológico</p>
+                                                </div>
+                                            </div>
+                                            <ArrowRightLeft className="text-white/10 group-hover:text-blue-400 rotate-90" size={20} />
+                                        </button>
+
+                                        <button
+                                            onClick={async () => {
+                                                const pendingMatches = matches.filter(m => m.status !== 'finished');
+                                                if (pendingMatches.length > 0) {
+                                                    alert(`No puedes archivar aún. Faltan ${pendingMatches.length} partidos por finalizar.`);
+                                                    return;
+                                                }
+                                                confetti({
+                                                    particleCount: 150,
+                                                    spread: 70,
+                                                    origin: { y: 0.6 },
+                                                    colors: ['#3b82f6', '#8b5cf6', '#ffffff']
+                                                });
+                                                await handleArchiveTournament();
+                                            }}
+                                            disabled={archiving || matches.filter(m => m.status !== 'finished').length > 0}
+                                            className="w-full p-6 bg-red-600/10 hover:bg-red-600/20 border border-red-600/30 rounded-2xl transition-all flex items-center justify-between group disabled:opacity-50 disabled:grayscale"
+                                        >
+                                            <div className="flex items-center gap-4 text-left">
+                                                <div className="w-12 h-12 rounded-xl bg-red-600/20 flex items-center justify-center border border-red-600/30 group-hover:scale-110 transition-transform">
+                                                    {archiving ? <Loader2 className="animate-spin text-red-400" size={22} /> : <CheckCircle className="text-red-400" size={22} />}
+                                                </div>
+                                                <div>
+                                                    <h3 className="font-bold text-white text-lg uppercase tracking-tight">Cerrar y Archivar</h3>
+                                                    <p className="text-xs text-white/30 uppercase tracking-widest mt-0.5">Pasar a registro histórico</p>
+                                                </div>
+                                            </div>
+                                            <Check className="text-white/10 group-hover:text-red-400" size={24} />
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Footer hint */}
+                            <div className="p-4 bg-black/20 text-center border-t border-white/5">
+                                <p className="text-[10px] text-white/20 uppercase tracking-[0.2em]">B5Tools Finalization Hub • v1.0</p>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
         </div >
     );
 };

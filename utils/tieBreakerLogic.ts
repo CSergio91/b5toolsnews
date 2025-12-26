@@ -1,85 +1,128 @@
+import { TournamentMatch, TournamentSet, TournamentTeam } from '../types/tournament';
 
-import { TieBreakerRule, TieBreakerType } from '../types/tournament';
-
-interface TeamStats {
-    id: string;
-    played: number;
-    won: number;
-    lost: number;
-    points: number;
-    runs_scored: number;
-    runs_allowed: number;
-    // For direct match checking, we might need match history or a helper to check result between A and B
-    matches_vs?: Record<string, 'win' | 'loss' | 'draw' | undefined>;
+export interface TiebreakerStats {
+    teamId: string;
+    wins: number;
+    runDiff: number;
+    runsScored: number;
+    randomValue?: number;
 }
 
 /**
- * Sorts teams based on points and then applies tie-breaker rules.
- * @param teams List of teams with stats
- * @param rules Ordered list of active tie-breaker rules
- * @returns Sorted list of teams
+ * Filter matches and sets where both teams are within the tied group
  */
-export const sortTeamsWithTieBreaker = (
-    teams: TeamStats[],
-    rules: TieBreakerRule[] = []
-): TeamStats[] => {
-    // Basic Point Sort first
-    const sorted = [...teams].sort((a, b) => b.points - a.points);
+export const getMatchesBetween = (teamIds: string[], matches: TournamentMatch[]) => {
+    return matches.filter(m =>
+        m.status === 'finished' &&
+        teamIds.includes(m.visitor_team_id || '') &&
+        teamIds.includes(m.local_team_id || '')
+    );
+};
 
-    // If no rules, stable sort (or id sort) implicit from points
-    if (!rules || rules.length === 0) return sorted;
+/**
+ * Calculate Tiebreaker Stats for a specific subset of teams
+ * Only counts matches played BETWEEN these teams.
+ */
+export const calculateTiebreakerStats = (
+    teams: TournamentTeam[],
+    matches: TournamentMatch[],
+    sets: TournamentSet[]
+): TiebreakerStats[] => {
+    const teamIds = teams.map(t => t.id);
+    const relevantMatches = getMatchesBetween(teamIds, matches);
 
-    const activeRules = rules.filter(r => r.active).sort((a, b) => a.order - b.order);
+    return teams.map(team => {
+        const stats: TiebreakerStats = {
+            teamId: team.id,
+            wins: 0,
+            runDiff: 0,
+            runsScored: 0
+        };
 
-    // Custom Sort Function
-    return sorted.sort((a, b) => {
-        if (a.points !== b.points) return b.points - a.points;
+        relevantMatches.forEach(match => {
+            const matchSets = sets.filter(s => s.match_id === match.id && s.status === 'finished');
+            if (matchSets.length === 0) return;
 
-        // Points are tied, apply rules in order
-        for (const rule of activeRules) {
-            const result = compareTeams(a, b, rule.type);
-            if (result !== 0) return result;
-        }
+            let localSetWins = 0;
+            let visitorSetWins = 0;
+            let localRuns = 0;
+            let visitorRuns = 0;
 
-        return 0; // Still tied
+            matchSets.forEach(set => {
+                const lr = set.home_score ?? set.local_runs ?? 0;
+                const vr = set.away_score ?? set.visitor_runs ?? 0;
+                localRuns += lr;
+                visitorRuns += vr;
+
+                if (lr > vr) localSetWins++;
+                else if (vr > lr) visitorSetWins++;
+            });
+
+            const isLocal = match.local_team_id === team.id;
+            const isVisitor = match.visitor_team_id === team.id;
+
+            if (isLocal) {
+                stats.runsScored += localRuns;
+                stats.runDiff += (localRuns - visitorRuns);
+                if (localSetWins > visitorSetWins) stats.wins++;
+            } else if (isVisitor) {
+                stats.runsScored += visitorRuns;
+                stats.runDiff += (visitorRuns - localRuns);
+                if (visitorSetWins > localSetWins) stats.wins++;
+            }
+        });
+
+        return stats;
     });
 };
 
-const compareTeams = (a: TeamStats, b: TeamStats, type: TieBreakerType): number => {
-    switch (type) {
-        case 'direct_match':
-            // 1. Direct Result
-            // Logic: Did A beat B?
-            if (a.matches_vs && a.matches_vs[b.id] === 'win') return -1; // A wins -> A comes first
-            if (a.matches_vs && a.matches_vs[b.id] === 'loss') return 1;  // B wins -> B comes first
+/**
+ * Sorts teams based on a specific rule
+ */
+export const sortTeamsByRule = (
+    teams: TournamentTeam[],
+    stats: TiebreakerStats[],
+    ruleType: 'direct_match' | 'run_diff' | 'runs_scored' | 'random'
+): TournamentTeam[] => {
+    return [...teams].sort((a, b) => {
+        const statA = stats.find(s => s.teamId === a.id)!;
+        const statB = stats.find(s => s.teamId === b.id)!;
 
-            // If they didn't play or drew (or split series if we had more complex logic), we fall through to 0
-            // But per request: "if tie persists between 2... apply Random Draw"
-            // We check this condition: "If result is 0 (still tied), fallback to Random" 
-            // NOTE: The request implies this recursion happens here.
-            // Let's implement a random tie-break for THIS specific pairwise comparison if direct match fails.
+        switch (ruleType) {
+            case 'direct_match':
+                return statB.wins - statA.wins;
+            case 'run_diff':
+                return statB.runDiff - statA.runDiff;
+            case 'runs_scored':
+                return statB.runsScored - statA.runsScored;
+            case 'random':
+                return (statB.randomValue || 0) - (statA.randomValue || 0);
+            default:
+                return 0;
+        }
+    });
+};
 
-            // Stable "Random" using ID comparison to avoid UI flickering/reordering between Preview and Apply
-            return a.id.localeCompare(b.id);
+/**
+ * Checks if a tie still persists in a sorted group for a specific stat
+ */
+export const checkTiesInSorted = (
+    sortedTeams: TournamentTeam[],
+    stats: TiebreakerStats[],
+    ruleType: 'direct_match' | 'run_diff' | 'runs_scored'
+): boolean => {
+    for (let i = 0; i < sortedTeams.length - 1; i++) {
+        const statA = stats.find(s => s.teamId === sortedTeams[i].id)!;
+        const statB = stats.find(s => s.teamId === sortedTeams[i + 1].id)!;
 
-        case 'run_diff':
-            // 2. Diff Runs (Scored - Allowed)
-            const diffA = a.runs_scored - a.runs_allowed;
-            const diffB = b.runs_scored - b.runs_allowed;
-            if (diffA !== diffB) return diffB - diffA; // Higher diff first
-            return 0;
+        let valA = 0;
+        let valB = 0;
 
-        case 'runs_scored':
-            // 3. Runs Scored
-            if (a.runs_scored !== b.runs_scored) return b.runs_scored - a.runs_scored; // Higher scored first
-            return 0;
+        if (ruleType === 'direct_match') { valA = statA.wins; valB = statB.wins; }
+        else if (ruleType === 'run_diff') { valA = statA.runDiff; valB = statB.runDiff; }
+        else if (ruleType === 'runs_scored') { valA = statA.runsScored; valB = statB.runsScored; }
 
-        case 'random':
-            // 4. Random (Deterministic for sort stability usually requires seed, but JS sort is flaky with random)
-            // Use ID as stable random seed
-            return a.id.localeCompare(b.id);
-
-        default:
-            return 0;
+        if (valA === valB) return true;
     }
+    return false;
 };

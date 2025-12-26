@@ -20,6 +20,7 @@ export const TournamentsPage: React.FC = () => {
     const [editingTournament, setEditingTournament] = useState<Tournament | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [expandedYears, setExpandedYears] = useState<Record<string, boolean>>({});
+    const [activeTab, setActiveTab] = useState<'active' | 'archived'>('active');
 
     // Delete Modal State
     const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -67,10 +68,10 @@ export const TournamentsPage: React.FC = () => {
                 .from('tournaments')
                 .select('*')
                 .eq('user_id', user.id)
-                .order('start_date', { ascending: true });
+                .order('start_date', { ascending: false });
 
             if (data) {
-                const years = new Set(data.map(t => new Date(t.start_date).getFullYear().toString()));
+                const years = new Set(data.map(t => t.start_date ? new Date(t.start_date).getFullYear().toString() : 'N/A'));
                 const initialExpanded = Array.from(years).reduce((acc, year) => ({ ...acc, [year]: true }), {});
                 setExpandedYears(initialExpanded);
             }
@@ -135,10 +136,13 @@ export const TournamentsPage: React.FC = () => {
     };
 
     // Filter Logic
-    const filteredTournaments = tournaments.filter(t =>
-        t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        t.location.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    const filteredTournaments = tournaments.filter(t => {
+        const matchesQuery = t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            t.location.toLowerCase().includes(searchQuery.toLowerCase());
+
+        if (activeTab === 'archived') return matchesQuery && t.status === 'archived';
+        return matchesQuery && t.status !== 'archived';
+    });
 
     // Grouping Logic for Main View (Group by Date)
     const groupedTournaments = filteredTournaments.reduce((groups, tournament) => {
@@ -299,6 +303,22 @@ export const TournamentsPage: React.FC = () => {
                                 </h1>
                             </div>
 
+                            {/* Tabs System */}
+                            <div className="flex bg-white/5 p-1 rounded-xl border border-white/5 backdrop-blur-md">
+                                <button
+                                    onClick={() => setActiveTab('active')}
+                                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'active' ? 'bg-blue-600 text-white shadow-lg' : 'text-white/40 hover:text-white'}`}
+                                >
+                                    Activos
+                                </button>
+                                <button
+                                    onClick={() => setActiveTab('archived')}
+                                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'archived' ? 'bg-purple-600 text-white shadow-lg' : 'text-white/40 hover:text-white'}`}
+                                >
+                                    Archivados
+                                </button>
+                            </div>
+
                             <div className="flex gap-2 text-sm">
                                 <button
                                     onClick={handleCreate}
@@ -351,36 +371,84 @@ export const TournamentsPage: React.FC = () => {
                                 </div>
                             ) : (
                                 <div className="space-y-6 pb-10 max-w-4xl mx-auto w-full">
-                                    {sortedDates.map(date => {
-                                        const dateObj = new Date(date);
-                                        const day = dateObj.toLocaleDateString('es-ES', { day: 'numeric' });
-                                        const month = dateObj.toLocaleDateString('es-ES', { month: 'long' });
-                                        const year = dateObj.getFullYear();
-                                        const isToday = new Date().toDateString() === dateObj.toDateString();
+                                    {activeTab === 'active' ? (
+                                        sortedDates.map(date => {
+                                            const dateObj = new Date(date);
+                                            const day = dateObj.toLocaleDateString('es-ES', { day: 'numeric' });
+                                            const month = dateObj.toLocaleDateString('es-ES', { month: 'long' });
+                                            const year = dateObj.getFullYear();
+                                            const isToday = new Date().toDateString() === dateObj.toDateString();
 
-                                        return (
-                                            <div key={date} id={date} className="relative scroll-mt-24">
-                                                {/* Date Header */}
-                                                <div className="flex items-baseline gap-2 mb-3 z-10 py-1 w-full border-b border-white/5 pb-1">
-                                                    <div className={`text-xl font-bold ${isToday ? 'text-blue-400' : 'text-white'}`}>{day}</div>
-                                                    <div className="text-sm font-medium text-slate-400 capitalize">{month} {year}</div>
-                                                    {isToday && <span className="text-[10px] font-bold bg-blue-500/20 text-blue-300 px-1.5 py-0.5 rounded uppercase tracking-wider">Hoy</span>}
-                                                </div>
+                                            return (
+                                                <div key={date} id={date} className="relative scroll-mt-24">
+                                                    {/* Date Header */}
+                                                    <div className="flex items-baseline gap-2 mb-3 z-10 py-1 w-full border-b border-white/5 pb-1">
+                                                        <div className={`text-xl font-bold ${isToday ? 'text-blue-400' : 'text-white'}`}>{day}</div>
+                                                        <div className="text-sm font-medium text-slate-400 capitalize">{month} {year}</div>
+                                                        {isToday && <span className="text-[10px] font-bold bg-blue-500/20 text-blue-300 px-1.5 py-0.5 rounded uppercase tracking-wider">Hoy</span>}
+                                                    </div>
 
-                                                {/* Grid of Cards */}
-                                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                                                    {groupedTournaments[date].map(tournament => (
-                                                        <TournamentCard
-                                                            key={tournament.id}
-                                                            tournament={tournament}
-                                                            onEdit={handleEdit}
-                                                            onDelete={handleDeleteClick}
-                                                        />
-                                                    ))}
+                                                    {/* Grid of Cards */}
+                                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                                                        {groupedTournaments[date].map(tournament => (
+                                                            <TournamentCard
+                                                                key={tournament.id}
+                                                                tournament={tournament}
+                                                                onEdit={handleEdit}
+                                                                onDelete={handleDeleteClick}
+                                                            />
+                                                        ))}
+                                                    </div>
                                                 </div>
+                                            );
+                                        })
+                                    ) : (
+                                        /* Excel Style Archived View */
+                                        <div className="bg-slate-900/40 border border-white/10 rounded-2xl overflow-hidden backdrop-blur-sm">
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-left">
+                                                    <thead>
+                                                        <tr className="bg-white/5 text-[10px] uppercase tracking-[0.2em] text-white/30 font-black border-b border-white/5">
+                                                            <th className="px-6 py-4">Torneo</th>
+                                                            <th className="px-6 py-4">Ubicación</th>
+                                                            <th className="px-6 py-4">Fecha Finalización</th>
+                                                            <th className="px-6 py-4 text-center">Snapshot</th>
+                                                            <th className="px-6 py-4 text-right">Acciones</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-white/5">
+                                                        {filteredTournaments.map((t) => (
+                                                            <tr key={t.id} className="hover:bg-white/5 transition-colors group">
+                                                                <td className="px-6 py-4">
+                                                                    <div className="flex items-center gap-3">
+                                                                        <div className="w-8 h-8 rounded-lg bg-purple-500/10 flex items-center justify-center border border-purple-500/20 group-hover:border-purple-500/40 transition-all">
+                                                                            <Trophy size={14} className="text-purple-400" />
+                                                                        </div>
+                                                                        <span className="font-bold text-sm tracking-tight">{t.name}</span>
+                                                                    </div>
+                                                                </td>
+                                                                <td className="px-6 py-4 text-xs text-white/50">{t.location}</td>
+                                                                <td className="px-6 py-4 text-xs text-white/50">
+                                                                    {t.archive_json?.archived_at ? new Date(t.archive_json.archived_at).toLocaleDateString() : 'N/A'}
+                                                                </td>
+                                                                <td className="px-6 py-4 text-center">
+                                                                    <span className="bg-green-500/10 text-green-400 px-2 py-0.5 rounded text-[10px] font-bold border border-green-500/20">V1.0</span>
+                                                                </td>
+                                                                <td className="px-6 py-4 text-right">
+                                                                    <button
+                                                                        onClick={() => navigate(`/dashboard/torneos/archived/${t.id}`)}
+                                                                        className="p-2 text-slate-400 hover:text-white hover:bg-white/5 rounded-lg transition-all"
+                                                                    >
+                                                                        <ChevronRight size={18} />
+                                                                    </button>
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
                                             </div>
-                                        );
-                                    })}
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>
