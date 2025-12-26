@@ -44,6 +44,9 @@ export const TournamentStartDashboard: React.FC = () => {
     const [showFinishModal, setShowFinishModal] = useState(false);
     const [archiving, setArchiving] = useState(false);
 
+    const activeStage = stages.find(s => s.id === activeStageId);
+    const isGroupPhase = !activeStage || activeStage.type === 'group';
+
     useEffect(() => {
         if (id) {
             fetchTournamentData();
@@ -116,9 +119,9 @@ export const TournamentStartDashboard: React.FC = () => {
                 id: p.phase_id,
                 name: p.name,
                 type: p.type,
-                order: p.phase_order
+                order: p.phase_order,
+                status: p.status // CRITICAL for "Finished" stamps
             })) || [];
-
 
             // Fallback to structure JSON if still nothing
             if (finalStages.length === 0 && tData?.structure?.phases) {
@@ -131,9 +134,9 @@ export const TournamentStartDashboard: React.FC = () => {
 
             // Initialize Active Stage based on status if available
             if (!activeStageId && finalStages.length > 0) {
-                const active = pData?.find(p => p.status === 'active');
+                const active = finalStages.find(p => p.status === 'active');
                 if (active) {
-                    setActiveStageId(active.phase_id);
+                    setActiveStageId(active.id);
                 } else {
                     setActiveStageId(finalStages[0].id);
                 }
@@ -349,7 +352,7 @@ export const TournamentStartDashboard: React.FC = () => {
         });
 
         // Sort by Points, then Tiebreaker Rank, then Run Diff, then Runs Scored
-        return stageStandings.sort((a, b) => {
+        const sorted = stageStandings.sort((a, b) => {
             // 1. Primary sort: Points (Desc)
             if ((b.pts || 0) !== (a.pts || 0)) return (b.pts || 0) - (a.pts || 0);
 
@@ -367,6 +370,9 @@ export const TournamentStartDashboard: React.FC = () => {
             // 4. Quaternary: Runs Scored (Desc)
             return (b.runs_scored || 0) - (a.runs_scored || 0);
         });
+
+        console.log("Calculated Standings:", sorted.map(t => ({ name: t.name, pts: t.pts, tieRank: t.tiebreaker_rank })));
+        return sorted;
     };
 
     const toggleTeamExpansion = (teamId: string) => {
@@ -488,10 +494,12 @@ export const TournamentStartDashboard: React.FC = () => {
             if (res.success) {
                 alert("✓ Desempates aplicados y llaves actualizadas.");
                 setActiveStageId(null); // Reset to force auto-selection of active phase
-                fetchTournamentData();
+                await fetchTournamentData();
             } else {
                 alert("✓ Desempates guardados, pero hubo un problema al actualizar las llaves.");
+                await fetchTournamentData();
             }
+            setShowTiebreakerModal(false);
         } catch (e) {
             console.error("Error applying tiebreakers:", e);
             alert("Error al aplicar los desempates.");
@@ -513,7 +521,6 @@ export const TournamentStartDashboard: React.FC = () => {
     }
 
     const filteredMatches = matches.filter(m => m.stage_id === activeStageId);
-    const activeStage = stages.find(s => s.id === activeStageId);
 
     return (
         <div className="min-h-screen w-full bg-[#0a0a0f] text-white flex flex-col relative overflow-x-hidden">
@@ -644,12 +651,17 @@ export const TournamentStartDashboard: React.FC = () => {
                                         <button
                                             key={stage.id}
                                             onClick={() => setActiveStageId(stage.id)}
-                                            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap border ${activeStageId === stage.id
+                                            className={`relative px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap border ${activeStageId === stage.id
                                                 ? 'bg-blue-600 border-blue-400 text-white shadow-lg shadow-blue-600/20'
                                                 : 'bg-white/5 border-white/10 text-white/50 hover:bg-white/10 hover:text-white hover:border-white/20'
                                                 }`}
                                         >
                                             {stage.name}
+                                            {stage.status === 'finished' && (
+                                                <span className="absolute -top-1.5 -right-1 bg-red-600 text-[7px] px-1 py-0.5 rounded-full text-white font-black uppercase rotate-12 shadow-sm border border-red-500/50">
+                                                    Finished
+                                                </span>
+                                            )}
                                         </button>
                                     ))}
 
@@ -715,6 +727,7 @@ export const TournamentStartDashboard: React.FC = () => {
                                                 fields={fields}
                                                 referees={referees}
                                                 onRefresh={() => fetchTournamentData(true)}
+                                                isStageFinished={stages.find(s => s.id === activeStageId)?.status === 'finished'}
                                             />
                                         ))
                                     ) : (
@@ -1108,60 +1121,97 @@ export const TournamentStartDashboard: React.FC = () => {
                         <div className="bg-white/5 border border-white/10 rounded-3xl overflow-hidden backdrop-blur-md sticky top-24 z-30 h-fit">
                             <div className="p-6 border-b border-white/5 flex items-center justify-between">
                                 <h2 className="text-sm font-black uppercase tracking-[0.2em] text-white/40 flex items-center gap-2">
-                                    <Award size={16} className="text-yellow-500" /> Tabla de Clasificación
+                                    {isGroupPhase ? (
+                                        <><Award size={16} className="text-yellow-500" /> Tabla de Clasificación</>
+                                    ) : (
+                                        <><GitBranch size={16} className="text-blue-500" /> Bracket de Finales</>
+                                    )}
                                 </h2>
                                 <span className="text-[10px] text-white/30 uppercase tracking-widest">{activeStage?.name || 'General'}</span>
                             </div>
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-left">
-                                    <thead>
-                                        <tr className="bg-white/5 text-[10px] uppercase tracking-widest text-white/40">
-                                            <th className="px-1 py-3 w-6 text-center">P</th>
-                                            <th className="px-2 py-3 w-auto text-left">Equipo</th>
-                                            <th className="px-1 py-3 text-center w-8">GP</th>
-                                            <th className="px-1 py-3 text-center w-8">W</th>
-                                            <th className="px-1 py-3 text-center w-8">L</th>
-                                            <th className="px-1 py-3 text-center w-8">PTS</th>
-                                            <th className="px-1 py-3 text-center group/header relative cursor-help w-12">
-                                                <span className="border-b border-dotted border-white/20">RC/RP</span>
-                                                <div className="absolute right-0 top-full mt-1 w-48 p-2 bg-black/90 border border-white/10 rounded-lg text-[9px] text-white/80 normal-case tracking-normal shadow-xl opacity-0 group-hover/header:opacity-100 transition-opacity z-50 pointer-events-none mb-2">
-                                                    Carreras Anotadas / Carreras Permitidas (Usado para desempate)
-                                                </div>
-                                            </th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-white/5">
-                                        {calculateStandings().slice(0, 10).map((team, idx) => (
-                                            <tr key={team.id} className="hover:bg-white/5 transition-colors group">
-                                                <td className="px-1 py-3 font-black text-white/20 text-sm text-center">{idx + 1}</td>
-                                                <td className="px-2 py-3">
-                                                    <div className="flex items-center gap-2">
-                                                        <div className="w-6 h-6 rounded-full bg-black/40 flex items-center justify-center border border-white/10 shadow-sm overflow-hidden group-hover:border-blue-500/30 transition-all flex-shrink-0">
-                                                            {team.logo_url ? <img src={team.logo_url} className="w-full h-full object-cover" /> : <Trophy size={10} className="text-white/20" />}
-                                                        </div>
-                                                        <span className="font-bold text-[10px] md:text-xs group-hover:text-blue-400 transition-colors truncate max-w-[100px] block">{team.name}</span>
+
+                            {isGroupPhase ? (
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left">
+                                        <thead>
+                                            <tr className="bg-white/5 text-[10px] uppercase tracking-widest text-white/40">
+                                                <th className="px-1 py-3 w-6 text-center">P</th>
+                                                <th className="px-2 py-3 w-auto text-left">Equipo</th>
+                                                <th className="px-1 py-3 text-center w-8">GP</th>
+                                                <th className="px-1 py-3 text-center w-8">W</th>
+                                                <th className="px-1 py-3 text-center w-8">L</th>
+                                                <th className="px-1 py-3 text-center w-8">PTS</th>
+                                                <th className="px-1 py-3 text-center group/header relative cursor-help w-12">
+                                                    <span className="border-b border-dotted border-white/20">RC/RP</span>
+                                                    <div className="absolute right-0 top-full mt-1 w-48 p-2 bg-black/90 border border-white/10 rounded-lg text-[9px] text-white/80 normal-case tracking-normal shadow-xl opacity-0 group-hover/header:opacity-100 transition-opacity z-50 pointer-events-none mb-2">
+                                                        Carreras Anotadas / Carreras Permitidas (Usado para desempate)
                                                     </div>
-                                                </td>
-                                                <td className="px-1 py-3 text-center font-bold text-[10px] text-white/60">{team.gp || 0}</td>
-                                                <td className="px-1 py-3 text-center font-bold text-[10px] text-green-400">{team.wins || 0}</td>
-                                                <td className="px-1 py-3 text-center font-bold text-[10px] text-red-400">{team.losses || 0}</td>
-                                                <td className="px-1 py-3 text-center">
-                                                    <span className="bg-blue-600/20 text-blue-400 px-1.5 py-0.5 rounded text-[10px] font-bold border border-blue-600/30">{team.pts || 0}</span>
-                                                </td>
-                                                <td className="px-1 py-3 text-center">
-                                                    <span className="text-[10px] text-white/40 font-mono tracking-tight">{team.runs_scored}/{team.runs_allowed}</span>
-                                                </td>
+                                                </th>
                                             </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-white/5">
+                                            {calculateStandings().map((team, idx) => (
+                                                <tr key={team.id} className="hover:bg-white/5 transition-colors group">
+                                                    <td className="px-1 py-3 font-black text-white/20 text-sm text-center">{idx + 1}</td>
+                                                    <td className="px-2 py-3">
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="w-6 h-6 rounded-full bg-black/40 flex items-center justify-center border border-white/10 shadow-sm overflow-hidden group-hover:border-blue-500/30 transition-all flex-shrink-0">
+                                                                {team.logo_url ? <img src={team.logo_url} className="w-full h-full object-cover" /> : <Trophy size={10} className="text-white/20" />}
+                                                            </div>
+                                                            <div className="flex flex-col">
+                                                                <span className="font-bold text-[10px] md:text-xs group-hover:text-blue-400 transition-colors truncate max-w-[100px] block">{team.name}</span>
+                                                                {(team.tiebreaker_rank || 0) > 0 && (
+                                                                    <span className="text-[7px] font-bold text-yellow-500/80 uppercase">Por Desempate</span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-1 py-3 text-center font-bold text-[10px] text-white/60">{team.gp || 0}</td>
+                                                    <td className="px-1 py-3 text-center font-bold text-[10px] text-green-400">{team.wins || 0}</td>
+                                                    <td className="px-1 py-3 text-center font-bold text-[10px] text-red-400">{team.losses || 0}</td>
+                                                    <td className="px-1 py-3 text-center">
+                                                        <span className="bg-blue-600/20 text-blue-400 px-1.5 py-0.5 rounded text-[10px] font-bold border border-blue-600/30">{team.pts || 0}</span>
+                                                    </td>
+                                                    <td className="px-1 py-3 text-center">
+                                                        <span className="text-[10px] text-white/40 font-mono tracking-tight">{team.runs_scored}/{team.runs_allowed}</span>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                            {calculateStandings().length === 0 && (
+                                                <tr>
+                                                    <td colSpan={7} className="p-6 text-center text-white/20 italic text-xs">
+                                                        No hay datos de clasificación aún.
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            ) : (
+                                <div className="p-4 space-y-4">
+                                    {filteredMatches
+                                        .sort((a, b) => (parseInt(a.global_id || '0') || 0) - (parseInt(b.global_id || '0') || 0))
+                                        .map((m, idx) => (
+                                            <div key={m.id} className="p-3 rounded-2xl bg-white/5 border border-white/10 relative overflow-hidden group/m">
+                                                <div className="text-[8px] uppercase font-black text-white/20 mb-2 tracking-widest flex justify-between items-center">
+                                                    <span>{m.name || `Match ${m.global_id || idx + 1}`}</span>
+                                                    {m.status === 'finished' && <span className="text-green-500">Completado</span>}
+                                                </div>
+                                                <div className="space-y-1.5 relative z-10">
+                                                    <div className={`flex items-center justify-between p-1.5 rounded-lg border ${m.winner_team_id === m.local_team_id && m.status === 'finished' ? 'bg-green-500/10 border-green-500/20' : 'bg-black/20 border-white/5 shadow-inner'}`}>
+                                                        <SmallTeamInfo team={teams.find(t => t.id === m.local_team_id)} />
+                                                        {m.status === 'finished' && <span className={`text-xs font-black ${m.winner_team_id === m.local_team_id ? 'text-green-400' : 'text-white/20'}`}>{m.local_score || 0}</span>}
+                                                    </div>
+                                                    <div className={`flex items-center justify-between p-1.5 rounded-lg border ${m.winner_team_id === m.visitor_team_id && m.status === 'finished' ? 'bg-green-500/10 border-green-500/20' : 'bg-black/20 border-white/5 shadow-inner'}`}>
+                                                        <SmallTeamInfo team={teams.find(t => t.id === m.visitor_team_id)} />
+                                                        {m.status === 'finished' && <span className={`text-xs font-black ${m.winner_team_id === m.visitor_team_id ? 'text-green-400' : 'text-white/20'}`}>{m.visitor_score || 0}</span>}
+                                                    </div>
+                                                </div>
+                                            </div>
                                         ))}
-                                    </tbody>
-                                </table>
-                                {calculateStandings().length === 0 && (
-                                    <div className="p-6 text-center text-white/20 italic text-xs">
-                                        No hay datos de clasificación aún.
-                                    </div>
-                                )}
-                            </div>
-                        </div >
+                                </div>
+                            )}
+                        </div>
                     </div >
                 </div >
             </main >
@@ -1434,7 +1484,7 @@ const SmallTeamInfo = ({ team, align = 'left' }: any) => (
     </div>
 );
 
-const MatchCard = ({ match, teams, sets, onStartSet, tournament, fields, referees, onRefresh }: any) => {
+const MatchCard = ({ match, teams, sets, onStartSet, tournament, fields, referees, onRefresh, isStageFinished }: any) => {
     const localTeam = teams.find((t: any) => t.id === match.local_team_id);
     const visitorTeam = teams.find((t: any) => t.id === match.visitor_team_id);
 
@@ -1463,7 +1513,15 @@ const MatchCard = ({ match, teams, sets, onStartSet, tournament, fields, referee
     const matchIdent = match.global_id || match.globalId || match.name || '???';
 
     return (
-        <div className="bg-white/5 border border-white/10 rounded-3xl overflow-hidden hover:border-blue-500/30 transition-all backdrop-blur-sm group flex flex-col justify-between h-full">
+        <div className="relative bg-white/5 border border-white/10 rounded-3xl overflow-hidden hover:border-blue-500/30 transition-all backdrop-blur-sm group flex flex-col justify-between h-full">
+            {/* Finished Phase Stamp */}
+            {isStageFinished && (
+                <div className="absolute inset-0 z-[60] flex items-center justify-center pointer-events-none select-none overflow-hidden rounded-3xl">
+                    <div className="border-[6px] border-red-600/40 text-red-600/40 px-8 py-3 text-5xl font-black uppercase tracking-tighter -rotate-[25deg] rounded-3xl scale-125 blur-[1px]">
+                        Finished
+                    </div>
+                </div>
+            )}
             <div>
                 {/* Header info */}
                 <div className="px-5 py-3 border-b border-white/5 flex items-center justify-between bg-white/5">
