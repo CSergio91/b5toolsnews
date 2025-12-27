@@ -1,8 +1,8 @@
-
 import { SupabaseClient } from '@supabase/supabase-js';
+import { calculateStandings } from './standingsLogic';
 
 // Types for Source Definition (matching DB columns)
-type SourceType = 'group.pos' | 'match.winner' | 'match.loser' | 'team';
+export type SourceType = 'group.pos' | 'match.winner' | 'match.loser' | 'team';
 
 export const updateBracketProgression = async (supabase: SupabaseClient, tournamentId: string) => {
     console.log("Starting Bracket Progression Update...");
@@ -23,84 +23,59 @@ export const updateBracketProgression = async (supabase: SupabaseClient, tournam
         .order('phase_order', { ascending: true });
     if (phaseError || !phases) return { success: false, error: phaseError };
 
-    // 3. Fetch ALL Matches and Teams
+    // 3. Fetch ALL Matches, Teams, and Sets
     const { data: allMatches } = await supabase.from('tournament_matches').select('*').eq('tournament_id', tournamentId);
     const { data: allTeams } = await supabase.from('tournament_teams').select('*').eq('tournament_id', tournamentId);
     if (!allMatches || !allTeams) return { success: false, error: 'Matches or Teams not found' };
 
     const { data: allSets } = await supabase
         .from('tournament_sets')
-        .select('*')
-        .in('match_id', allMatches.map(m => m.id))
-        .eq('status', 'finished');
+        .select('*, match_id')
+        .in('match_id', allMatches.map(m => m.id));
 
     let updatesCount = 0;
+    let activatedPhaseId: string | null = null;
 
-    // Helper: Calculate Group Standings
+    // Helper: Calculate Group Standings using centralized utility
     const getGroupStandings = (groupIdOrName: string) => {
-        // Try matching by ID or Name (JSON reflects Names usually "Grupo A" or just "A")
-        // Normalized match: remove "Grupo " prefix if present for better matching
         const normalizedInput = groupIdOrName.replace(/^Grupo\s+/i, '');
 
-        const groupTeams = allTeams?.filter(t =>
-            t.group_id === groupIdOrName ||
-            t.group_name === groupIdOrName ||
-            t.group_name === normalizedInput ||
-            (t.group_name?.replace(/^Grupo\s+/i, '') === normalizedInput)
-        ) || [];
-
-        if (groupTeams.length === 0) {
-            console.warn(`No teams found for group: ${groupIdOrName}`);
-            return [];
+        // 1. Identify teams in this group from the structure JSON (Source of Truth)
+        let groupTeamIds: string[] = [];
+        const structPhases = tournament?.structure?.phases || [];
+        for (const phase of structPhases) {
+            if (phase.groups) {
+                const targetGroup = phase.groups.find((g: any) =>
+                    g.name === groupIdOrName ||
+                    g.name === normalizedInput ||
+                    g.id === groupIdOrName
+                );
+                if (targetGroup && targetGroup.teams) {
+                    groupTeamIds = targetGroup.teams;
+                    break;
+                }
+            }
         }
 
-        const stats = groupTeams.map(team => {
-            const teamMatches = allMatches.filter(m =>
-                m.status === 'finished' &&
-                (m.visitor_team_id === team.id || m.local_team_id === team.id)
-            );
-
-            let wins = 0;
-            let pts = 0;
-            let runDiff = 0;
-
-            teamMatches.forEach(m => {
-                const isVisitor = m.visitor_team_id === team.id;
-                if (m.winner_team_id === team.id) {
-                    wins++;
-                    pts += (tournament?.points_for_win || 1); // Match dashboard default
-                } else if (m.winner_team_id && m.winner_team_id !== team.id) {
-                    pts += (tournament?.points_for_loss || 0);
-                }
-
-                const mSets = allSets?.filter(s => s.match_id === m.id) || [];
-                mSets.forEach(s => {
-                    const rScored = isVisitor ? (s.away_score ?? 0) : (s.home_score ?? 0);
-                    const rAllowed = isVisitor ? (s.home_score ?? 0) : (s.away_score ?? 0);
-                    runDiff += (rScored - rAllowed);
-                });
-            });
-
-            return { team, wins, pts, runDiff };
-        });
-
-        return stats.sort((a, b) => {
-            // 1. Points (Descending)
-            if (b.pts !== a.pts) return b.pts - a.pts;
-
-            // 2. Tiebreaker Rank (Ascending, 1 is better than 2)
-            if ((a.team.tiebreaker_rank || 0) > 0 && (b.team.tiebreaker_rank || 0) > 0) {
-                return (a.team.tiebreaker_rank || 0) - (b.team.tiebreaker_rank || 0);
+        // 2. Filter teams based on identified IDs OR database column fallback
+        const groupTeams = allTeams?.filter(t => {
+            if (groupTeamIds.length > 0) {
+                return groupTeamIds.includes(t.id);
             }
+            // Fallback to DB columns
+            return t.id === groupIdOrName ||
+                t.group_name === groupIdOrName ||
+                t.group_name === normalizedInput ||
+                (t.group_name?.replace(/^Grupo\s+/i, '') === normalizedInput)
+        }) || [];
 
-            // 3. Run Difference (Descending)
-            return b.runDiff - a.runDiff;
-        });
+        if (groupTeams.length === 0) return [];
+
+        // Use the centralized utility
+        return calculateStandings(groupTeams, allMatches, allSets || [], null, tournament);
     };
 
     // 4. Seeding Logic (Cruces)
-    // We look for matches that are linked to source_home/away types
-    // Note: User says existing matches should be updated.
     const allStructurePhases = tournament?.structure?.phases || tournament?.structure?.stages || [];
     const allStructureMatches: any[] = [];
     allStructurePhases.forEach((p: any) => {
@@ -114,8 +89,6 @@ export const updateBracketProgression = async (supabase: SupabaseClient, tournam
 
     for (const match of pendingMatches) {
         let updateData: any = {};
-
-        // Find structure definition as fallback for sources
         const structMatch = allStructureMatches.find(sm => sm.id === match.id || sm.globalId === match.global_id);
 
         // Resolve LOCAL
@@ -123,17 +96,21 @@ export const updateBracketProgression = async (supabase: SupabaseClient, tournam
         const sHId = match.source_home_id || structMatch?.sourceHome?.id;
         const sHIndex = match.source_home_index || structMatch?.sourceHome?.index || 1;
 
-        if (!match.local_team_id && sHType) {
+        if (sHType) {
+            let resolvedTeamId = null;
             if (sHType === 'group.pos' && sHId) {
                 const standings = getGroupStandings(sHId);
-                const target = standings[sHIndex - 1];
-                if (target) updateData.local_team_id = target.team.id;
+                resolvedTeamId = standings[sHIndex - 1]?.id;
             } else if ((sHType === 'match.winner' || sHType === 'match.loser') && sHId) {
                 const sm = allMatches.find(m => m.id === sHId || m.global_id?.toString() === sHId);
                 if (sm && sm.status === 'finished' && sm.winner_team_id) {
-                    if (sHType === 'match.winner') updateData.local_team_id = sm.winner_team_id;
-                    else updateData.local_team_id = (sm.visitor_team_id === sm.winner_team_id ? sm.local_team_id : sm.visitor_team_id);
+                    if (sHType === 'match.winner') resolvedTeamId = sm.winner_team_id;
+                    else resolvedTeamId = (sm.visitor_team_id === sm.winner_team_id ? sm.local_team_id : sm.visitor_team_id);
                 }
+            }
+            // Overwrite if different (Allow correction/re-seeding)
+            if (resolvedTeamId && resolvedTeamId !== match.local_team_id) {
+                updateData.local_team_id = resolvedTeamId;
             }
         }
 
@@ -142,43 +119,78 @@ export const updateBracketProgression = async (supabase: SupabaseClient, tournam
         const sAId = match.source_away_id || structMatch?.sourceAway?.id;
         const sAIndex = match.source_away_index || structMatch?.sourceAway?.index || 1;
 
-        if (!match.visitor_team_id && sAType) {
+        if (sAType) {
+            let resolvedTeamId = null;
             if (sAType === 'group.pos' && sAId) {
                 const standings = getGroupStandings(sAId);
-                const target = standings[sAIndex - 1];
-                if (target) updateData.visitor_team_id = target.team.id;
+                resolvedTeamId = standings[sAIndex - 1]?.id;
             } else if ((sAType === 'match.winner' || sAType === 'match.loser') && sAId) {
                 const sm = allMatches.find(m => m.id === sAId || m.global_id?.toString() === sAId);
                 if (sm && sm.status === 'finished' && sm.winner_team_id) {
-                    if (sAType === 'match.winner') updateData.visitor_team_id = sm.winner_team_id;
-                    else updateData.visitor_team_id = (sm.visitor_team_id === sm.winner_team_id ? sm.local_team_id : sm.visitor_team_id);
+                    if (sAType === 'match.winner') resolvedTeamId = sm.winner_team_id;
+                    else resolvedTeamId = (sm.visitor_team_id === sm.winner_team_id ? sm.local_team_id : sm.visitor_team_id);
                 }
+            }
+            // Overwrite if different
+            if (resolvedTeamId && resolvedTeamId !== match.visitor_team_id) {
+                updateData.visitor_team_id = resolvedTeamId;
             }
         }
 
         if (Object.keys(updateData).length > 0) {
-            console.log(`Seeding Match ${match.name}:`, updateData);
+            console.log(`Updating Match ${match.name || match.id}:`, updateData);
             await supabase.from('tournament_matches').update(updateData).eq('id', match.id);
             updatesCount++;
         }
     }
 
-    // 5. Phase Activation logic
+    // 5. AUTO-POPULATE group_name in tournament_teams if missing (User Request)
+    const missingGroupTeams = allTeams.filter(t => !t.group_name);
+    if (missingGroupTeams.length > 0 && tournament.structure?.phases) {
+        const groupUpdates = [];
+        for (const team of missingGroupTeams) {
+            let foundGroupName = null;
+            for (const phase of tournament.structure.phases) {
+                if (phase.groups) {
+                    for (const group of phase.groups) {
+                        if (group.teams?.includes(team.id)) {
+                            foundGroupName = group.name;
+                            break;
+                        }
+                    }
+                }
+                if (foundGroupName) break;
+            }
+            if (foundGroupName) {
+                groupUpdates.push(
+                    supabase.from('tournament_teams').update({ group_name: foundGroupName }).eq('id', team.id)
+                );
+            }
+        }
+        if (groupUpdates.length > 0) {
+            await Promise.all(groupUpdates);
+            console.log(`Auto-populated group_name for ${groupUpdates.length} teams.`);
+        }
+    }
+
+    // 6. Phase Activation logic
     const activePhase = phases.find(p => p.status === 'active');
     if (activePhase) {
         const pMatches = allMatches.filter(m => m.phase_id === activePhase.phase_id || m.stage_id === activePhase.phase_id);
         const finishedCount = pMatches.filter(m => m.status === 'finished').length;
 
-        // If all are finished, transition
+        // Auto-finish criteria: All matches are finished OR manually triggered.
+        // We only transition if matches exist and all are done.
         if (pMatches.length > 0 && finishedCount === pMatches.length) {
             const nextIdx = phases.findIndex(p => p.phase_id === activePhase.phase_id) + 1;
             if (nextIdx < phases.length) {
                 const nextPhase = phases[nextIdx];
                 await supabase.from('tournament_phases').update({ status: 'finished' }).eq('phase_id', activePhase.phase_id);
                 await supabase.from('tournament_phases').update({ status: 'active' }).eq('phase_id', nextPhase.phase_id);
+                activatedPhaseId = nextPhase.phase_id;
             }
         }
     }
 
-    return { success: true, updates: updatesCount };
+    return { success: true, updates: updatesCount, activatedPhaseId };
 };

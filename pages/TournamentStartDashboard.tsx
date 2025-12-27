@@ -13,6 +13,7 @@ import { TiebreakerModal } from '../components/TiebreakerModal';
 import { OfficialScoreKeeper } from '../components/OfficialScoreKeeper';
 import { generateMatchReport, generateTournamentSummaryReport } from '../utils/pdfGenerator';
 import { logTournamentActivity } from '../utils/logger';
+import { calculateStandings } from '../utils/standingsLogic';
 
 export const TournamentStartDashboard: React.FC = () => {
     const { id } = useParams<{ id: string }>();
@@ -68,8 +69,8 @@ export const TournamentStartDashboard: React.FC = () => {
                 setIsPhaseFinished(allFinished);
 
                 if (allFinished) {
-                    // Check for ties
-                    const standings = calculateStandings();
+                    // Check for ties using centralized utility
+                    const standings = calculateStandings(teams, matches, sets, activeStageId, tournament);
                     // Group by Points
                     const grouped: { [key: number]: TournamentTeam[] } = {};
                     standings.forEach(t => {
@@ -79,13 +80,13 @@ export const TournamentStartDashboard: React.FC = () => {
                     });
 
                     // Filter groups with > 1 team and find their rank in standings
-                    // ONLY include groups where not all teams have a unique tiebreaker_rank
+                    // ONLY include groups where not all teams have a unique seed
                     const ties = Object.entries(grouped)
                         .filter(([_, group]) => {
                             if (group.length <= 1) return false;
 
-                            // Check if already resolved: all have >0 rank AND they are unique
-                            const ranks = group.map(t => t.tiebreaker_rank || 0);
+                            // Check if already resolved: all have >0 rank (seed) AND they are unique
+                            const ranks = group.map(t => t.seed || 0);
                             const allHaveRank = ranks.every(r => r > 0);
                             const uniqueRanks = new Set(ranks.filter(r => r > 0)).size;
 
@@ -283,96 +284,8 @@ export const TournamentStartDashboard: React.FC = () => {
         };
     }, [id]);
 
-    const calculateStandings = () => {
-        const stageStandings = teams.map(team => ({
-            ...team,
-            gp: 0,
-            wins: 0,
-            losses: 0,
-            pts: 0,
-            runs_scored: 0,
-            runs_allowed: 0
-        }));
-
-        matches.forEach(match => {
-            if (activeStageId && match.stage_id !== activeStageId) return;
-
-            const matchSets = sets.filter(s => s.match_id === match.id && s.status === 'finished');
-            if (matchSets.length === 0) return;
-
-            // Calculate runs regardless of match status
-            // Calculate runs regardless of match status
-            matchSets.forEach(set => {
-                const localTeam = stageStandings.find(t => t.id === match.local_team_id);
-                const visitorTeam = stageStandings.find(t => t.id === match.visitor_team_id);
-
-                const sLR = set.home_score ?? set.local_runs ?? 0;
-                const sVR = set.away_score ?? set.visitor_runs ?? 0;
-
-                if (localTeam) {
-                    localTeam.runs_scored += sLR;
-                    localTeam.runs_allowed += sVR;
-                }
-                if (visitorTeam) {
-                    visitorTeam.runs_scored += sVR;
-                    visitorTeam.runs_allowed += sLR;
-                }
-            });
-
-            // Determine match winner based on sets (Best of 3)
-            if (match.status === 'finished') {
-                let localSetWins = 0;
-                let visitorSetWins = 0;
-                matchSets.forEach(set => {
-                    const sLR = set.home_score ?? set.local_runs ?? 0;
-                    const sVR = set.away_score ?? set.visitor_runs ?? 0;
-                    if (sLR > sVR) localSetWins++;
-                    else if (sVR > sLR) visitorSetWins++;
-                });
-
-                const localTeam = stageStandings.find(t => t.id === match.local_team_id);
-                const visitorTeam = stageStandings.find(t => t.id === match.visitor_team_id);
-
-                if (localTeam && visitorTeam) {
-                    localTeam.gp++;
-                    visitorTeam.gp++;
-                    if (localSetWins > visitorSetWins) {
-                        localTeam.wins++;
-                        visitorTeam.losses++;
-                        localTeam.pts += (tournament?.points_for_win || 1);
-                        visitorTeam.pts += (tournament?.points_for_loss || 0);
-                    } else if (visitorSetWins > localSetWins) {
-                        visitorTeam.wins++;
-                        localTeam.losses++;
-                        visitorTeam.pts += (tournament?.points_for_win || 1);
-                        localTeam.pts += (tournament?.points_for_loss || 0);
-                    }
-                }
-            }
-        });
-
-        // Sort by Points, then Tiebreaker Rank, then Run Diff, then Runs Scored
-        const sorted = stageStandings.sort((a, b) => {
-            // 1. Primary sort: Points (Desc)
-            if ((b.pts || 0) !== (a.pts || 0)) return (b.pts || 0) - (a.pts || 0);
-
-            // 2. Secondary: Tiebreaker Rank (Asc, 1 is better than 2)
-            // IMPORTANT: Only compare if BOTH have a rank > 0, otherwise standard tiebreakers apply
-            if ((a.tiebreaker_rank || 0) > 0 && (b.tiebreaker_rank || 0) > 0) {
-                return (a.tiebreaker_rank || 0) - (b.tiebreaker_rank || 0);
-            }
-
-            // 3. Tertiary: Run Difference (Desc)
-            const diffA = (a.runs_scored || 0) - (a.runs_allowed || 0);
-            const diffB = (b.runs_scored || 0) - (b.runs_allowed || 0);
-            if (diffA !== diffB) return diffB - diffA;
-
-            // 4. Quaternary: Runs Scored (Desc)
-            return (b.runs_scored || 0) - (a.runs_scored || 0);
-        });
-
-        console.log("Calculated Standings:", sorted.map(t => ({ name: t.name, pts: t.pts, tieRank: t.tiebreaker_rank })));
-        return sorted;
+    const calculateStandingsForStage = () => {
+        return calculateStandings(teams, matches, sets, activeStageId, tournament);
     };
 
     const toggleTeamExpansion = (teamId: string) => {
@@ -436,7 +349,7 @@ export const TournamentStartDashboard: React.FC = () => {
                 teams: teams,
                 matches: matches,
                 sets: sets,
-                standings: calculateStandings()
+                standings: calculateStandingsForStage()
             };
 
             // 2. Update Tournament
@@ -473,7 +386,7 @@ export const TournamentStartDashboard: React.FC = () => {
 
     const handleDownloadSummary = async () => {
         if (!tournament) return;
-        const standings = calculateStandings();
+        const standings = calculateStandingsForStage();
         await generateTournamentSummaryReport(tournament, teams, matches, sets, standings);
     };
 
@@ -481,9 +394,9 @@ export const TournamentStartDashboard: React.FC = () => {
         if (!id || rankings.length === 0) return;
 
         try {
-            // 1. Update each team with their resolved rank
+            // 1. Update each team with their resolved rank (seed)
             const updates = rankings.map(r =>
-                supabase.from('tournament_teams').update({ tiebreaker_rank: r.rank }).eq('id', r.teamId)
+                supabase.from('tournament_teams').update({ seed: r.rank }).eq('id', r.teamId)
             );
             await Promise.all(updates);
 
@@ -493,7 +406,11 @@ export const TournamentStartDashboard: React.FC = () => {
 
             if (res.success) {
                 alert("✓ Desempates aplicados y llaves actualizadas.");
-                setActiveStageId(null); // Reset to force auto-selection of active phase
+                if (res.activatedPhaseId) {
+                    setActiveStageId(res.activatedPhaseId);
+                } else {
+                    setActiveStageId(null); // Reset to force auto-selection
+                }
                 await fetchTournamentData();
             } else {
                 alert("✓ Desempates guardados, pero hubo un problema al actualizar las llaves.");
@@ -669,7 +586,7 @@ export const TournamentStartDashboard: React.FC = () => {
                                     <div className="w-px h-6 bg-white/10 mx-2" />
 
                                     {/* TIEBREAKER BUTTON */}
-                                    {isPhaseFinished && tiedGroups.length > 0 && (
+                                    {isPhaseFinished && activeStage?.status !== 'finished' && tiedGroups.length > 0 && (
                                         <button
                                             onClick={() => setShowTiebreakerModal(true)}
                                             className="px-3 py-1.5 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-500 border border-yellow-500/30 rounded-lg transition-all flex items-center gap-2 animate-pulse mr-2"
@@ -1131,61 +1048,125 @@ export const TournamentStartDashboard: React.FC = () => {
                             </div>
 
                             {isGroupPhase ? (
-                                <div className="overflow-x-auto">
-                                    <table className="w-full text-left">
-                                        <thead>
-                                            <tr className="bg-white/5 text-[10px] uppercase tracking-widest text-white/40">
-                                                <th className="px-1 py-3 w-6 text-center">P</th>
-                                                <th className="px-2 py-3 w-auto text-left">Equipo</th>
-                                                <th className="px-1 py-3 text-center w-8">GP</th>
-                                                <th className="px-1 py-3 text-center w-8">W</th>
-                                                <th className="px-1 py-3 text-center w-8">L</th>
-                                                <th className="px-1 py-3 text-center w-8">PTS</th>
-                                                <th className="px-1 py-3 text-center group/header relative cursor-help w-12">
-                                                    <span className="border-b border-dotted border-white/20">RC/RP</span>
-                                                    <div className="absolute right-0 top-full mt-1 w-48 p-2 bg-black/90 border border-white/10 rounded-lg text-[9px] text-white/80 normal-case tracking-normal shadow-xl opacity-0 group-hover/header:opacity-100 transition-opacity z-50 pointer-events-none mb-2">
-                                                        Carreras Anotadas / Carreras Permitidas (Usado para desempate)
-                                                    </div>
-                                                </th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-white/5">
-                                            {calculateStandings().map((team, idx) => (
-                                                <tr key={team.id} className="hover:bg-white/5 transition-colors group">
-                                                    <td className="px-1 py-3 font-black text-white/20 text-sm text-center">{idx + 1}</td>
-                                                    <td className="px-2 py-3">
-                                                        <div className="flex items-center gap-2">
-                                                            <div className="w-6 h-6 rounded-full bg-black/40 flex items-center justify-center border border-white/10 shadow-sm overflow-hidden group-hover:border-blue-500/30 transition-all flex-shrink-0">
-                                                                {team.logo_url ? <img src={team.logo_url} className="w-full h-full object-cover" /> : <Trophy size={10} className="text-white/20" />}
-                                                            </div>
-                                                            <div className="flex flex-col">
-                                                                <span className="font-bold text-[10px] md:text-xs group-hover:text-blue-400 transition-colors truncate max-w-[100px] block">{team.name}</span>
-                                                                {(team.tiebreaker_rank || 0) > 0 && (
-                                                                    <span className="text-[7px] font-bold text-yellow-500/80 uppercase">Por Desempate</span>
-                                                                )}
-                                                            </div>
+                                <div className="space-y-8">
+                                    {(() => {
+                                        // 1. Identify groups for current phase from structure
+                                        const currentPhaseStruct = (tournament?.structure?.phases as any[])?.find(p => p.id === activeStageId);
+                                        const phaseGroups = currentPhaseStruct?.groups || [];
+
+                                        if (phaseGroups.length > 0) {
+                                            return phaseGroups.map((group: any) => {
+                                                const groupTeams = teams.filter(t => group.teams?.includes(t.id));
+                                                const standings = calculateStandings(groupTeams, matches, sets, activeStageId, tournament);
+
+                                                return (
+                                                    <div key={group.id || group.name} className="space-y-2">
+                                                        <div className="px-4 py-2 bg-white/5 border-l-2 border-yellow-500/50 flex items-center justify-between">
+                                                            <span className="text-[10px] font-black uppercase tracking-widest text-white/60">{group.name}</span>
+                                                            <span className="text-[8px] text-white/20 uppercase tracking-widest">{standings.length} Equipos</span>
                                                         </div>
-                                                    </td>
-                                                    <td className="px-1 py-3 text-center font-bold text-[10px] text-white/60">{team.gp || 0}</td>
-                                                    <td className="px-1 py-3 text-center font-bold text-[10px] text-green-400">{team.wins || 0}</td>
-                                                    <td className="px-1 py-3 text-center font-bold text-[10px] text-red-400">{team.losses || 0}</td>
-                                                    <td className="px-1 py-3 text-center">
-                                                        <span className="bg-blue-600/20 text-blue-400 px-1.5 py-0.5 rounded text-[10px] font-bold border border-blue-600/30">{team.pts || 0}</span>
-                                                    </td>
-                                                    <td className="px-1 py-3 text-center">
-                                                        <span className="text-[10px] text-white/40 font-mono tracking-tight">{team.runs_scored}/{team.runs_allowed}</span>
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                            {calculateStandings().length === 0 && (
-                                                <tr>
-                                                    <td colSpan={7} className="p-6 text-center text-white/20 italic text-xs">
-                                                        No hay datos de clasificación aún.
-                                                    </td>
-                                                </tr>
-                                            )}
-                                        </tbody>
-                                    </table>
+                                                        <div className="overflow-x-auto">
+                                                            <table className="w-full text-left">
+                                                                <thead>
+                                                                    <tr className="bg-white/5 text-[10px] uppercase tracking-widest text-white/40">
+                                                                        <th className="px-1 py-3 w-6 text-center">P</th>
+                                                                        <th className="px-2 py-3 w-auto text-left">Equipo</th>
+                                                                        <th className="px-1 py-3 text-center w-8">GP</th>
+                                                                        <th className="px-1 py-3 text-center w-8">W</th>
+                                                                        <th className="px-1 py-3 text-center w-8">L</th>
+                                                                        <th className="px-1 py-3 text-center w-8">PTS</th>
+                                                                        <th className="px-1 py-3 text-center w-12 tracking-tighter">RC/RP</th>
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody className="divide-y divide-white/5">
+                                                                    {standings.map((team, idx) => (
+                                                                        <tr key={team.id} className="hover:bg-white/5 transition-colors group">
+                                                                            <td className="px-1 py-3 font-black text-white/20 text-sm text-center">{idx + 1}</td>
+                                                                            <td className="px-2 py-3">
+                                                                                <div className="flex items-center gap-2">
+                                                                                    <div className="w-6 h-6 rounded-full bg-black/40 flex items-center justify-center border border-white/10 shadow-sm overflow-hidden group-hover:border-blue-500/30 transition-all flex-shrink-0">
+                                                                                        {team.logo_url ? <img src={team.logo_url} className="w-full h-full object-cover" /> : <Trophy size={10} className="text-white/20" />}
+                                                                                    </div>
+                                                                                    <div className="flex flex-col">
+                                                                                        <span className="font-bold text-[10px] md:text-xs group-hover:text-blue-400 transition-colors truncate max-w-[100px] block">{team.name}</span>
+                                                                                        {(team.seed || 0) > 0 && (
+                                                                                            <span className="text-[7px] font-bold text-yellow-500/80 uppercase">Por Desempate</span>
+                                                                                        )}
+                                                                                    </div>
+                                                                                </div>
+                                                                            </td>
+                                                                            <td className="px-1 py-3 text-center font-bold text-[10px] text-white/60">{team.gp || 0}</td>
+                                                                            <td className="px-1 py-3 text-center font-bold text-[10px] text-green-400">{team.wins || 0}</td>
+                                                                            <td className="px-1 py-3 text-center font-bold text-[10px] text-red-400">{team.losses || 0}</td>
+                                                                            <td className="px-1 py-3 text-center">
+                                                                                <span className="bg-blue-600/20 text-blue-400 px-1.5 py-0.5 rounded text-[10px] font-bold border border-blue-600/30">{team.pts || 0}</span>
+                                                                            </td>
+                                                                            <td className="px-1 py-3 text-center">
+                                                                                <span className="text-[10px] text-white/40 font-mono tracking-tight">{team.runs_scored}/{team.runs_allowed}</span>
+                                                                            </td>
+                                                                        </tr>
+                                                                    ))}
+                                                                </tbody>
+                                                            </table>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            });
+                                        }
+
+                                        // Fallback: Single table if no groups defined in structure
+                                        const standings = calculateStandingsForStage();
+                                        return (
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-left">
+                                                    <thead>
+                                                        <tr className="bg-white/5 text-[10px] uppercase tracking-widest text-white/40">
+                                                            <th className="px-1 py-3 w-6 text-center">P</th>
+                                                            <th className="px-2 py-3 w-auto text-left">Equipo</th>
+                                                            <th className="px-1 py-3 text-center w-8">GP</th>
+                                                            <th className="px-1 py-3 text-center w-8">W</th>
+                                                            <th className="px-1 py-3 text-center w-8">L</th>
+                                                            <th className="px-1 py-3 text-center w-8">PTS</th>
+                                                            <th className="px-1 py-3 text-center group/header relative cursor-help w-12">
+                                                                <span className="border-b border-dotted border-white/20">RC/RP</span>
+                                                            </th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-white/5">
+                                                        {standings.map((team, idx) => (
+                                                            <tr key={team.id} className="hover:bg-white/5 transition-colors group">
+                                                                <td className="px-1 py-3 font-black text-white/20 text-sm text-center">{idx + 1}</td>
+                                                                <td className="px-2 py-3">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <div className="w-6 h-6 rounded-full bg-black/40 flex items-center justify-center border border-white/10 shadow-sm overflow-hidden group-hover:border-blue-500/30 transition-all flex-shrink-0">
+                                                                            {team.logo_url ? <img src={team.logo_url} className="w-full h-full object-cover" /> : <Trophy size={10} className="text-white/20" />}
+                                                                        </div>
+                                                                        <div className="flex flex-col">
+                                                                            <span className="font-bold text-[10px] md:text-xs group-hover:text-blue-400 transition-colors truncate max-w-[100px] block">{team.name}</span>
+                                                                        </div>
+                                                                    </div>
+                                                                </td>
+                                                                <td className="px-1 py-3 text-center font-bold text-[10px] text-white/60">{team.gp || 0}</td>
+                                                                <td className="px-1 py-3 text-center font-bold text-[10px] text-green-400">{team.wins || 0}</td>
+                                                                <td className="px-1 py-3 text-center font-bold text-[10px] text-red-400">{team.losses || 0}</td>
+                                                                <td className="px-1 py-3 text-center">
+                                                                    <span className="bg-blue-600/20 text-blue-400 px-1.5 py-0.5 rounded text-[10px] font-bold border border-blue-600/30">{team.pts || 0}</span>
+                                                                </td>
+                                                                <td className="px-1 py-3 text-center font-mono text-[10px] text-white/40">{team.runs_scored}/{team.runs_allowed}</td>
+                                                            </tr>
+                                                        ))}
+                                                        {standings.length === 0 && (
+                                                            <tr>
+                                                                <td colSpan={7} className="p-6 text-center text-white/20 italic text-xs">
+                                                                    No hay datos de clasificación aún.
+                                                                </td>
+                                                            </tr>
+                                                        )}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        );
+                                    })()}
                                 </div>
                             ) : (
                                 <div className="p-4 space-y-4">
@@ -1496,7 +1477,7 @@ const MatchCard = ({ match, teams, sets, onStartSet, tournament, fields, referee
     const scorer = referees?.find((r: any) => r.id === match.referee_id || r.referee_id === match.referee_id);
     const scorerName = scorer ? `${scorer.first_name} ${scorer.last_name}` : 'Oficial de Mesa';
 
-    // Calculate Set Wins for specific score "Local X - Y Visitor"
+    // Calculate Set Wins
     let localSetWins = 0;
     let visitorSetWins = 0;
     sets.forEach((s: any) => {
@@ -1506,10 +1487,7 @@ const MatchCard = ({ match, teams, sets, onStartSet, tournament, fields, referee
         }
     });
 
-    // Check if Single Set mode
     const isSingleSet = match.is_single_set === true || tournament?.sets_per_match === 1;
-
-    // Determine Match Ident
     const matchIdent = match.global_id || match.globalId || match.name || '???';
 
     return (
@@ -1546,13 +1524,10 @@ const MatchCard = ({ match, teams, sets, onStartSet, tournament, fields, referee
                             <MapPin size={12} />
                             <span className="text-[10px] font-bold uppercase tracking-wider truncate">{fieldName}</span>
                         </div>
-                        {/* Sets Config Display */}
                         <div className="flex items-center gap-1.5 text-orange-400/80">
                             <Notebook size={12} />
                             <span className="text-[10px] font-bold uppercase tracking-wider">{match.set_number || (isSingleSet ? '1 Set' : '3 Sets')}</span>
                         </div>
-                        {/* PDF Download Button (Only if all sets finished) */}
-                        {/* PDF Download Button (If match is finished or decisive result reached) */}
                         {((sets.length > 0 && sets.every((s: any) => s.status === 'finished')) ||
                             match.status === 'finished' ||
                             (localSetWins >= 2 || visitorSetWins >= 2) ||
@@ -1579,61 +1554,49 @@ const MatchCard = ({ match, teams, sets, onStartSet, tournament, fields, referee
                     </div>
                 </div>
 
-                {/* Teams display */}
-                <div className="p-6">
-
-                    {/* Redesigned Match Header: Logo - Score - VS - Score - Logo */}
-                    <div className="flex items-center justify-between gap-2 md:gap-8 px-4 py-2 relative">
-
+                <div className="p-4 md:p-6">
+                    {/* Redesigned Match Header: Grid layout for perfect alignment */}
+                    <div className="grid grid-cols-3 items-center gap-2 md:gap-4 relative px-2 py-1">
                         {/* LOCAL TEAM */}
-                        <div className="flex flex-col items-center gap-2 flex-1 group/team">
-                            <div className="w-20 h-20 rounded-full bg-black/40 border-2 border-white/10 flex items-center justify-center shadow-lg group-hover/team:scale-105 group-hover/team:border-blue-500/50 transition-all duration-300 overflow-hidden relative">
+                        <div className="flex flex-col items-center gap-2 group/team overflow-hidden">
+                            <div className="w-12 h-12 md:w-20 md:h-20 rounded-full bg-black/40 border-2 border-white/10 flex items-center justify-center shadow-lg group-hover/team:scale-105 group-hover/team:border-blue-500/50 transition-all duration-300 overflow-hidden relative flex-shrink-0">
                                 <div className="absolute inset-0 bg-gradient-to-tr from-blue-500/20 to-transparent opacity-0 group-hover/team:opacity-100 transition-opacity" />
-                                {localTeam?.logo_url ? <img src={localTeam.logo_url} className="w-full h-full object-cover" /> : <Trophy size={32} className="text-white/10" />}
+                                {localTeam?.logo_url ? <img src={localTeam.logo_url} className="w-full h-full object-cover" /> : <Trophy size={16} className="text-white/10 md:w-8 md:h-8" />}
                             </div>
-                            <p className="text-sm font-black truncate w-32 text-center uppercase tracking-tight text-white/90">{localTeam?.name || 'Local'}</p>
+                            <p className="text-[10px] md:text-sm font-black truncate w-full text-center uppercase tracking-tight text-white/90">{localTeam?.name || 'Local'}</p>
                         </div>
 
                         {/* CENTER SECTION: Score - VS - Score */}
-                        <div className="flex items-center justify-center gap-4 md:gap-6 z-10">
-
-                            {/* Local Score */}
-                            <div className="text-5xl md:text-6xl font-black text-white tracking-tighter drop-shadow-[0_0_15px_rgba(255,255,255,0.1)] font-mono">
+                        <div className="flex items-center justify-center gap-2 md:gap-6 z-10 py-1">
+                            <div className="text-3xl md:text-6xl font-black text-white tracking-tighter drop-shadow-[0_0_15px_rgba(255,255,255,0.1)] font-mono">
                                 {localSetWins}
                             </div>
 
-                            {/* VS Badge */}
-                            <div className="flex flex-col items-center justify-center gap-1">
-                                <span className="text-3xl font-black italic text-transparent bg-clip-text bg-gradient-to-br from-orange-400 to-red-600 drop-shadow-sm scale-110">VS</span>
-                                <div className="px-3 py-0.5 bg-white/5 rounded-full border border-white/5 text-[10px] font-black text-white/30">
+                            <div className="flex flex-col items-center justify-center gap-0.5">
+                                <span className="text-xl md:text-3xl font-black italic text-transparent bg-clip-text bg-gradient-to-br from-orange-400 to-red-600 drop-shadow-sm scale-110">VS</span>
+                                <div className="px-2 md:px-3 py-0.5 bg-white/5 rounded-full border border-white/5 text-[8px] md:text-[10px] font-black text-white/30 truncate">
                                     #{matchIdent}
                                 </div>
                             </div>
 
-                            {/* Visitor Score */}
-                            <div className="text-5xl md:text-6xl font-black text-white tracking-tighter drop-shadow-[0_0_15px_rgba(255,255,255,0.1)] font-mono">
+                            <div className="text-3xl md:text-6xl font-black text-white tracking-tighter drop-shadow-[0_0_15px_rgba(255,255,255,0.1)] font-mono">
                                 {visitorSetWins}
                             </div>
-
                         </div>
 
                         {/* VISITOR TEAM */}
-                        <div className="flex flex-col items-center gap-2 flex-1 group/team">
-                            <div className="w-20 h-20 rounded-full bg-black/40 border-2 border-white/10 flex items-center justify-center shadow-lg group-hover/team:scale-105 group-hover/team:border-red-500/50 transition-all duration-300 overflow-hidden relative">
+                        <div className="flex flex-col items-center gap-2 group/team overflow-hidden">
+                            <div className="w-12 h-12 md:w-20 md:h-20 rounded-full bg-black/40 border-2 border-white/10 flex items-center justify-center shadow-lg group-hover/team:scale-105 group-hover/team:border-red-500/50 transition-all duration-300 overflow-hidden relative flex-shrink-0">
                                 <div className="absolute inset-0 bg-gradient-to-tr from-red-500/20 to-transparent opacity-0 group-hover/team:opacity-100 transition-opacity" />
-                                {visitorTeam?.logo_url ? <img src={visitorTeam.logo_url} className="w-full h-full object-cover" /> : <Trophy size={32} className="text-white/10" />}
+                                {visitorTeam?.logo_url ? <img src={visitorTeam.logo_url} className="w-full h-full object-cover" /> : <Trophy size={16} className="text-white/10 md:w-8 md:h-8" />}
                             </div>
-                            <p className="text-sm font-black truncate w-32 text-center uppercase tracking-tight text-white/90">{visitorTeam?.name || 'Visita'}</p>
+                            <p className="text-[10px] md:text-sm font-black truncate w-full text-center uppercase tracking-tight text-white/90">{visitorTeam?.name || 'Visita'}</p>
                         </div>
-
                     </div>
 
-                    {/* Sets Section */}
-                    <div className="mt-8 space-y-4">
-                        {/* Render sets based on config and win condition */}
+                    <div className="mt-6 space-y-4">
                         {Array.from({ length: isSingleSet ? 1 : 3 }).map((_, i) => {
                             const num = i + 1;
-                            // Check if game is already won (Best of 3) - Only hide 3rd set if it was a 2-0 sweep
                             if (!isSingleSet && num === 3 && ((localSetWins === 2 && visitorSetWins === 0) || (visitorSetWins === 2 && localSetWins === 0))) return null;
 
                             const set = sets.find((s: any) => s.set_number === num);
@@ -1641,14 +1604,11 @@ const MatchCard = ({ match, teams, sets, onStartSet, tournament, fields, referee
                             const isLive = set?.status === 'live';
                             const hasData = set?.state_json;
 
-                            // Extract data for scoreboard
-                            // Prioritize DB Columns if available
                             const getRunsFromCols = (prefix: 'vis' | 'loc') => {
                                 const arr: string[] = [];
-                                // Max 10 columns checked
                                 for (let i = 1; i <= 10; i++) {
                                     const key = i <= 5 ? `${prefix}_inn${i}` : `${prefix}_ex${i}`;
-                                    const val = (set as any)[key];
+                                    const val = (set as any)?.[key];
                                     if (val !== null && val !== undefined) arr.push(val.toString());
                                 }
                                 return arr;
@@ -1656,10 +1616,8 @@ const MatchCard = ({ match, teams, sets, onStartSet, tournament, fields, referee
 
                             let visRuns = getRunsFromCols('vis');
                             let locRuns = getRunsFromCols('loc');
+                            let innings = { local: [] as string[], visitor: [] as string[] };
 
-                            let innings = { local: [] as string[], visitor: [] as string[] }; // Default initialization
-
-                            // Trim trailing zeros to avoid showing 10 empty columns by default
                             const trimZeros = (arr: string[]) => {
                                 const res = [...arr];
                                 while (res.length > 5 && (res[res.length - 1] === '0' || res[res.length - 1] === '')) {
@@ -1676,7 +1634,7 @@ const MatchCard = ({ match, teams, sets, onStartSet, tournament, fields, referee
                                 innings = (set.state_json.inningScores || { local: [], visitor: [] });
                             }
 
-                            const maxInnings = Math.max(5, innings.local.length, innings.visitor.length); // Min 5 cols
+                            const maxInnings = Math.max(5, innings.local.length, innings.visitor.length);
 
                             return (
                                 <div key={num} className="bg-black/40 border border-white/5 rounded-2xl overflow-hidden group/set transition-colors hover:border-white/10">
@@ -1690,14 +1648,8 @@ const MatchCard = ({ match, teams, sets, onStartSet, tournament, fields, referee
                                                 {isLive ? 'En Juego' : isFinished ? 'Finalizado' : 'Pendiente'}
                                             </span>
                                         </div>
-
-                                        {/* Action Button */}
                                         <button
-                                            onClick={() => {
-                                                if (onStartSet) {
-                                                    onStartSet(match, num);
-                                                }
-                                            }}
+                                            onClick={() => { if (onStartSet) onStartSet(match, num); }}
                                             className="p-1.5 bg-blue-600/20 hover:bg-blue-600 text-blue-400 hover:text-white rounded-lg transition-all"
                                             title={isFinished ? "Ver Anotación" : "Anotar"}
                                         >
@@ -1705,7 +1657,6 @@ const MatchCard = ({ match, teams, sets, onStartSet, tournament, fields, referee
                                         </button>
                                     </div>
 
-                                    {/* Mini Scoreboard Table */}
                                     {(isLive || isFinished || hasData) ? (
                                         <div className="text-[10px] w-full overflow-x-auto">
                                             <table className="w-full text-center">
@@ -1730,7 +1681,6 @@ const MatchCard = ({ match, teams, sets, onStartSet, tournament, fields, referee
 
                                                         return (
                                                             <>
-                                                                {/* Visitor Row */}
                                                                 <tr className={`border-b border-white/5 ${vWin ? 'bg-yellow-500/10' : ''}`}>
                                                                     <td className={`p-1 pl-3 text-left truncate max-w-[80px] font-sans font-bold ${vWin ? 'text-yellow-400' : 'text-white/60'}`}>{visitorTeam?.name}</td>
                                                                     {Array.from({ length: maxInnings }).map((_, idx) => (
@@ -1749,7 +1699,6 @@ const MatchCard = ({ match, teams, sets, onStartSet, tournament, fields, referee
                                                                     </td>
                                                                     <td className="p-1 text-white/60">{set.away_errors || set.state_json?.errors?.visitor || 0}</td>
                                                                 </tr>
-                                                                {/* Local Row */}
                                                                 <tr className={lWin ? 'bg-yellow-500/10' : ''}>
                                                                     <td className={`p-1 pl-3 text-left truncate max-w-[80px] font-sans font-bold ${lWin ? 'text-yellow-400' : 'text-white/60'}`}>{localTeam?.name}</td>
                                                                     {Array.from({ length: maxInnings }).map((_, idx) => (
@@ -1777,7 +1726,6 @@ const MatchCard = ({ match, teams, sets, onStartSet, tournament, fields, referee
                                             </table>
                                         </div>
                                     ) : (
-                                        // Empty Placeholder for Pending Sets
                                         <div className="p-4 flex flex-col items-center justify-center opacity-30 gap-1">
                                             <div className="w-full h-1 bg-white/10 rounded-full" />
                                             <div className="w-2/3 h-1 bg-white/10 rounded-full" />
@@ -1798,5 +1746,6 @@ const MatchCard = ({ match, teams, sets, onStartSet, tournament, fields, referee
         </div>
     );
 };
+
 
 

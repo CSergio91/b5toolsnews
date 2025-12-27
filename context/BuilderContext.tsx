@@ -557,15 +557,32 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
             // 2. Save Teams
             setState(prev => ({ ...prev, savingStep: `Sincronizando ${teamsToSave.length} equipos...`, savingProgress: 55 }));
             if (teamsToSave.length > 0) {
-                const { error: teamsError } = await supabase
-                    .from('tournament_teams')
-                    .upsert(teamsToSave.map(t => ({
-                        id: t.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(t.id) ? t.id : undefined,
+                // Map group names from structure if not present in team object
+                const teamsWithGroups = teamsToSave.map(t => {
+                    let groupName = (t as any).group_name || (t as any).group_id;
+
+                    // Fallback: If groupName is null/empty, look it up in the structure
+                    if (!groupName && state.structure?.phases) {
+                        for (const phase of state.structure.phases) {
+                            if (phase.groups) {
+                                for (const group of phase.groups) {
+                                    if (group.teams?.includes(t.id!)) {
+                                        groupName = group.name;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (groupName) break;
+                        }
+                    }
+
+                    return {
+                        id: t.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(t.id) ? t.id : undefined,
                         tournament_id: tournament.id,
                         name: t.name || 'Equipo sin nombre',
                         short_name: t.short_name,
                         logo_url: t.logo_url,
-                        group_name: (t as any).group_name || (t as any).group_id, // Match DB column 'group_name'
+                        group_name: groupName, // Match DB column 'group_name'
                         wins: t.wins || 0,
                         losses: t.losses || 0,
                         runs_scored: t.runs_scored || 0,
@@ -579,7 +596,12 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
                         stats_r: (t as any).stats_r || 0,
                         stats_e_def: (t as any).stats_e_def || 0,
                         stats_e_of: (t as any).stats_e_of || 0
-                    })));
+                    };
+                });
+
+                const { error: teamsError } = await supabase
+                    .from('tournament_teams')
+                    .upsert(teamsWithGroups);
 
                 if (teamsError) throw teamsError;
             }
