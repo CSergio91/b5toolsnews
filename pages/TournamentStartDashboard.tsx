@@ -437,7 +437,40 @@ export const TournamentStartDashboard: React.FC = () => {
         );
     }
 
-    const filteredMatches = matches.filter(m => m.stage_id === activeStageId);
+    // Unified logic to sort and label matches
+    const enrichAndSortMatches = (matchList: any[]) => {
+        const sorted = [...matchList].sort((a, b) => {
+            const timeA = a.start_time || '';
+            const timeB = b.start_time || '';
+            if (timeA !== timeB) return timeA.localeCompare(timeB);
+
+            // Priority: Final > Semi > 3rd > Regular
+            const getPriority = (m: any) => {
+                const n = (m.name || '').toLowerCase();
+                if (n.includes('final') && !n.includes('semi')) return 1;
+                if (n.includes('semi')) return 2;
+                if (n.includes('3') || n.includes('tercer')) return 3;
+                return 10;
+            };
+            return getPriority(a) - getPriority(b);
+        });
+
+        // Add sequential labels for Semifinals
+        let semiCounter = 0;
+        return sorted.map(m => {
+            const isSemi = (m.name || '').toLowerCase().includes('semi');
+            if (isSemi) {
+                semiCounter++;
+                return { ...m, name: `Semifinal ${semiCounter}` };
+            }
+            if ((m.name || '').toLowerCase().includes('final') && !isSemi) {
+                return { ...m, name: 'Gran Final' };
+            }
+            return m;
+        });
+    };
+
+    const filteredMatches = enrichAndSortMatches(matches.filter(m => m.stage_id === activeStageId));
 
     return (
         <div className="min-h-screen w-full bg-[#0a0a0f] text-white flex flex-col relative overflow-x-hidden">
@@ -841,25 +874,20 @@ export const TournamentStartDashboard: React.FC = () => {
                                                 </div>
                                             </div>
                                             <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                {fieldMatches
-                                                    .sort((a, b) => {
-                                                        // Priority to field.items order if possible
-                                                        if (field.items) {
-                                                            const idxA = field.items.findIndex((i: any) => i.matchId === a.id);
-                                                            const idxB = field.items.findIndex((i: any) => i.matchId === b.id);
-                                                            if (idxA !== -1 && idxB !== -1) return idxA - idxB;
-                                                        }
-                                                        return (a.start_time || '').localeCompare(b.start_time || '');
-                                                    })
-                                                    .map(match => (
-                                                        <MatchCard
-                                                            key={match.id}
-                                                            match={match}
-                                                            teams={teams}
-                                                            sets={sets.filter(s => s.match_id === match.id)}
-                                                            onStartSet={handleStartSet}
-                                                        />
-                                                    ))}
+                                                {enrichAndSortMatches(fieldMatches).map(match => (
+                                                    <MatchCard
+                                                        key={match.id}
+                                                        match={match}
+                                                        teams={teams}
+                                                        sets={sets.filter(s => s.match_id === match.id)}
+                                                        onStartSet={handleStartSet}
+                                                        tournament={tournament}
+                                                        fields={fields}
+                                                        referees={referees}
+                                                        onRefresh={() => fetchTournamentData(true)}
+                                                        isStageFinished={stages.find(s => s.id === activeStageId)?.status === 'finished'}
+                                                    />
+                                                ))}
                                                 {fieldMatches.length === 0 && (
                                                     <div className="col-span-full py-10 text-center text-white/20 italic text-sm">
                                                         No hay partidos planificados en esta cancha.
@@ -1193,9 +1221,9 @@ export const TournamentStartDashboard: React.FC = () => {
                                 </div>
                             )}
                         </div>
-                    </div >
-                </div >
-            </main >
+                    </div>
+                </div>
+            </main>
 
             {/* Tiebreaker Modal */}
             <TiebreakerModal
@@ -1208,139 +1236,152 @@ export const TournamentStartDashboard: React.FC = () => {
                 onApply={handleApplyTiebreakers}
             />
 
+            {/* Start Match Modal */}
+            <ConfirmationModal
+                isOpen={!!startMatchModal}
+                onClose={() => setStartMatchModal(null)}
+                onConfirm={confirmStartSet}
+                title="Comenzar Partido"
+                message={`¿Deseas comenzar la anotación del ${startMatchModal?.match ? (startMatchModal.match.name || 'Partido') : 'Partido'} - Set ${startMatchModal?.setNumber}?`}
+                confirmLabel="Comenzar"
+                cancelLabel="Cancelar"
+            />
+
             {/* Finish Tournament Modal (B5Tools Style) */}
             <AnimatePresence>
-                {showFinishModal && (
-                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-                        <motion.div
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            onClick={() => setShowFinishModal(false)}
-                            className="absolute inset-0 bg-black/80 backdrop-blur-md"
-                        />
+                {
+                    showFinishModal && (
+                        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                            <motion.div
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                onClick={() => setShowFinishModal(false)}
+                                className="absolute inset-0 bg-black/80 backdrop-blur-md"
+                            />
 
-                        <motion.div
-                            initial={{ scale: 0.9, opacity: 0, y: 20 }}
-                            animate={{ scale: 1, opacity: 1, y: 0 }}
-                            exit={{ scale: 0.9, opacity: 0, y: 20 }}
-                            className="bg-[#1a1a2e] border border-white/10 w-full max-w-xl rounded-2xl overflow-hidden shadow-2xl relative z-10"
-                        >
-                            {/* Header */}
-                            <div className="bg-gradient-to-r from-red-600/20 to-transparent p-6 border-b border-white/5 relative">
-                                <div className="flex items-center gap-4">
-                                    <div className="w-12 h-12 rounded-xl bg-red-600/20 flex items-center justify-center border border-red-600/30">
-                                        <Flag className="text-red-400" size={24} />
-                                    </div>
-                                    <div>
-                                        <h2 className="text-xl font-black tracking-tight text-white uppercase">Finalizar Torneo</h2>
-                                        <p className="text-sm text-white/40">Cierra oficialmente el evento y archiva los resultados</p>
-                                    </div>
-                                </div>
-                                <button
-                                    onClick={() => setShowFinishModal(false)}
-                                    className="absolute top-6 right-6 p-2 text-white/20 hover:text-white hover:bg-white/5 rounded-lg transition-all"
-                                >
-                                    <X size={20} />
-                                </button>
-                            </div>
-
-                            {/* Body */}
-                            <div className="p-8">
-                                <div className="space-y-6">
-                                    <div className="p-6 bg-blue-500/10 border border-blue-500/20 rounded-2xl text-center flex flex-col items-center gap-3">
-                                        <div className="w-16 h-16 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400 group-hover:scale-110 transition-transform">
-                                            <Trophy size={32} />
+                            <motion.div
+                                initial={{ scale: 0.9, opacity: 0, y: 20 }}
+                                animate={{ scale: 1, opacity: 1, y: 0 }}
+                                exit={{ scale: 0.9, opacity: 0, y: 20 }}
+                                className="bg-[#1a1a2e] border border-white/10 w-full max-w-xl rounded-2xl overflow-hidden shadow-2xl relative z-10"
+                            >
+                                {/* Header */}
+                                <div className="bg-gradient-to-r from-red-600/20 to-transparent p-6 border-b border-white/5 relative">
+                                    <div className="flex items-center gap-4">
+                                        <div className="w-12 h-12 rounded-xl bg-red-600/20 flex items-center justify-center border border-red-600/30">
+                                            <Flag className="text-red-400" size={24} />
                                         </div>
                                         <div>
-                                            <h3 className="text-xl font-bold text-white uppercase tracking-tight">¡Felicidades por tu Torneo!</h3>
-                                            <p className="text-sm text-white/50 mt-1">Has completado con éxito la gestión de <span className="text-blue-400 font-bold">{tournament?.name}</span>.</p>
+                                            <h2 className="text-xl font-black tracking-tight text-white uppercase">Finalizar Torneo</h2>
+                                            <p className="text-sm text-white/40">Cierra oficialmente el evento y archiva los resultados</p>
                                         </div>
                                     </div>
+                                    <button
+                                        onClick={() => setShowFinishModal(false)}
+                                        className="absolute top-6 right-6 p-2 text-white/20 hover:text-white hover:bg-white/5 rounded-lg transition-all"
+                                    >
+                                        <X size={20} />
+                                    </button>
+                                </div>
 
-                                    {/* Match Completion Validation */}
-                                    {matches.filter(m => m.status !== 'finished').length > 0 ? (
-                                        <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex gap-4 items-center">
-                                            <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center flex-shrink-0">
-                                                <Flag className="text-red-400" size={18} />
+                                {/* Body */}
+                                <div className="p-8">
+                                    <div className="space-y-6">
+                                        <div className="p-6 bg-blue-500/10 border border-blue-500/20 rounded-2xl text-center flex flex-col items-center gap-3">
+                                            <div className="w-16 h-16 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400 group-hover:scale-110 transition-transform">
+                                                <Trophy size={32} />
                                             </div>
                                             <div>
-                                                <p className="text-xs text-red-200 font-bold uppercase tracking-wider">Partidos Pendientes</p>
-                                                <p className="text-sm text-red-300/80">
-                                                    Aún faltan <span className="font-black text-white">{matches.filter(m => m.status !== 'finished').length}</span> partidos por finalizar. Finaliza todos los encuentros para poder archivar.
+                                                <h3 className="text-xl font-bold text-white uppercase tracking-tight">¡Felicidades por tu Torneo!</h3>
+                                                <p className="text-sm text-white/50 mt-1">Has completado con éxito la gestión de <span className="text-blue-400 font-bold">{tournament?.name}</span>.</p>
+                                            </div>
+                                        </div>
+
+                                        {/* Match Completion Validation */}
+                                        {matches.filter(m => m.status !== 'finished').length > 0 ? (
+                                            <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex gap-4 items-center">
+                                                <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center flex-shrink-0">
+                                                    <Flag className="text-red-400" size={18} />
+                                                </div>
+                                                <div>
+                                                    <p className="text-xs text-red-200 font-bold uppercase tracking-wider">Partidos Pendientes</p>
+                                                    <p className="text-sm text-red-300/80">
+                                                        Aún faltan <span className="font-black text-white">{matches.filter(m => m.status !== 'finished').length}</span> partidos por finalizar. Finaliza todos los encuentros para poder archivar.
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="p-4 bg-purple-500/5 border border-purple-500/20 rounded-xl flex gap-4 items-center">
+                                                <div className="w-10 h-10 rounded-full bg-purple-500/10 flex items-center justify-center flex-shrink-0">
+                                                    <Info className="text-purple-400" size={18} />
+                                                </div>
+                                                <p className="text-xs text-purple-200/60 leading-relaxed font-medium">
+                                                    Todo está listo. Al archivar, podrás consultar los resultados finales en la pestaña de <span className="text-purple-400 font-bold">"Archivados"</span> dentro de tu lista de torneos.
                                                 </p>
                                             </div>
-                                        </div>
-                                    ) : (
-                                        <div className="p-4 bg-purple-500/5 border border-purple-500/20 rounded-xl flex gap-4 items-center">
-                                            <div className="w-10 h-10 rounded-full bg-purple-500/10 flex items-center justify-center flex-shrink-0">
-                                                <Info className="text-purple-400" size={18} />
-                                            </div>
-                                            <p className="text-xs text-purple-200/60 leading-relaxed font-medium">
-                                                Todo está listo. Al archivar, podrás consultar los resultados finales en la pestaña de <span className="text-purple-400 font-bold">"Archivados"</span> dentro de tu lista de torneos.
-                                            </p>
-                                        </div>
-                                    )}
+                                        )}
 
-                                    <div className="grid grid-cols-1 gap-4">
-                                        <button
-                                            onClick={handleDownloadSummary}
-                                            className="w-full p-6 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl transition-all flex items-center justify-between group"
-                                        >
-                                            <div className="flex items-center gap-4 text-left">
-                                                <div className="w-12 h-12 rounded-xl bg-blue-600/10 flex items-center justify-center border border-blue-600/30 group-hover:bg-blue-600/20 transition-all">
-                                                    <Download className="text-blue-400" size={22} />
+                                        <div className="grid grid-cols-1 gap-4">
+                                            <button
+                                                onClick={handleDownloadSummary}
+                                                className="w-full p-6 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl transition-all flex items-center justify-between group"
+                                            >
+                                                <div className="flex items-center gap-4 text-left">
+                                                    <div className="w-12 h-12 rounded-xl bg-blue-600/10 flex items-center justify-center border border-blue-600/30 group-hover:bg-blue-600/20 transition-all">
+                                                        <Download className="text-blue-400" size={22} />
+                                                    </div>
+                                                    <div>
+                                                        <h3 className="font-bold text-white text-lg group-hover:text-blue-400">Ver Resumen Torneo</h3>
+                                                        <p className="text-xs text-white/30 uppercase tracking-widest mt-0.5">Reporte Final PDF Cronológico</p>
+                                                    </div>
                                                 </div>
-                                                <div>
-                                                    <h3 className="font-bold text-white text-lg group-hover:text-blue-400">Ver Resumen Torneo</h3>
-                                                    <p className="text-xs text-white/30 uppercase tracking-widest mt-0.5">Reporte Final PDF Cronológico</p>
-                                                </div>
-                                            </div>
-                                            <ArrowRightLeft className="text-white/10 group-hover:text-blue-400 rotate-90" size={20} />
-                                        </button>
+                                                <ArrowRightLeft className="text-white/10 group-hover:text-blue-400 rotate-90" size={20} />
+                                            </button>
 
-                                        <button
-                                            onClick={async () => {
-                                                const pendingMatches = matches.filter(m => m.status !== 'finished');
-                                                if (pendingMatches.length > 0) {
-                                                    alert(`No puedes archivar aún. Faltan ${pendingMatches.length} partidos por finalizar.`);
-                                                    return;
-                                                }
-                                                confetti({
-                                                    particleCount: 150,
-                                                    spread: 70,
-                                                    origin: { y: 0.6 },
-                                                    colors: ['#3b82f6', '#8b5cf6', '#ffffff']
-                                                });
-                                                await handleArchiveTournament();
-                                            }}
-                                            disabled={archiving || matches.filter(m => m.status !== 'finished').length > 0}
-                                            className="w-full p-6 bg-red-600/10 hover:bg-red-600/20 border border-red-600/30 rounded-2xl transition-all flex items-center justify-between group disabled:opacity-50 disabled:grayscale"
-                                        >
-                                            <div className="flex items-center gap-4 text-left">
-                                                <div className="w-12 h-12 rounded-xl bg-red-600/20 flex items-center justify-center border border-red-600/30 group-hover:scale-110 transition-transform">
-                                                    {archiving ? <Loader2 className="animate-spin text-red-400" size={22} /> : <CheckCircle className="text-red-400" size={22} />}
+                                            <button
+                                                onClick={async () => {
+                                                    const pendingMatches = matches.filter(m => m.status !== 'finished');
+                                                    if (pendingMatches.length > 0) {
+                                                        alert(`No puedes archivar aún. Faltan ${pendingMatches.length} partidos por finalizar.`);
+                                                        return;
+                                                    }
+                                                    confetti({
+                                                        particleCount: 150,
+                                                        spread: 70,
+                                                        origin: { y: 0.6 },
+                                                        colors: ['#3b82f6', '#8b5cf6', '#ffffff']
+                                                    });
+                                                    await handleArchiveTournament();
+                                                }}
+                                                disabled={archiving || matches.filter(m => m.status !== 'finished').length > 0}
+                                                className="w-full p-6 bg-red-600/10 hover:bg-red-600/20 border border-red-600/30 rounded-2xl transition-all flex items-center justify-between group disabled:opacity-50 disabled:grayscale"
+                                            >
+                                                <div className="flex items-center gap-4 text-left">
+                                                    <div className="w-12 h-12 rounded-xl bg-red-600/20 flex items-center justify-center border border-red-600/30 group-hover:scale-110 transition-transform">
+                                                        {archiving ? <Loader2 className="animate-spin text-red-400" size={22} /> : <CheckCircle className="text-red-400" size={22} />}
+                                                    </div>
+                                                    <div>
+                                                        <h3 className="font-bold text-white text-lg uppercase tracking-tight">Cerrar y Archivar</h3>
+                                                        <p className="text-xs text-white/30 uppercase tracking-widest mt-0.5">Pasar a registro histórico</p>
+                                                    </div>
                                                 </div>
-                                                <div>
-                                                    <h3 className="font-bold text-white text-lg uppercase tracking-tight">Cerrar y Archivar</h3>
-                                                    <p className="text-xs text-white/30 uppercase tracking-widest mt-0.5">Pasar a registro histórico</p>
-                                                </div>
-                                            </div>
-                                            <Check className="text-white/10 group-hover:text-red-400" size={24} />
-                                        </button>
+                                                <Check className="text-white/10 group-hover:text-red-400" size={24} />
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
 
-                            {/* Footer hint */}
-                            <div className="p-4 bg-black/20 text-center border-t border-white/5">
-                                <p className="text-[10px] text-white/20 uppercase tracking-[0.2em]">B5Tools Finalization Hub • v1.0</p>
-                            </div>
-                        </motion.div>
-                    </div>
-                )}
+                                {/* Footer hint */}
+                                <div className="p-4 bg-black/20 text-center border-t border-white/5">
+                                    <p className="text-[10px] text-white/20 uppercase tracking-[0.2em]">B5Tools Finalization Hub • v1.0</p>
+                                </div>
+                            </motion.div>
+                        </div>
+                    )
+                }
             </AnimatePresence>
-        </div >
+        </div>
     );
 };
 
@@ -1490,8 +1531,30 @@ const MatchCard = ({ match, teams, sets, onStartSet, tournament, fields, referee
     const isSingleSet = match.is_single_set === true || tournament?.sets_per_match === 1;
     const matchIdent = match.global_id || match.globalId || match.name || '???';
 
+    // Theming Logic based on Match Name / Type
+    const matchName = (match.name || '').toLowerCase();
+    const isFinal = matchName.includes('final') && !matchName.includes('semi') && !matchName.includes('3');
+    const isSemi = matchName.includes('semi');
+    const isThirdPlace = matchName.includes('3') || matchName.includes('tercer');
+
+    const getThemeClasses = () => {
+        if (isFinal) return "bg-gradient-to-br from-yellow-600/20 via-yellow-900/40 to-yellow-900/20 border-yellow-500/50 hover:border-yellow-400 shadow-[0_0_30px_rgba(234,179,8,0.1)]";
+        if (isSemi) return "bg-gradient-to-br from-slate-400/10 via-slate-600/20 to-slate-800/30 border-slate-400/30 hover:border-slate-300 shadow-[0_0_30px_rgba(148,163,184,0.1)]";
+        if (isThirdPlace) return "bg-gradient-to-br from-orange-800/20 via-orange-900/40 to-orange-950/20 border-orange-700/40 hover:border-orange-600 shadow-[0_0_30px_rgba(194,65,12,0.1)]";
+        return "bg-white/5 border-white/10 hover:border-blue-500/30 backdrop-blur-sm";
+    };
+
     return (
-        <div className="relative bg-white/5 border border-white/10 rounded-3xl overflow-hidden hover:border-blue-500/30 transition-all backdrop-blur-sm group flex flex-col justify-between h-full">
+        <div className={`relative border rounded-3xl overflow-hidden transition-all group flex flex-col justify-between h-full ${getThemeClasses()}`}>
+            {/* Special Badge for Finals/Semis */}
+            {(isFinal || isSemi || isThirdPlace) && (
+                <div className={`absolute top-0 right-2 px-3 py-1 rounded-b-lg text-[8px] font-black uppercase tracking-[0.2em] z-20 shadow-lg border-x border-b ${isFinal ? 'bg-yellow-500 text-black border-yellow-400' :
+                    isSemi ? 'bg-slate-400 text-black border-slate-300' :
+                        'bg-orange-700 text-white border-orange-600'
+                    }`}>
+                    {isFinal ? 'Gran Final' : isSemi ? match.name : isThirdPlace ? '3er Puesto' : ''}
+                </div>
+            )}
             {/* Finished Phase Stamp */}
             {isStageFinished && (
                 <div className="absolute inset-0 z-[60] flex items-center justify-center pointer-events-none select-none overflow-hidden rounded-3xl">

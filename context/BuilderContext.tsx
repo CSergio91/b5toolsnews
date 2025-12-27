@@ -801,7 +801,34 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
 
                         // Find which field contains this match in items
                         const fieldConfig = (state.config as any).fields || state.config.fields_config || [];
-                        const parentField = fieldConfig.find((f: any) => f.items && f.items.some((i: any) => i.matchId === mId));
+                        let resolvedStartTime: string | null = null;
+                        let parentField = null;
+
+                        for (const f of fieldConfig) {
+                            if (!f.items) continue;
+                            const matchItem = f.items.find((i: any) => i.matchId === mId);
+                            if (matchItem) {
+                                parentField = f;
+                                // Calculate the start time based on position in items for THAT date
+                                const itemsOnSameDate = f.items.filter((i: any) => i.date === matchItem.date);
+                                const matchIdx = itemsOnSameDate.findIndex((i: any) => i.id === matchItem.id);
+
+                                let currentMinutes = 0;
+                                for (let k = 0; k < matchIdx; k++) {
+                                    currentMinutes += itemsOnSameDate[k].durationMinutes || 60;
+                                }
+
+                                // Helper function conceptually (inline here for BuilderContext)
+                                const [baseH, baseM] = (f.startTime || '09:00').split(':').map(Number);
+                                const totalMin = baseH * 60 + baseM + currentMinutes;
+                                const resH = Math.floor(totalMin / 60) % 24;
+                                const resM = totalMin % 60;
+                                const timeStr = `${String(resH).padStart(2, '0')}:${String(resM).padStart(2, '0')}:00`;
+
+                                resolvedStartTime = `${matchItem.date}T${timeStr}`;
+                                break;
+                            }
+                        }
 
                         matchesToSaveRelational.push({
                             id: mId,
@@ -822,7 +849,7 @@ export const BuilderProvider: React.FC<{ children: ReactNode; initialId?: string
                             visitor_team_id: m.sourceAway?.type === 'team' && m.sourceAway.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(m.sourceAway.id) ? m.sourceAway.id : null,
                             referee_id: m.refereeId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(m.refereeId) ? m.refereeId : null,
                             status: m.status || 'scheduled',
-                            start_time: m.startTime && m.date ? `${m.date}T${m.startTime}:00` : m.start_time,
+                            start_time: resolvedStartTime || m.start_time,
                             field: parentField ? parentField.id : (m.court || m.field) // Prefer resolved Field ID
                         });
 
